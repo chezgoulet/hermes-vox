@@ -16,9 +16,9 @@
         android:textColorHint="@color/hv_text_dim"
         android:textSize="16sp" />
 
-    <!-- T7: in Settings → Entity this is the host-given entity name, read-only. The
-         profile editor in ProfileDialogs also inflates this layout and uses it for the
-         profile's own model route, so the read-only state is set by Settings, not XML. -->
+    <!-- T7: in Settings → Entity this is the host-given entity name, read-only. This
+         layout is the connection form's alone (first run and Settings → Entity); the
+         profile picker writes nothing, so the read-only state is set by Settings, not XML. -->
     <EditText
         android:id="@+id/d_model"
         android:layout_width="match_parent"

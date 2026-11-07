@@ -127,6 +127,55 @@ class HostProfilesTest {
         assertEquals(base, HostProfiles.rootBase("$base"))
     }
 
+    /**
+     * The one rule: the base is what remains when the addressing suffix is removed. A
+     * connection is a host, optionally with one `/p/<name>`; a route beneath it — whichever
+     * one — and a query belong to a request, never to a base. Removing it twice changes
+     * nothing, which is what makes a probe built from a base safe.
+     */
+    @Test fun rootBaseRemovesAnyAddressingSuffix() {
+        assertEquals(base, HostProfiles.rootBase(base))
+        assertEquals(base, HostProfiles.rootBase("$base/"))
+        assertEquals(base, HostProfiles.rootBase("$base/v1/models"))
+        assertEquals(base, HostProfiles.rootBase("$base/v1/chat/completions"))
+        assertEquals(base, HostProfiles.rootBase("$base/v1/runs"))
+        assertEquals(base, HostProfiles.rootBase("$base/v1/responses"))
+        assertEquals(base, HostProfiles.rootBase("$base/p/work"))
+        assertEquals(base, HostProfiles.rootBase("$base/p/work/"))
+        assertEquals(base, HostProfiles.rootBase("$base/p/work/v1/models"))
+        assertEquals(base, HostProfiles.rootBase("$base/p/work/v1/chat/completions"))
+        assertEquals(base, HostProfiles.rootBase("$base/v1/models?limit=1"))
+        assertEquals(base, HostProfiles.rootBase("  $base/v1/models  "))
+        // Idempotent: reducing what was already reduced is the same base.
+        assertEquals(base, HostProfiles.rootBase(HostProfiles.rootBase("$base/p/work/v1/models")))
+        // Only an addressing suffix is removed; a gateway's own path is left alone.
+        assertEquals("$base/base", HostProfiles.rootBase("$base/base"))
+    }
+
+    /** The address keeps the profile and drops only the route on top of it. */
+    @Test fun theAddressKeepsTheProfileAndDropsTheRoute() {
+        assertEquals(base, HostProfiles.address("$base/v1/models"))
+        assertEquals("$base/p/work", HostProfiles.address("$base/p/work"))
+        assertEquals("$base/p/work", HostProfiles.address("$base/p/work/v1/models"))
+        assertEquals("$base/p/work", HostProfiles.address("$base/p/work/v1/chat/completions?x=1"))
+        // A profile named `v1` is a name, not a route.
+        assertEquals("$base/p/v1", HostProfiles.address("$base/p/v1"))
+        // So its own route sits beneath it, and reducing that still finds the host.
+        assertEquals("$base/p/v1/v1/models", HostProfiles.modelsUrl("$base/p/v1"))
+        assertEquals(base, HostProfiles.rootBase("$base/p/v1/v1/models"))
+    }
+
+    /** A saved URL that already carries a route is the same connection as the clean one:
+     *  it must not be added twice, and the host's answer must not call it unavailable. */
+    @Test fun aSavedUrlWithAnEndpointIsStillTheSameConnection() {
+        val saved = Profiles.Profile("Hermes", "$base/v1/models", "enc:aaa", agentName = "Hermes")
+        val m = HostProfiles.merge(listOf(saved), base, "enc:aaa", advertised())
+        assertTrue(m.unavailable.isEmpty())
+        assertEquals(listOf("Hermes", "work", "lab"), m.list.map { it.name })
+        // The app compares addresses, not spellings.
+        assertTrue(HostProfiles.sameOrigin("$base/v1/models", base))
+    }
+
     @Test fun aSavedProfileIsNeverRepointedReKeyedOrRescoped() {
         val edited = work.copy(agentName = "", scope = "phone")
         val m = HostProfiles.merge(listOf(home, edited), base, "enc:aaa", advertised())

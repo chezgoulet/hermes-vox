@@ -13,6 +13,12 @@ import java.io.File
  * subdirectory inside the same tree, and it is refused by the same rule when it is absolute or
  * climbs out.
  *
+ * **The folder vocabulary is the owner's grants, never a fixed pair of words.** [folderChoices] is
+ * the list `tools/list` advertises, in grant order and once each: whatever the owner picked in the
+ * system picker, under its own label. A fixed `Downloads`/`Documents` vocabulary could not name the
+ * subfolder Android 11+ forces the owner to pick (the `Download` root itself cannot be granted), so
+ * the grant's own name is the name the mind uses.
+ *
  * Listing is capable, not cautious: [MAX_DEPTH] and [MAX_LIST_LIMIT] bound one *request*, never
  * what the folder is allowed to contain. A folder with more entries than one page says
  * `has_more` and hands back `next_offset`; it is paged, never refused and never silently cut.
@@ -61,11 +67,23 @@ object PhoneFiles {
     /** A relative directory path inside the granted tree: deep enough, short enough to audit. */
     const val MAX_LIST_PATH_CHARS = 1024
 
-    /** The two folder words the tool accepts. A granted folder's own name may differ. */
-    val FOLDERS = listOf("Downloads", "Documents")
-
-    /** The folder a call means when it omits `folder`. */
-    const val DEFAULT_FOLDER = "Downloads"
+    /**
+     * The folder words the tool may offer: the labels the owner granted, in grant order, once each.
+     *
+     * This is the whole vocabulary. There is no built-in `Downloads`/`Documents` pair to fall back
+     * to: on Android 11+ the `Download` root cannot be granted, so the folder the owner really gave
+     * is a subfolder (`Download/Work`) and its own label is the only honest name for it.
+     */
+    fun folderChoices(labels: List<String>): List<String> {
+        val out = ArrayList<String>(labels.size)
+        for (raw in labels) {
+            val label = raw.trim()
+            if (label.isEmpty()) continue
+            if (out.any { it.equals(label, ignoreCase = true) }) continue
+            out.add(label)
+        }
+        return out
+    }
 
     /**
      * Why [name] is not a file name this action will look up, or null when it is safe.
@@ -98,6 +116,26 @@ object PhoneFiles {
         }
     }
 
+    /**
+     * Why a **provider-reported child name** is not a name this listing may show, or null when it
+     * may. This is deliberately looser than [badPath]: the walk did not choose the name, the folder
+     * did, and a real file called `notes..txt` or `Report...pdf` is not an escape.
+     *
+     * A child is already identified by its **id**, and [contained] re-checks that id against the
+     * tree, so a name adds no reach. Only a name that could be read as a path is refused: one
+     * carrying `/` or a NUL, and the two dot names themselves.
+     */
+    fun badEntryName(name: String): String? = when {
+        name.isEmpty() -> "an empty name is not an entry"
+        name.contains('/') ->
+            "a name with a path separator is refused: an entry is one name, not a path"
+        name.any { it == '\u0000' } ->
+            "a name with a NUL byte is refused"
+        name == "." || name == ".." ->
+            "\"$name\" is not an entry name"
+        else -> null
+    }
+
     /** `C:\…` / `C:/…` — an absolute path in the shape a Windows-shaped name arrives in. */
     private val WINDOWS_ABSOLUTE = Regex("^[A-Za-z]:[\\\\/]")
 
@@ -120,9 +158,11 @@ object PhoneFiles {
      * Why [path] is not a relative subdirectory inside the granted tree, or null when it is safe.
      *
      * `""` is the granted folder itself. A **relative** path may descend (`reports/2026`), because
-     * listing is how the owner finds out what is there; it may not be absolute, climb (`..`), carry
-     * a backslash or a URI, or contain an empty segment. The same shape is re-checked against the
-     * provider's answer in [containedAt], so a path that lies about where it points is refused too.
+     * listing is how the owner finds out what is there; it may not be absolute, climb (a segment
+     * that is exactly `..`), carry a backslash or a URI, or contain an empty segment. `..` inside a
+     * segment is part of a real name (`Report...pdf`) and is not climbing. The same shape is
+     * re-checked against the provider's answer in [containedAt], so a path that lies about where it
+     * points is refused too.
      */
     fun badListPath(path: String): String? {
         val p = path
@@ -130,9 +170,6 @@ object PhoneFiles {
             p.isEmpty() -> null
             p.length > MAX_LIST_PATH_CHARS ->
                 "the path is longer than $MAX_LIST_PATH_CHARS characters"
-            p.contains("..") ->
-                "a path containing \"..\" is refused: listing walks inside the folder you granted, " +
-                    "and nowhere else"
             p.startsWith("/") || p.startsWith("\\") || WINDOWS_ABSOLUTE.containsMatchIn(p) ->
                 "an absolute path is refused: give a path relative to the folder you granted, or " +
                     "leave it out for the folder itself"
@@ -142,26 +179,20 @@ object PhoneFiles {
                 "a URI is refused: give a path relative to the folder you granted"
             p.any { it < ' ' } ->
                 "a path with a control character is refused"
-            p.split('/').any { it.isBlank() || it == "." } ->
-                "a path with an empty or \".\" segment is refused"
+            p.split('/').any { it.isBlank() || it == "." || it == ".." } ->
+                "a path with an empty, \".\" or \"..\" segment is refused"
             else -> null
         }
     }
 
     /**
-     * The comparable form of a folder word: `Downloads` and `Download` are the same folder, and
-     * the case the owner or the tool used does not decide whether a grant is found.
-     */
-    fun normalizeFolder(label: String?): String =
-        (label?.trim().orEmpty().ifEmpty { DEFAULT_FOLDER }).lowercase().trimEnd('s')
-
-    /**
      * True when [documentId] is exactly one child of [treeDocumentId] — nothing above it, nothing
-     * nested below it, and no `..` in it.
+     * nested below it, and not the `.`/`..` names themselves.
      *
      * The Storage Access Framework identifies a document by id, not by path, so this is the
      * containment check that works for every provider: a provider that answers with an id outside
-     * the granted tree (an escape, or its own idea of the tree) is refused.
+     * the granted tree (an escape, or its own idea of the tree) is refused. `..` *inside* a segment
+     * is part of a real name (`notes..txt`) and not a climb; only `..` as the whole segment is.
      */
     fun contained(treeDocumentId: String, documentId: String): Boolean {
         val tree = treeDocumentId.trim().trimEnd('/')
@@ -170,7 +201,7 @@ object PhoneFiles {
         val prefix = "$tree/"
         if (!doc.startsWith(prefix)) return false
         val rest = doc.removePrefix(prefix)
-        return rest.isNotBlank() && !rest.contains('/') && !rest.contains("..")
+        return rest.isNotBlank() && !rest.contains('/') && rest != "." && rest != ".."
     }
 
     /**
@@ -193,7 +224,7 @@ object PhoneFiles {
         if (tree.isEmpty() || doc.isEmpty()) return false
         if (rel.isEmpty()) return doc == tree
         val segments = rel.split('/')
-        if (segments.any { it.isBlank() || it == "." || it.contains("..") }) return false
+        if (segments.any { it.isBlank() || it == "." || it == ".." }) return false
         return doc == "$tree/$rel"
     }
 
@@ -329,20 +360,43 @@ object PhoneFiles {
      * True when [pattern] matches [name], case-insensitively. A glob, not a regex: `*` is any run
      * of characters and `?` is exactly one; everything else is literal. Applied to **files only**,
      * so a directory stays visible while its matching files are shown.
+     *
+     * The match is the classic two-pointer wildcard scan: it walks the name once, remembering the
+     * last `*` and where it started, so it is **linear in the name** whatever the pattern is.
+     * Translating the glob into `.*`/`.` hands the engine a backtracking regex and lets a
+     * 255-character pattern like `*a*a*a…*b` spend exponential time per entry while the page is
+     * being built; this cannot. (Consecutive `*` collapse naturally: the second one is consumed as a no-op.)
      */
     fun matches(pattern: String?, name: String): Boolean {
         if (pattern.isNullOrEmpty()) return true
-        val rx = StringBuilder("^")
-        for (c in pattern) {
-            when (c) {
-                '*' -> rx.append(".*")
-                '?' -> rx.append('.')
-                else -> rx.append(Regex.escape(c.toString()))
+        var p = 0
+        var n = 0
+        var star = -1
+        var mark = 0
+        while (n < name.length) {
+            if (p < pattern.length && (pattern[p] == '?' || same(pattern[p], name[n]))) {
+                p++
+                n++
+            } else if (p < pattern.length && pattern[p] == '*') {
+                star = p
+                p++
+                mark = n
+            } else if (star >= 0) {
+                // The last `*` takes one more character and the scan resumes right after it.
+                p = star + 1
+                mark++
+                n = mark
+            } else {
+                return false
             }
         }
-        rx.append('$')
-        return Regex(rx.toString(), RegexOption.IGNORE_CASE).matches(name)
+        while (p < pattern.length && pattern[p] == '*') p++
+        return p == pattern.length
     }
+
+    /** One character compared case-insensitively, without allocating a lowercased copy. */
+    private fun same(a: Char, b: Char): Boolean =
+        a == b || a.lowercaseChar() == b.lowercaseChar()
 
     /**
      * One page of a listing, walked through [reader].
@@ -350,10 +404,16 @@ object PhoneFiles {
      * **What is enumerated, then what is shown.** The walk visits [path] and, while there is depth
      * left, each subdirectory below it; at every level directories come before files and each group
      * is alphabetical, so the order is stable and a page boundary never moves. [pattern] then hides
-     * files whose name does not match, and directories are never hidden. The full ordered set is
-     * what `offset` and `limit` page over, which is why `has_more` and `next_offset` exist rather
-     * than a large folder being refused: a page is a window on the truth, never a claim about the
-     * folder's size.
+     * files whose name does not match, and directories are never hidden. `offset` and `limit` page
+     * over that ordered stream, which is why `has_more` and `next_offset` exist rather than a large
+     * folder being refused: a page is a window on the truth, never a claim about the folder's size.
+     *
+     * **The walk stops at the page.** Only `offset + limit + 1` rows are ever materialised: the
+     * page itself, plus the one extra row that proves `has_more`. The old walk built the whole
+     * tree before slicing it, so every page re-walked everything and a large folder at depth 5
+     * made one child query per directory whether the caller asked for ten entries or a thousand
+     * (H5). Now a page costs a page — the provider is asked for the directories the page actually
+     * crosses, and no further.
      *
      * Depth 1 lists the requested directory's entries; depth 2 also lists each subdirectory's, and
      * so on. Every entry carries the relative [Row.path] it was found at, so a deep listing is
@@ -361,7 +421,8 @@ object PhoneFiles {
      *
      * A subdirectory that has vanished between the parent's listing and its own read is skipped (a
      * directory we no longer have is not an entry); a provider that **fails** while a page is being
-     * built is [ListResult.Failed], because a page with a hole in it would be a quiet lie.
+     * built is [ListResult.Failed], because a page with a hole in it would be a quiet lie. A
+     * failure beyond the page's last needed row has not been seen, and is not claimed about.
      */
     fun list(
         folder: String,
@@ -373,10 +434,17 @@ object PhoneFiles {
         reader: Reader,
     ): ListResult {
         val levels = depth.coerceIn(1, MAX_DEPTH)
-        val rows = ArrayList<Row>()
+        val fromOffset = offset.coerceAtLeast(0)
+        val pageLimit = limit.coerceIn(1, MAX_LIST_LIMIT)
+        // One row more than the page proves `has_more`; no more than that is ever collected.
+        val needed = (fromOffset.toLong() + pageLimit.toLong() + 1L)
+            .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        val rows = ArrayList<Row>(needed.coerceAtMost(1024))
         var failure: String? = null
         var outside = false
         var missingRoot = false
+        /** True when the walk stopped because the page was full, not because something failed. */
+        var enough = false
 
         fun visit(rel: String, remaining: Int): Boolean {
             val children = when (val dir = reader.children(rel)) {
@@ -390,8 +458,10 @@ object PhoneFiles {
             }
             for (e in children.sortedWith(ORDER)) {
                 // A provider that calls a child "../secret" is describing something outside the
-                // tree under a name that is a path. Refuse it rather than list a lie.
-                if (badPath(e.name) != null) { outside = true; return false }
+                // tree under a name that is a path. The child's id is checked by the edge
+                // ([contained]); here only a name that could be read as a path is refused, so a
+                // real file called `notes..txt` does not make the whole folder unlistable.
+                if (badEntryName(e.name) != null) { outside = true; return false }
                 val childPath = if (rel.isEmpty()) e.name else "$rel/${e.name}"
                 if (e.dir || matches(pattern, e.name)) {
                     rows.add(
@@ -404,6 +474,9 @@ object PhoneFiles {
                             mime = if (e.dir) null else e.mime,
                         )
                     )
+                    // The page and its one proof row are known. Nothing below this point can
+                    // change the answer, so the provider is not asked again.
+                    if (rows.size >= needed) { enough = true; return false }
                 }
                 if (e.dir && remaining > 1 && !visit(childPath, remaining - 1)) return false
             }
@@ -411,7 +484,7 @@ object PhoneFiles {
         }
 
         val walked = visit(path, levels)
-        if (!walked) {
+        if (!walked && !enough) {
             return when {
                 outside -> ListResult.Outside
                 failure != null -> ListResult.Failed(failure!!)
@@ -421,10 +494,11 @@ object PhoneFiles {
         if (missingRoot) return ListResult.MissingPath
 
         val total = rows.size
-        val from = offset.coerceIn(0, total)
-        val to = (from + limit.coerceIn(1, MAX_LIST_LIMIT)).coerceAtMost(total)
+        val from = fromOffset.coerceIn(0, total)
+        val to = (from + pageLimit).coerceAtMost(total)
         val page = rows.subList(from, to)
-        val more = to < total
+        // `needed` is offset+limit+1, so a full page that stopped early has one row after it.
+        val more = rows.size > fromOffset + pageLimit
         return ListResult.Ok(
             Listing(
                 folder = folder,
@@ -440,39 +514,51 @@ object PhoneFiles {
 
     // ---- a window of a file ----
 
-    /** The text one window actually yielded, and the bytes it covers. */
+    /** The text one window actually yielded, and where it really begins and ends. */
     data class TextWindow(
-        /** Bytes skipped at the front because they continued a character before the window. */
-        val skipped: Int,
-        /** Bytes covered by [text]; may be a little less than the slice's length at the tail. */
+        /** The absolute byte offset of [text]'s first byte — never before the requested start. */
+        val offset: Long,
+        /** Bytes covered by [text]; at most the requested length, never a byte more. */
         val bytes: Int,
         val text: String,
     )
 
     /**
-     * The text of a byte window that may begin and end mid-character.
+     * The window `[start, start + want)` of a file, chosen **inward**: [bytes] was read from
+     * absolute offset [from], and the result is trimmed to the first character boundary at or after
+     * [start] and the last boundary at or before `start + want`.
      *
-     * A window is cut at byte offsets the caller chose, so the first bytes may continue a character
-     * that started before it and the last may be an incomplete character. Unlike [asText] — which
-     * is strict, because a whole file that is not UTF-8 is not text — a window **snaps to character
-     * boundaries**: up to three leading continuation bytes are skipped and an incomplete trailing
-     * sequence is trimmed. That is not leniency about the file; it is the honest reading of a slice
-     * that was cut on purpose. A NUL byte, or a malformed sequence in the middle, is still not text.
+     * A window is cut at byte offsets the caller chose, so the cut may fall inside a character.
+     * Snapping **inward** is what makes stitching honest: an agent that asks for `[0, 4)` and then
+     * `[4, 8)` gets four bytes and four bytes, with no character duplicated at the seam. Snapping
+     * outward (keeping the slack bytes on either side) would repeat up to three characters at every
+     * seam while reporting an offset the text does not start at.
+     *
+     * The three bytes of slack the caller reads on each side are what makes the inward snap
+     * possible: a UTF-8 character is at most four bytes, so a boundary within three bytes of each
+     * cut is always inside the buffer. A malformed sequence inside the window is still not text
+     * (unlike [asText], which decides that for a whole file); a NUL byte anywhere in the buffer is
+     * binary whatever the decoder thinks.
      */
-    fun windowText(bytes: ByteArray, wholeFile: Boolean): TextWindow? {
+    fun window(bytes: ByteArray, from: Long, start: Long, want: Long): TextWindow? {
         if (bytes.any { it == 0.toByte() }) return null
-        var skip = 0
-        if (!wholeFile) {
-            while (skip < bytes.size && skip < 3 && (bytes[skip].toInt() and 0xC0) == 0x80) skip++
-        }
-        for (trim in 0..3) {
-            val size = bytes.size - skip - trim
-            if (size < 0) continue
-            val text = strictUtf8(bytes, skip, size) ?: continue
-            return TextWindow(skip, size, text)
-        }
-        return null
+        val begin = (start - from).coerceIn(0L, bytes.size.toLong()).toInt()
+        val end = (begin.toLong() + want.coerceAtLeast(0)).coerceAtMost(bytes.size.toLong()).toInt()
+        // First boundary at or after the requested start: a character never begins on a
+        // continuation byte, so skip the ones that continue the character before the cut.
+        var a = begin
+        while (a < end && continuation(bytes[a])) a++
+        // Last boundary at or before the requested end: if the cut landed inside a character,
+        // back up to that character's first byte and leave the whole character out. At the end of
+        // the buffer there is nothing to trim against: that is where the file stops.
+        var b = end
+        while (b > a && b < bytes.size && continuation(bytes[b])) b--
+        val text = strictUtf8(bytes, a, b - a) ?: return null
+        return TextWindow(from + a, b - a, text)
     }
+
+    /** True for a UTF-8 continuation byte (`10xxxxxx`): such a byte never begins a character. */
+    private fun continuation(b: Byte): Boolean = (b.toInt() and 0xC0) == 0x80
 
     /** Strict UTF-8 for exactly [len] bytes at [off]; null when they are not. */
     private fun strictUtf8(bytes: ByteArray, off: Int, len: Int): String? = try {

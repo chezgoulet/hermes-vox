@@ -110,10 +110,13 @@ and a face without adding a second brain:
 - **Profiles (Alpha).** Switch between the agents your host serves without leaving the
   app: each profile carries its own address, key, model, voice and look, and a switch
   starts a fresh conversation.
-- **Your agent can act on the phone (Alpha).** A timer, an alarm, Do Not Disturb or the
-  volume, executed instantly when you ask, and a small MCP server on your tailnet so the
-  mind can ask for the same actions and get a result. Off until you set it up and grant
-  each capability group.
+- **Your agent can act on the phone (Alpha).** A small MCP server on your tailnet gives the
+  mind one `phone` tool: timers and alarms, Do Not Disturb and volume, media keys, device
+  state, the clipboard, your granted folders, calendar, contacts, notifications, the apps
+  list, and handoffs that compose a text, open the dialer or launch an app for you to
+  confirm. Thirteen capability groups, each **Off / Ask / Allow**; Off until you set it up
+  and grant a group. The phone parses nothing itself — every turn goes to the mind, which
+  decides whether to call the tool and gets a result back.
 - **On-device hearing.** Silero VAD plus Whisper (int8), NVIDIA Parakeet-TDT or the
   streaming Nemotron model, via sherpa-onnx. Hermes always receives the **whole**
   utterance, validated against Whisper's known hallucinations, and a dim "heard" line
@@ -154,9 +157,9 @@ There is one way to talk: on-device STT, VAD and TTS with Hermes behind them, on
 hands-free line with barge-in. It feels like a live call.
 
 **Presence** is a layer on that, not a second mode. It is unfinished, so in 0.9.1 it sits
-behind **Settings → Alpha features** (off on a fresh install). The panel lists five sets:
-**Presence** first, then **Continuous listening**, **Turn-taking**, **Phone tools** and
-**Switching profiles**; each is selected on its own. With Presence on, the on-device Gemma 4
+behind **Settings → Alpha features** (off on a fresh install). The panel lists four sets:
+**Presence** first, then **Continuous listening**, **Turn-taking** and **Phone tools**;
+each is selected on its own, and continuous listening is the one that requires Presence. With Presence on, the on-device Gemma 4
 E2B model greets you and speaks the opening beat of a turn in the agent's voice while Hermes
 thinks. It is a companion, not a gatekeeper: every turn still goes to Hermes, which answers
 (D30). It needs the 2.6 GB presence model and a phone with 8 GB of memory — first run checks,
@@ -243,12 +246,13 @@ adb install -r android/app/build/outputs/apk/debug/hermes-vox-*.apk
 - **Speech.** [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) runs Silero VAD,
   Whisper or Parakeet STT, and Supertonic or Piper TTS, all on the CPU with tuned
   thread counts.
-- **The entity.** The Hermes gateway (`/v1/responses` streaming), reached
-  over your private network. Hermes does all the reasoning, tools and memory.
+- **The entity.** The Hermes gateway (`/v1/runs` by default, `/v1/responses` as the
+  per-profile fallback), reached over your private network. Hermes does all the reasoning,
+  tools and memory.
 - **The connector.** Kotlin (`com.hermesvox.core`, no extra dependencies): the SSE
   stream, tool events, and stream cancellation for barge-in.
-- **The soul.** Gemma 4 E2B on LiteRT-LM, GPU-first with a CPU fallback (Enhanced
-  Realtime only).
+- **The soul.** Gemma 4 E2B on LiteRT-LM, GPU-first with a CPU fallback (the Presence
+  layer only).
 - **The being.** OpenGL ES 3 on its own thread: 6,000 stateless particles placed by
   the vertex shader, with two-level bloom and a filmic tone curve. It runs at 60 fps,
   pauses in the background, and degrades gracefully on weaker GPUs.
@@ -321,8 +325,9 @@ What is honestly outstanding before the cut:
 - **Approval cards on the device.** The route that carries them is the default; the
   acceptance cards in [`docs/APPROVALS-ACCEPTANCE.md`](docs/APPROVALS-ACCEPTANCE.md) are
   the proof.
-- **The Alpha sets in real use** — Presence, continuous listening, turn-taking, phone tools
-  and profile switching are built and behind the gate, and each has a device check.
+- **The Alpha sets in real use** — Presence, continuous listening, turn-taking, phone tools,
+  profile switching and sessions are built and behind the gate; each has a device check, and
+  sessions/profiles leave it only on that pass (D39).
 - **F-Droid.** The app is not listed yet; D29 makes the listing 0.9.1 work. Until then
   GitHub Releases and Obtainium carry the signed APK.
 - **A second handset.** #208 is carried; the behaviour matrix is single-device and says so.
@@ -338,20 +343,21 @@ The details are in [ROADMAP.md](ROADMAP.md).
 ## Troubleshooting
 
 ### "Cleartext HTTP traffic not permitted"
-Vox only speaks HTTPS to your gateway (plain HTTP would expose your API key and
-transcripts). The one exception is a tailnet MagicDNS name. Put the gateway behind
-HTTPS on your tailnet:
+Vox expects HTTPS to your gateway; plain HTTP would expose the API key and the
+transcripts. A tailnet MagicDNS name is the only cleartext exception. The preferred
+setup is:
 
-1. On the gateway host: `tailscale serve --bg --https=443 http://127.0.0.1:<port>`
-2. In Vox, use the HTTPS MagicDNS endpoint: `https://<machine>.<tailnet>.ts.net`
-3. If your tailnet CA isn't publicly trusted, install it on the phone
-   (Settings → Security → Trust device certificates). The app trusts user CAs.
+1. On the gateway host, run `tailscale serve --bg --https=443 http://127.0.0.1:<port>`.
+2. Set Vox's endpoint to `https://<machine>.<tailnet>.ts.net`.
+3. If the phone does not already trust the tailnet CA, add it under
+   **Settings → Security → Trust device certificates**. Vox trusts user-installed
+   CAs only for `*.ts.net`, not for every host.
 
 ### It connects, but every call fails
 Check the endpoint for a **doubled path or a path prefix**. The Hermes API server
 answers `404` for `/v1/models/` and `//v1/models`. If you are behind a reverse proxy or
-a `/p/<profile>` prefix, make sure the forwarded path matches exactly (`/v1/responses`,
-not `/hermes/v1/responses`).
+a `/p/<profile>` prefix, make sure the forwarded path matches exactly (`/v1/runs`, or
+`/v1/responses` on a gateway without the runs route — not `/hermes/v1/...`).
 
 ### "Preparing your voice…" stays up
 The required models are not all installed yet. Open **Settings → Voice models**; downloads

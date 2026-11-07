@@ -93,11 +93,11 @@
   file: android/app/src/main/java/com/hermesvox/PhoneMcpServer.kt
   match: 'isAnyLocalAddress'
 
-- id: phone-tier-two-never-executes
-  says: "never executes"
+- id: phone-ask-one-handshake
+  says: "the same two-step handshake"
   doc: docs/MCP-PHONE.md
-  file: android/app/src/main/java/com/hermesvox/PhoneTool.kt
-  match: 'PhoneTiers\.APPROVAL ->'
+  file: android/app/src/main/java/com/hermesvox/PhoneEngine.kt
+  match: 'private fun handshake\('
 
 - id: phone-undo-lifetime
   says: "the undo lives for the action's lifetime"
@@ -109,7 +109,7 @@
   says: "The setup path is a turn, not a block to paste."
   doc: docs/MCP-PHONE.md
   file: android/app/src/main/java/com/hermesvox/PhoneSetup.kt
-  match: 'fun prompt\(host: String'
+  match: 'fun prompt\('
 
 - id: phone-setup-idempotent
   says: "It is idempotent by content."
@@ -129,6 +129,30 @@
   file: android/app/src/main/java/com/hermesvox/PhoneMcpServer.kt
   match: 'method == "initialize"'
 
+- id: phone-bootstrap-one-button
+  says: "Set this up with my agent"
+  doc: docs/MCP-PHONE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneBootstrap.kt
+  match: 'const val BUTTON = "SET THIS UP WITH MY AGENT"'
+
+- id: phone-bootstrap-window
+  says: "as long as the attempt runs"
+  doc: docs/MCP-PHONE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneBootstrap.kt
+  match: 'fun listenerOpen\(progress: Progress\): Boolean'
+
+- id: phone-bootstrap-handshake-window
+  says: "20 seconds"
+  doc: docs/MCP-PHONE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneBootstrap.kt
+  match: 'const val HANDSHAKE_GRACE_MS = 20_000L'
+
+- id: phone-bootstrap-no-restart
+  says: "no restart is needed and none is wanted"
+  doc: docs/MCP-PHONE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneSetup.kt
+  match: 'No restart is needed and none is wanted'
+
 - id: phone-dnd-is-special-access
   says: "This is a *special* access"
   doc: docs/MCP-PHONE.md
@@ -142,7 +166,7 @@
   absent: 'uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"'
 
 - id: phone-listener-lifetime
-  says: "The listener is up exactly while a call is"
+  says: "The listener is up while a call is"
   doc: docs/MCP-PHONE.md
   file: android/app/src/main/java/com/hermesvox/VoiceController.kt
   match: 'PhoneMcp\.start\(context\)'
@@ -189,13 +213,20 @@
   says: "refusals included"
   doc: docs/DECISIONS.md
   file: android/app/src/main/java/com/hermesvox/PhoneEngine.kt
-  match: 'audit\(result, arguments, nowEpoch\)'
+  match: 'audit\('
 
-- id: phone-allow-tier-zero-only
-  says: "Allow is a Tier 0 word."
+- id: phone-uniform-states
+  says: "Every group offers all three"
   doc: docs/DECISIONS.md
   file: android/app/src/main/java/com/hermesvox/PhoneGrants.kt
-  match: 'if \(state == State\.ALLOW && !permits\(group\.tier, state\)\) State\.ASK'
+  match: 'fun statesFor\(tier: Int\): List<State> = listOf\(State\.OFF, State\.ASK, State\.ALLOW\)'
+
+# H5: the engine runs off the drawing thread, and a timeout is not proof nothing happened.
+- id: phone-timeout-is-uncertain
+  says: "A timeout is not a refusal of the work."
+  doc: docs/MCP-SURFACE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneTool.kt
+  match: 'outcome_uncertain'
 
 # ---- #325 and the gate's edge: what is not an alpha set ----
 
@@ -252,3 +283,55 @@
   doc: docs/MTLS-PER-ORIGIN.md
   file: android/app/src/main/java/com/hermesvox/core/MtlsConfig.kt
   match: 'fun saveAlias\('
+
+# ---- the 0.9.1 release-truth lane: the facts this release rests on ----
+
+- id: phone-surface-no-install
+  says: "**`install` is gone from the surface.**"
+  doc: docs/MCP-SURFACE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneTool.kt
+  absent: '\binstall\b'
+
+- id: phone-surface-apps-and-dismiss
+  says: "**Added by the apps-and-dismiss lane:**"
+  doc: docs/MCP-SURFACE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneTool.kt
+  match: '"apps" -> Parsed\.Run\(Call\.Apps\)[\s\S]*"notification_dismiss" ->'
+
+- id: phone-uniform-grants-stated
+  says: "The same three words for every group"
+  doc: docs/MCP-PHONE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneGrants.kt
+  match: 'fun statesFor\(tier: Int\): List<State> = listOf\(State\.OFF, State\.ASK, State\.ALLOW\)'
+
+- id: phone-presence-read-only
+  says: "Presence's scope."
+  doc: docs/DECISIONS.md
+  file: android/app/src/main/java/com/hermesvox/LocalActions.kt
+  match: 'interface PhoneReadout \{[\s\S]*?fun registry\('
+
+- id: alpha-four-sets
+  says: "lists four sets"
+  doc: docs/MILESTONES.md
+  file: android/app/src/main/java/com/hermesvox/AlphaGate.kt
+  match: 'PRESENCE\([\s\S]*CONTINUOUS_LISTENING\([\s\S]*TURN_TAKING\([\s\S]*PHONE_TOOLS\('
+  absent: 'PROFILES\(|SESSIONS\('
+
+- id: alpha-one-dependency
+  says: "four sets and one dependency"
+  doc: docs/DECISIONS.md
+  file: android/app/src/main/java/com/hermesvox/AlphaGate.kt
+  match: 'if \(set == FeatureSet\.CONTINUOUS_LISTENING && !selected\(r, FeatureSet\.PRESENCE\)\)'
+
+- id: files-grant-keyed-by-tree-id
+  says: "Each grant is keyed by its **tree id**"
+  doc: docs/MCP-SURFACE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneFileAccess.kt
+  match: 'next\.firstOrNull \{ it\.id == id \}'
+
+- id: file-read-cap-one-answer
+  says: "The 64 KiB figure is the size of one answer."
+  doc: docs/MCP-SURFACE.md
+  file: android/app/src/main/java/com/hermesvox/PhoneFiles.kt
+  match: 'const val MAX_READ_BYTES = 64 \* 1024L'
+

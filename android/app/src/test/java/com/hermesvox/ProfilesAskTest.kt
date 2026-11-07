@@ -275,6 +275,42 @@ class ProfilesAskTest {
         assertFalse(ps[1].isDefault)
     }
 
+    /**
+     * The bug this pins: the picker appended `/v1/models` to a probe URL that already ended
+     * in it, asked `/v1/models/v1/models`, took the 404 as proof, and told the owner his
+     * working profile was unreachable. A probe plan must be idempotent — however much of the
+     * address is already carried, the URL is the same — and it must carry exactly one route.
+     */
+    @Test fun aProbeIsIdempotentAndEndsInExactlyOneModelsPath() {
+        val served = listOf(HostProfiles.Served("home", true), HostProfiles.Served("work"))
+        val once = ProfilesAsk.probes(base, served)
+        assertEquals(listOf("$base/v1/models", "$base/p/work/v1/models"), once.map { it.url })
+        for (suffix in listOf(
+            "/", "/v1/models", "/v1/models/", "/v1/chat/completions", "/v1/runs",
+            "/v1/responses", "/p/work", "/p/work/v1/models", "/p/work/v1/chat/completions",
+            "/v1/models?limit=1",
+        )) {
+            assertEquals(suffix, once, ProfilesAsk.probes(base + suffix, served))
+        }
+        for (p in once) assertEquals(p.url, 1, Regex("/v1/models").findAll(p.url).count())
+    }
+
+    /** A persisted profile URL is data, not a promise: a saved `…/v1/models` must still
+     *  probe the profile it names, not a route beneath the route. */
+    @Test fun aSavedProfileUrlCarryingAnEndpointStillProbesCorrectly() {
+        val savedDefault = Profiles.Profile("home", "$base/v1/models", "enc:aaa")
+        val default = ProfilesAsk.probes(savedDefault.url, listOf(HostProfiles.Served("home", true)))
+        assertEquals("$base/v1/models", default.single().url)
+
+        val savedNamed = Profiles.Profile("work", "$base/v1/models", "enc:bbb")
+        val named = ProfilesAsk.probes(savedNamed.url, listOf(HostProfiles.Served("work")))
+        assertEquals("$base/p/work/v1/models", named.single().url)
+
+        // The addressing base is what a switch writes, and it is the host again.
+        assertEquals(base, HostProfiles.rootBase(savedDefault.url))
+        assertEquals(base, HostProfiles.rootBase(savedNamed.url))
+    }
+
     @Test fun onlyA200IsUsable() {
         assertTrue(ProfilesAsk.probeSucceeded(200))
         for (code in listOf(401, 403, 404, 500, 502, -1)) assertFalse("$code", ProfilesAsk.probeSucceeded(code))
@@ -364,6 +400,39 @@ class ProfilesAskTest {
         assertEquals(AskDecision.NOW, ProfilesAsk.decide(AskKind.REFRESH, now - 90_000L, now, false))
     }
 
+    /**
+     * The ask is a turn the user pays for, so a fresh answer is rendered, not refreshed.
+     * The window is fifteen minutes, stated here so a later edit has to change a named
+     * number on purpose; the one-minute refresh guard is unchanged beside it.
+     */
+    @Test fun aFreshCacheSendsNoTurnAndAHumanRefreshDoes() {
+        assertEquals(15 * 60_000L, ProfilesAsk.CACHE_FRESH_MS)
+        assertEquals(60_000L, ProfilesAsk.REFRESH_MIN_MS)
+
+        // A connect inside the window reads the cache: the sheet shows its age, no turn.
+        assertEquals(AskDecision.READ_CACHE, ProfilesAsk.decide(AskKind.CONNECT, now - 1L, now, false))
+        assertEquals(AskDecision.READ_CACHE, ProfilesAsk.decide(AskKind.CONNECT, now - 14 * 60_000L, now, false))
+        assertEquals(AskDecision.READ_CACHE,
+            ProfilesAsk.decide(AskKind.CONNECT, now - ProfilesAsk.CACHE_FRESH_MS + 1L, now, false))
+        assertEquals(AskDecision.READ_CACHE, ProfilesAsk.decide(AskKind.CONNECT, now, now, false))
+
+        // At the boundary and beyond it, a connect asks again. No stamp means never asked.
+        assertEquals(AskDecision.NOW,
+            ProfilesAsk.decide(AskKind.CONNECT, now - ProfilesAsk.CACHE_FRESH_MS, now, false))
+        assertEquals(AskDecision.NOW, ProfilesAsk.decide(AskKind.CONNECT, now - 60 * 60_000L, now, false))
+        assertEquals(AskDecision.NOW, ProfilesAsk.decide(AskKind.CONNECT, 0L, now, false))
+
+        // Opening the sheet is still always free, and a live call still defers.
+        assertEquals(AskDecision.READ_CACHE, ProfilesAsk.decide(AskKind.SWITCHER_OPEN, now - 1_000L, now, false))
+        assertEquals(AskDecision.DEFER, ProfilesAsk.decide(AskKind.CONNECT, now - 1_000L, now, true))
+
+        // A refresh is what sends the turn, even inside the fresh window — but the existing
+        // "checked less than a minute ago" guard still holds it back inside a minute.
+        assertEquals(AskDecision.NOW, ProfilesAsk.decide(AskKind.REFRESH, now - 2 * 60_000L, now, false))
+        assertEquals(AskDecision.REFUSE_RECENT, ProfilesAsk.decide(AskKind.REFRESH, now - 59_999L, now, false))
+        assertEquals(AskDecision.NOW, ProfilesAsk.decide(AskKind.REFRESH, now - ProfilesAsk.REFRESH_MIN_MS, now, false))
+    }
+
     @Test fun freshnessIsShownNotHidden() {
         assertEquals("profiles from this host · checked 4 min ago", ProfilesAsk.freshness(now - 4 * 60_000L, now))
         assertEquals("profiles from this host · checked 4 min ago", ProfilesAsk.freshness(now - 4 * 60_000L - 59_000L, now))
@@ -374,9 +443,18 @@ class ProfilesAskTest {
 
     // ---- the ask itself ----
 
+    /** The whole turn, pinned word for word: a change to the boundary is a deliberate edit. */
+    private val askText =
+        "[[vox:profiles]] This is a question, not a task. Which Hermes profiles does this " +
+            "gateway serve to this key? Reply with one fenced vox-profiles block and nothing " +
+            "else — or, if you cannot answer, say plainly that the list cannot be produced. " +
+            "Do not modify this host, its configuration, its profiles, its memories, its " +
+            "sessions or its files. Do not run any command that changes them. If producing " +
+            "the list appears to need a change to the host, do not make it: say what would " +
+            "be needed instead."
+
     @Test fun theRequestIsOnePlainChatTurnWithTheMarkersExactText() {
-        val expected = "[[vox:profiles]] Which Hermes profiles does this gateway serve to this key? " +
-            "Reply with one fenced vox-profiles block and nothing else."
+        val expected = askText
         assertEquals(expected, ProfilesAsk.ASK)
         assertEquals("[[vox:profiles]]", ProfilesAsk.MARKER)
         assertEquals("/v1/chat/completions", ProfilesAsk.PATH)
@@ -391,6 +469,79 @@ class ProfilesAskTest {
         assertEquals(expected, (msg["content"] as com.hermesvox.core.JStr).value)
         // A blank model still names the one route the app uses.
         assertTrue(ProfilesAsk.requestBody("").contains("\"model\":\"hermes-agent\""))
+    }
+
+    /**
+     * The turn is a question with a boundary. An agent reading it may be a full operator
+     * with a terminal, so the prohibition and the permitted "I cannot" answer are pinned
+     * here: a later edit cannot quietly drop either and leave an instruction with latitude
+     * again. This is the test that would have caught the turn that deleted a profile.
+     */
+    @Test fun theAskIsAQuestionThatForbidsChangesToTheHost() {
+        val ask = ProfilesAsk.ASK
+        // The marker and the label the parser keys on survive byte-identical.
+        assertTrue(ask, ask.startsWith(ProfilesAsk.MARKER + " "))
+        assertTrue(ask, ask.contains(ProfilesAsk.LABEL))
+        assertEquals("[[vox:profiles]]", ProfilesAsk.MARKER)
+        assertEquals("vox-profiles", ProfilesAsk.LABEL)
+
+        // It says what it is, in words that cannot be read as a task.
+        assertTrue(ask, ask.contains("This is a question, not a task"))
+
+        // An explicit prohibition, naming every surface the incident touched.
+        assertTrue("the ask needs a 'do not' prohibition", Regex("\\bdo not\\b", RegexOption.IGNORE_CASE).containsMatchIn(ask))
+        assertTrue(ask, ask.contains("Do not modify this host"))
+        for (surface in listOf("configuration", "profiles", "memories", "sessions", "files")) {
+            assertTrue("the prohibition must name the host's $surface", ask.contains(surface))
+        }
+        // And the command that actually ran is covered in the same words.
+        assertTrue(ask, ask.contains("Do not run any command that changes them"))
+
+        // Saying the list cannot be produced is a complete answer…
+        assertTrue(ask, ask.contains("say plainly that the list cannot be produced"))
+        // …and a change the list seems to need is named, never made.
+        assertTrue(ask, ask.contains("do not make it"))
+        assertTrue(ask, ask.contains("say what would be needed"))
+    }
+
+    /**
+     * No verb in the turn may read as an instruction to change something. The app already
+     * issues no destructive request (`NoDestructiveRequestsTest`); this holds the same line
+     * on the one text the app sends into an agent that has its own tools.
+     */
+    @Test fun theAskCarriesNoVerbThatAsksForAChange() {
+        for (verb in listOf("delete", "remove", "create", "write", "edit")) {
+            assertFalse(
+                "the ask must not contain '$verb': an agent may read it as permission to act",
+                Regex("\\b" + verb + "\\b", RegexOption.IGNORE_CASE).containsMatchIn(ProfilesAsk.ASK),
+            )
+        }
+    }
+
+    /**
+     * The route comes first, always. When `GET /v1/profiles` answers, the refresh is over:
+     * the conversational turn is the other branch and is never sent. The documented-shape
+     * answer and every non-answer are both exercised, so "the route was tried" cannot be
+     * mistaken for "the turn may still run".
+     */
+    @Test fun aFastPathAnswerSuppressesTheConversationalTurn() {
+        val served = """{"object":"list","default":"home","profiles":[{"name":"home","default":true},{"name":"work"}]}"""
+        val answered = ProfilesAsk.step(200, served)
+        assertTrue("a 200 in the documented shape must end the refresh", answered is ProfilesAsk.Step.Answered)
+        answered as ProfilesAsk.Step.Answered
+        assertEquals(ProfilesAsk.Source.FAST_PATH, answered.result.source)
+        assertEquals(listOf("home", "work"), answered.result.served.map { it.name })
+        assertEquals("home", answered.result.default)
+
+        // Anything less than an answer takes the Ask branch, which is the only one that
+        // may send a turn.
+        for ((code, body) in listOf(
+            404 to served, 401 to served, 500 to served,
+            200 to "{}", 200 to "not json",
+            200 to """{"profiles":[{"name":"../x"}]}""",
+        )) {
+            assertEquals("$code ${body.take(20)}", ProfilesAsk.Step.Ask, ProfilesAsk.step(code, body))
+        }
     }
 
     // ---- the invariant that a switch ends the call, however the profile arrived ----

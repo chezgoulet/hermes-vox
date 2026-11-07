@@ -742,4 +742,75 @@ data: {"event":"run.completed","seq":0,"output":"recovered"}
             }
         }
     }
+    // ---- the setup turn: no clock, and a reconnect is the same run ----
+
+    /**
+     * The setup turn has no ceiling. An ordinary turn spends its recovery rounds and then stops
+     * the run; this one keeps following the same run for as long as the gateway says it is alive,
+     * and never posts `/stop`. Six failed subscriptions is well past the ordinary budget.
+     */
+    @Test
+    fun `a setup run is never stopped on loss and keeps following the same run`() = withRuns {
+        fastRecovery {
+            val (srv, log) = flakyRun(failGets = 6, status = "running")
+            srv.use {
+                val s = session(srv)
+                val done = drain(s, s.startSetupStream("set this phone up"))
+                assertEquals("", Json.str(done, "error"))
+                assertEquals("recovered", Json.str(done, "text"))
+                assertTrue("it kept following", log.count { it == "events" } >= 7)
+                assertTrue("it read the status past the ordinary rounds", log.count { it == "status" } > 3)
+                assertTrue("it never stopped the run", log.none { it == "stop" })
+                assertEquals(
+                    "one turn: the reconnect never submitted another",
+                    1,
+                    srv.requests.count { it.method == "POST" && it.path == "/v1/runs" },
+                )
+            }
+        }
+    }
+
+    /**
+     * A dropped setup socket reattaches from `last_seq` to the **same** run id. A second
+     * `POST /v1/runs` would be a second turn — the failure this route exists to avoid.
+     */
+    @Test
+    fun `a dropped setup socket reattaches to the same run id`() = withRuns {
+        val gets = Collections.synchronizedList(ArrayList<String>())
+        val posts = AtomicInteger()
+        val attempt = AtomicInteger()
+        TestServer { r, w ->
+            when {
+                r.method == "POST" && r.path == "/v1/runs" -> {
+                    posts.incrementAndGet()
+                    w.send(202, "Accepted", """{"run_id":"run_setup","status":"started"}""")
+                }
+                r.method == "GET" && r.path.contains("/events") -> {
+                    gets.add(r.path)
+                    w.sse()
+                    if (attempt.incrementAndGet() == 1) {
+                        w.write("""id: 0
+data: {"event":"tool.started","run_id":"run_setup","tool":"terminal","preview":"date","tool_call_id":"c1","seq":0}
+
+""")
+                    } else {
+                        w.write("""id: 1
+data: {"event":"run.completed","run_id":"run_setup","seq":1,"completed":true,"output":"done"}
+
+""")
+                    }
+                }
+                else -> w.send(404, "Not Found", "{}")
+            }
+        }.use { srv ->
+            val s = session(srv)
+            val done = drain(s, s.startSetupStream("set this phone up"))
+            assertEquals("done", Json.str(done, "text"))
+            assertEquals("one admission, not a second turn", 1, posts.get())
+            assertTrue("the same run was followed again", gets.size >= 2)
+            for (path in gets) assertTrue(path, path.startsWith("/v1/runs/run_setup/events"))
+            assertTrue("the reattach asked for the events after the last seq seen",
+                gets.any { it.contains("last_seq=0") })
+        }
+    }
 }

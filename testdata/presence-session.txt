@@ -1,0 +1,16 @@
+10-20 14:20:51.480 15273 15273 D HermesVox: event=er-presence line=1 interval=4028 density=conversational kind=lag h=aaaa0001
+10-20 14:20:55.512 15273 15273 D HermesVox: event=er-presence skip line=2 reason=silent density=conversational
+10-20 14:20:55.513 15273 15273 D HermesVox: event=er-presence detail line=2 why=too-many-words text=<hidden>
+10-20 14:21:04.600 15273 15273 D HermesVox: event=er-soul kind=working decision=spoken chars=37 heard=false mood=warm ms=1240 boundaryMs=1800
+10-20 14:21:04.601 15273 15273 D HermesVox: event=er-presence line=3 interval=9012 density=conversational kind=soul h=aaaa0002
+10-20 14:21:09.140 15273 15273 D HermesVox: event=er-presence stop reason=reply lines=2
+10-20 14:21:20.020 15273 15273 D HermesVox: event=er-soul kind=working decision=spoken chars=37 heard=false mood=warm ms=980 boundaryMs=2400
+10-20 14:21:20.021 15273 15273 D HermesVox: event=er-presence line=1 interval=11500 density=conversational kind=soul h=aaaa0002
+10-20 14:21:31.900 15273 15273 D HermesVox: event=er-presence stop reason=call-end lines=1
+10-20 14:24:02.310 15273 15273 D HermesVox: event=er-presence line=1 interval=3800 density=conversational kind=lag h=bbbb0001
+10-20 14:24:02.311 15273 15273 D HermesVox: event=er-glue source=spoken critical=false chars=12
+10-20 14:24:06.190 15273 15273 D HermesVox: event=er-presence skip line=2 density=conversational
+10-20 14:24:14.500 15273 15273 D HermesVox: event=er-soul kind=working decision=spoken chars=22 heard=false mood=calm ms=1500 boundaryMs=2100
+10-20 14:24:14.501 15273 15273 D HermesVox: event=er-presence line=3 interval=8200 density=conversational kind=soul h=bbbb0002
+10-20 14:24:14.502 15273 15273 D HermesVox: event=er-render-skip reason=engine-busy
+10-20 14:24:23.010 15273 15273 D HermesVox: event=er-presence stop reason=reply lines=2

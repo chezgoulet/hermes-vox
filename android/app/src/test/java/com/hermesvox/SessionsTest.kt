@@ -412,29 +412,22 @@ class SessionsTest {
         assertEquals(listOf("one", "two", "three, from the desk"), a.resumed.map { it.content })
     }
 
-    // ---- the gate ---------------------------------------------------------------------
+    // ---- the word that reaches the card (no gate: #437/D39) ---------------------------
 
-    @Test fun the_last_door_refuses_with_the_alpha_set_off() {
-        val off = AlphaGate.Reader { _, _ -> false }
-        assertEquals(Sessions.REFUSED_ALPHA, Sessions.refusal(off))
-        // The master on but this set unselected is still off.
-        val masterOnly = AlphaGate.Reader { k, d ->
-            if (k == AlphaGate.KEY_MASTER) true else d
-        }
-        assertEquals(Sessions.REFUSED_ALPHA, Sessions.refusal(masterOnly))
-        val on = AlphaGate.Reader { k, _ -> k == AlphaGate.KEY_MASTER || k == AlphaGate.FeatureSet.SESSIONS.key }
-        assertNull(Sessions.refusal(on))
-    }
-
-    @Test fun the_word_is_unknown_when_the_set_is_off_and_the_command_when_it_is_on() {        val off = Sessions.gate(AlphaGate.Reader { _, _ -> false })
-        assertNull(Sessions.commandFor("/sessions", off))
-        assertNull(Sessions.commandFor("sessions", off))
-        // With the set off the word is ordinary conversation, exactly like a name no build has.
-        val on = Sessions.gate(AlphaGate.Reader { k, _ -> k == AlphaGate.KEY_MASTER || k == AlphaGate.FeatureSet.SESSIONS.key })
-        assertEquals(Sessions.COMMAND, Sessions.commandFor("/sessions", on)?.name)
-        assertEquals(Sessions.COMMAND, Sessions.commandFor("  Sessions ", on)?.name)
+    /**
+     * Sessions left Alpha on 2026-11-06 (D39): the word is the catalogue's for every install,
+     * with no switch in front of it. What the parser said before is unchanged — a sentence
+     * that happens to contain the word is a sentence, not a command.
+     */
+    @Test fun the_word_is_the_command_for_every_install() {
+        assertEquals(Sessions.COMMAND, Sessions.commandFor("/sessions")?.name)
+        assertEquals(Sessions.COMMAND, Sessions.commandFor("  Sessions ")?.name)
         // A sentence that happens to contain the word is a sentence, not a command.
-        assertNull(Sessions.commandFor("show me the sessions I had yesterday", on))
+        assertNull(Sessions.commandFor("show me the sessions I had yesterday"))
+        assertNull(Sessions.commandFor("/profiles"))
+        // Nothing hides it: the catalogue lists it even for a gate that allows nothing.
+        assertTrue(CommandCatalog.commands(CommandCatalog.Gate.NOTHING)
+            .any { it.name == Sessions.COMMAND })
     }
 
 

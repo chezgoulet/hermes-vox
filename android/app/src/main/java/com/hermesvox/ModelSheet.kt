@@ -18,12 +18,16 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 
 /**
- * The model switcher (`/models`): the gateway's catalogue as a fan-out — provider, then
- * category, then model — on the app's own ground, instead of a stock list of raw strings.
+ * The model switcher (`/models`): the gateway's catalogue as **provider → model** on the
+ * app's own ground, instead of a stock list of raw strings.
  *
- * A provider with few models opens straight onto them, under their category headers; one
- * with many opens onto its categories first ([ModelChoices.showsCategories]), so no level
- * is a tap that saves nothing. A search across every provider sits on the first level.
+ * There is no category level (#5): a provider opens onto every one of its models in one list,
+ * and what a model can do is carried on its own row as [ModelChoices.Cap] marks — small
+ * drawings, each with words for a screen reader — instead of a header the person has to
+ * choose before they know what is behind it. The marks say only what the gateway's
+ * `capabilities` flags state (`reasoning`, `fast`, and whether reasoning can be turned off);
+ * the model's name is not treated as a capability. A search across every provider sits on
+ * the first level.
  *
  * Loading, failure and an empty catalogue are said inside the sheet, where the person is
  * looking — not as a toast behind it. [load] is called off the UI thread.
@@ -39,13 +43,14 @@ class ModelSheet(
         object Loading : Level()
         object Failed : Level()
         object Providers : Level()
-        data class Categories(val p: ModelChoices.Provider) : Level()
-        data class Models(val p: ModelChoices.Provider, val only: ModelChoices.Category?) : Level()
+        data class Models(val p: ModelChoices.Provider) : Level()
     }
 
     private var dialog: Dialog? = null
     private var level: Level = Level.Loading
     private var providers: List<ModelChoices.Provider> = emptyList()
+    /** What the payload carried that this app could not read (#6) — said, not dropped. */
+    private var dropped: List<String> = emptyList()
     private var query = ""
     private lateinit var title: TextView
     private var backMark: View? = null
@@ -102,13 +107,20 @@ class ModelSheet(
         level = Level.Loading; render(false)
         val (m, p) = current()
         Thread {
-            val parsed = try { ModelChoices.parse(load(), m, p) } catch (e: Throwable) {
+            val catalog = try { ModelChoices.read(load(), m, p) } catch (e: Throwable) {
                 VoxLog.w("event=models-catalog-failed err=${e.message?.take(120)}"); null
+            }
+            // #6: a provider or model the payload carries but this app cannot read is named
+            // in the log rather than vanishing from the list without a trace.
+            catalog?.dropped?.takeIf { it.isNotEmpty() }?.let {
+                VoxLog.w("event=models-catalog-dropped count=${it.size} " +
+                    "what=${it.joinToString("; ").take(400)}")
             }
             main.post {
                 if (dialog == null) return@post
-                if (parsed == null) { level = Level.Failed; render(false); return@post }
-                providers = parsed
+                if (catalog == null) { level = Level.Failed; render(false); return@post }
+                providers = catalog.providers
+                dropped = catalog.dropped
                 level = Level.Providers
                 render(false)
             }
@@ -117,9 +129,8 @@ class ModelSheet(
 
     /** One step back inside the sheet; false when already at the first level. */
     private fun up(): Boolean {
-        val next = when (val l = level) {
-            is Level.Models -> if (l.only != null) Level.Categories(l.p) else Level.Providers
-            is Level.Categories -> Level.Providers
+        val next = when (level) {
+            is Level.Models -> Level.Providers
             else -> return false
         }
         level = next; render(true, deeper = false)
@@ -134,15 +145,13 @@ class ModelSheet(
         val l = level
         search.visibility = if (l == Level.Providers) View.VISIBLE else View.GONE
         // The way back is shown only where there is somewhere to go back to.
-        backMark?.visibility = if (l is Level.Categories || l is Level.Models) View.VISIBLE else View.GONE
+        backMark?.visibility = if (l is Level.Models) View.VISIBLE else View.GONE
         title.text = when (l) {
-            is Level.Categories -> l.p.name.uppercase()
             is Level.Models -> l.p.name.uppercase()
             else -> "MODELS"
         }
         crumb.text = when (l) {
-            is Level.Models -> l.only?.let { "${it.label} — ${it.blurb}" } ?: ModelChoices.providerLine(l.p)
-            is Level.Categories -> ModelChoices.providerLine(l.p)
+            is Level.Models -> ModelChoices.providerLine(l.p)
             else -> "Switching starts a fresh thread"
         }
         when (l) {
@@ -152,12 +161,7 @@ class ModelSheet(
                 list.addView(row("Try again", null, null, drill = false) { fetch() })
             }
             Level.Providers -> providersLevel()
-            is Level.Categories -> for ((c, ms) in ModelChoices.byCategory(l.p)) {
-                list.addView(row(c.label, "${c.blurb} · ${ms.size}", if (ms.any { it.current }) "in use" else null, drill = true) {
-                    open(Level.Models(l.p, c))
-                })
-            }
-            is Level.Models -> modelsLevel(l.p, l.only)
+            is Level.Models -> modelsLevel(l.p)
         }
         if (moved) VoxSheet.enter(list, deeper)
     }
@@ -170,37 +174,39 @@ class ModelSheet(
             return
         }
         if (providers.isEmpty()) { list.addView(note("The gateway lists no models.")); return }
+        // A payload entry that could not be read is stated here, in the same words the log
+        // got, so a missing provider is never a silent omission (#6).
+        if (dropped.isNotEmpty()) list.addView(note(
+            "${dropped.size} entr${if (dropped.size == 1) "y" else "ies"} the gateway sent " +
+                "cannot be read: ${dropped.joinToString("; ")}", warn = true))
         for (p in providers) {
             val drill = p.models.isNotEmpty()
-            // A provider with nothing to choose and no sign-in on the gateway is said, not
+            // Every provider the payload carries is shown (#6), but one the gateway says this
+            // host is not signed in to — or one with no model to choose — is said, not
             // offered: choosing it would route every turn to a provider that cannot answer.
-            if (!drill && p.signedIn == false) {
+            val usable = drill && p.signedIn != false
+            if (!usable) {
                 list.addView(row(p.name, ModelChoices.providerLine(p), null, drill = false, enabled = false) {})
                 continue
             }
             list.addView(row(p.name, ModelChoices.providerLine(p), if (p.current) "in use" else null, drill) {
-                when {
-                    !drill -> pick(p, null)   // the gateway lists no models: choose the provider itself
-                    ModelChoices.showsCategories(p) -> open(Level.Categories(p))
-                    else -> open(Level.Models(p, null))
-                }
+                // A provider with models always opens onto all of them, in one list.
+                open(Level.Models(p))
             })
             if (p.warning.isNotBlank()) list.addView(note(p.warning, warn = true))
         }
     }
 
-    private fun modelsLevel(p: ModelChoices.Provider, only: ModelChoices.Category?) {
-        val groups = ModelChoices.byCategory(p).filter { only == null || it.first == only }
-        for ((c, ms) in groups) {
-            if (only == null && groups.size > 1) list.addView(VoxSheet.subhead(act, c.label))
-            for (m in ms) list.addView(modelRow(p, m, withProvider = false))
-        }
+    /** Every model of the provider, one list, in the gateway's order (#5). */
+    private fun modelsLevel(p: ModelChoices.Provider) {
+        for (m in p.models) list.addView(modelRow(p, m, withProvider = false))
     }
 
     private fun modelRow(p: ModelChoices.Provider, m: ModelChoices.Model, withProvider: Boolean): View {
-        val detail = ModelChoices.detail(m, withCategory = withProvider)
+        val detail = ModelChoices.detail(m)
         val line = if (withProvider) listOf(p.name, detail).filter { it.isNotBlank() }.joinToString(" · ") else detail
-        return row(m.name, line.ifBlank { null }, if (m.current) "in use" else null, drill = false) { pick(p, m) }
+        return row(m.name, line.ifBlank { null }, if (m.current) "in use" else null, drill = false,
+            caps = ModelChoices.caps(m), capWords = { cap -> ModelChoices.says(m, cap) }) { pick(p, m) }
     }
 
     private fun pick(p: ModelChoices.Provider, m: ModelChoices.Model?) {
@@ -214,10 +220,12 @@ class ModelSheet(
         setPadding(dp(4), dp(10), dp(4), dp(10))
     }
 
-    /** A row in the commands sheet's grammar: title, one optional line, an optional state
-     *  chip, and "›" when the tap goes one level deeper rather than choosing. */
+    /** A row in the commands sheet's grammar: title, one optional line, its capability marks,
+     *  an optional state chip, and "›" when the tap goes one level deeper rather than choosing. */
     private fun row(title: String, line: String?, chip: String?, drill: Boolean,
-                    enabled: Boolean = true, onTap: () -> Unit): View {
+                    enabled: Boolean = true, caps: List<ModelChoices.Cap> = emptyList(),
+                    capWords: (ModelChoices.Cap) -> String = { it.says },
+                    onTap: () -> Unit): View {
         val r = LinearLayout(act).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -226,13 +234,30 @@ class ModelSheet(
             setPadding(dp(14), dp(12), dp(14), dp(12))
             minimumHeight = dp(56)
             if (enabled) setOnClickListener { onTap() } else { isClickable = false; isFocusable = false; alpha = 0.55f }
-            // One announcement per row, in reading order; "›" is said as "opens".
-            contentDescription = listOfNotNull(title, line, chip, if (drill) "opens" else null).joinToString(", ")
+            // One announcement per row, in reading order — including what the model can do,
+            // because the marks are drawings and a screen reader cannot see them; "›" is said
+            // as "opens".
+            contentDescription = (listOfNotNull(title, line) + caps.map(capWords) +
+                listOfNotNull(chip, if (drill) "opens" else null)).joinToString(", ")
         }
         val text = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         text.addView(TextView(act, null, 0, R.style.HvRowTitle).apply { this.text = title; maxLines = 2 })
         if (line != null) text.addView(TextView(act, null, 0, R.style.HvRowValue).apply { this.text = line })
         r.addView(text, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        // What the model can do (#5): one small mark per capability, in screen order, beside
+        // the words. Each carries its own description too; the row above already says them in
+        // its single announcement, so the marks are not separate stops for a screen reader.
+        if (caps.isNotEmpty()) {
+            val marks = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            for (cap in caps) {
+                marks.addView(GlyphMark(act, Marks.cap(cap), color(R.color.hv_text_dim)).apply {
+                    contentDescription = capWords(cap)
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                }, LinearLayout.LayoutParams(dp(16), dp(16)).apply { marginStart = dp(8) })
+            }
+            r.addView(marks, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                .apply { marginStart = dp(4) })
+        }
         if (chip != null) r.addView(TextView(act, null, 0, R.style.HvRowAction).apply {
             this.text = chip
             background = ContextCompat.getDrawable(act, R.drawable.bg_chip)

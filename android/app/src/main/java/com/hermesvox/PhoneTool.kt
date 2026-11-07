@@ -23,25 +23,24 @@ import com.hermesvox.core.Json
  * (including mid-session).
  *
  * A call that still names a hidden action gets a described refusal rather than a transport error:
- * `reason:"not_granted"` when the group is Off, `reason:"approval-required"` when it is Ask and the
- * tier waits for a card. A **reported** (Tier 1) group at Ask runs: the owner turned it on, and the
- * result is reported back to them.
+ * `reason:"not_granted"` when the group is Off. A group at **Ask** parses into a call exactly as
+ * at Allow; [PhoneEngine] then raises the same card for every action and executes only after the
+ * owner answers and the agent calls again with the id.
  *
  * ## The tier table (D32's bounds, extended by #421 steps 3–4 and #429)
  *
  * | tier | actions | what happens |
  * |---|---|---|
- * | 0 — instant | `timer`, `alarm`, `dnd`, `volume`, `play`, `pause`, `skip`, `now_playing`, `state`, `clip`, `clip_read`, `notifications`, `notification_read`, `contact`, `message`, `dial`, `launch`, `open`, `status`, `undo` | executed now, reversible, private; the only tier that may be Allow. The handoff actions compose a draft or open an app the owner already trusts, so nothing leaves the phone except through that app. The two read groups are instant because they change nothing; their privacy comes from scope (a call-scoped listener, one notification at a time, numbers and labels only) |
- * | 1 — reported | `note`, `file_list`, `file_read`, `file_offer`, `agenda`, `event_create` | executed now (when granted), reported to the mind on the next turn, undoable where the row says; Ask or Off only |
- * | 2 — approval | `install`, `uninstall`, `delete`, `purchase`, `pay`, `transfer` | `uninstall` is the one that has a card on this phone: [PhoneApproval]'s two-step handshake. Every other Tier 2 name is still refused with `approval-required` |
+ * | 0 — instant | `timer`, `alarm`, `dnd`, `volume`, `play`, `pause`, `skip`, `now_playing`, `state`, `clip`, `clip_read`, `notifications`, `notification_read`, `contact`, `message`, `dial`, `apps`, `launch`, `open`, `status`, `undo` | executed when the group allows or after the card; reversible, private. The handoff actions compose a draft or open an app the owner already trusts, so nothing leaves the phone except through that app. `apps` is a read of launchable entries and what the phone can honestly see running |
+ * | 1 — reported | `note`, `file_list`, `file_read`, `agenda`, `event_create`, `notification_dismiss` | executed when the group allows or after the card, and reported to the mind on the next turn; undoable where the row says. A dismissal cannot be undone |
+ * | 2 — consequential | `uninstall`, `file_offer`, `delete`, `purchase`, `pay`, `transfer` | `uninstall` and `file_offer` are implemented and use the one card handshake; the rest are named but never built, so they are never offered and a direct call is refused |
  * | not a phone action | anything else | refused as unknown, with the offered list |
  *
- * Tier 2 is deliberately refused rather than queued: an MCP call carries no run id, so the phone
- * cannot mint the gateway's approval card for it. `uninstall` is the exception that proves the
- * shape: it is irreversible and cannot be handed to another app, so [PhoneApproval] is a **phone**
- * card on this wire — a two-step handshake on the same tool, not a second gateway surface. The
- * owner may still put this whole tool behind the gateway's approval surface with `trust: untrusted`
- * in the gateway config (`docs/MCP-PHONE.md`).
+ * Tier 2 names that are not implemented are refused rather than offered: an entry in an `enum` is
+ * a promise the phone must be able to keep, and these cannot raise a card. `uninstall` and
+ * `file_offer` can, and do — through the same two-step handshake as every other action at Ask.
+ * The owner may still put this whole tool behind the gateway's approval surface with
+ * `trust: untrusted` in the gateway config (`docs/MCP-PHONE.md`).
  *
  * ## The invariant
  *
@@ -62,9 +61,9 @@ object PhoneTool {
      */
     val ALWAYS: List<String> = PhoneGrants.ALWAYS
 
-    /** Timers are bounded exactly as the grammar bounds them: 1 s to 24 h. */
-    const val MIN_DURATION_MS = LocalActionGrammar.MIN_DURATION_MS
-    const val MAX_DURATION_MS = LocalActionGrammar.MAX_DURATION_MS
+    /** Timers are bounded: 1 s to 24 h. */
+    const val MIN_DURATION_MS = 1_000L
+    const val MAX_DURATION_MS = 24L * 60 * 60 * 1000
 
     /** A note is a sentence the caller wants kept, not a document. */
     const val MAX_NOTE_CHARS = 500
@@ -133,16 +132,20 @@ object PhoneTool {
             "them. Every result says what actually happened — check ok before telling the caller an " +
             "action is done, and do not claim one this tool did not confirm. A refusal carries a " +
             "reason (`not_granted` when the owner has not granted it, `approval-required` when it " +
-            "needs the owner's approval on the phone); a refusal means nothing was performed. " +
+            "needs the owner's approval on the phone); the detail says whether a card is waiting, " +
+            "and a refusal means nothing was performed unless it carries `outcome_uncertain:true` " +
+            "— that means the work was already dispatched and may still complete, so call " +
+            "`status` instead of telling the caller nothing happened. " +
             NOTIFICATION_PRIVACY + " " +
-            "`uninstall` is two steps: call it without `approval`, then call it again with the " +
-            "returned approval id and identical arguments once the owner says yes."
+            "Every action at Ask is two steps: call without `approval`, then call again with the " +
+            "returned approval id and identical arguments once the owner answers the card."
 
     /**
      * The description the model reads, with the current grants named. Built per request, because a
      * grant can change between two turns and the model should not be reading yesterday's list.
      */
     fun description(grants: PhoneGrants.Source = PhoneGrants.ALL_OFF): String {
+        val offered = offeredActions(grants).toSet()
         val on = PhoneGrants.GROUPS.filter {
             PhoneGrants.stateOf(grants, it) != PhoneGrants.State.OFF && it.actions.isNotEmpty()
         }
@@ -150,8 +153,14 @@ object PhoneTool {
             "No capability group is on: only `status` and `undo` are available."
         } else {
             "On now: " + on.joinToString("; ") { g ->
-                "${g.label} (${PhoneGrants.stateOf(grants, g).label.lowercase()}): " +
-                    g.actions.joinToString(", ")
+                val state = PhoneGrants.stateOf(grants, g)
+                val live = g.actions.filter { it in offered }
+                when (state) {
+                    PhoneGrants.State.ASK ->
+                        "${g.label} (ask): ${live.joinToString(", ")} — each call raises a card " +
+                            "and runs only after the owner answers it"
+                    else -> "${g.label} (${state.label.lowercase()}): ${live.joinToString(", ")}"
+                }
             } + "."
         }
         return "$DESCRIPTION $grantLine"
@@ -173,22 +182,28 @@ object PhoneTool {
         "clip_read" to "the clipboard's text, when the phone allows the read",
         "file_list" to "list a folder you granted (depth-limited, paged, names and sizes only)",
         "file_read" to "read a named file's text inside the folder you granted, in whole or a window",
-        "file_offer" to "offer a named file to your agent as an artifact",
+        "file_offer" to "offer a named file to your agent as an artifact; the owner approves it first",
         "agenda" to "today's events (start, end, title, calendar)",
         "event_create" to "create one event, undoable",
         "notifications" to "a count of notifications per app, with no titles or text",
         "notification_read" to "one notification's app, time, title and text by id from a summary",
+        "notification_dismiss" to "dismiss one notification by id, or all of an app's; not undoable",
         "contact" to "a contact's numbers by full or partial name",
         "message" to "compose a text and open the messaging app; you send it",
         "dial" to "open the dialer with a number ready; you make the call",
+        "apps" to "what is installed, and what the phone can honestly see running",
         "launch" to "open a launchable app by package or name",
         "open" to "open a URI in the app that claims it",
-        "uninstall" to "remove an app by package; the phone asks you first",
+        "uninstall" to "remove an app by package",
     )
 
     /** The `tools/list` entry, verbatim. Pure, so [PhoneToolTest] can pin the wire shape. */
-    fun schema(grants: PhoneGrants.Source = PhoneGrants.ALL_OFF): Map<String, Any?> {
+    fun schema(
+        grants: PhoneGrants.Source = PhoneGrants.ALL_OFF,
+        folders: List<String> = emptyList(),
+    ): Map<String, Any?> {
         val offered = offeredActions(grants)
+        val folderChoices = PhoneFiles.folderChoices(folders)
         val actionDesc = buildString {
             append(
                 offered.joinToString("; ") { a ->
@@ -263,7 +278,9 @@ object PhoneTool {
                     "description" to
                         "launch only: the package name, or the name the launcher shows. At most " +
                         "$MAX_APP_CHARS characters. Only an activity with a launcher entry can " +
-                        "be started; a package with no launchable activity is no_app.",
+                        "be started; a package with no launchable activity is no_app. " +
+                        "notification_dismiss: the launcher label or package whose notifications " +
+                        "are all dismissed.",
                 ),
                 "uri" to linkedMapOf(
                     "type" to "string",
@@ -284,17 +301,20 @@ object PhoneTool {
                 "approval" to linkedMapOf(
                     "type" to "string",
                     "description" to
-                        "uninstall only: the `approval_id` a previous call returned. Omit it to " +
-                        "ask the owner; the phone raises a card and answers " +
+                        "Any action whose group is at Ask: the `approval_id` a previous call " +
+                        "returned. Omit it to ask the owner; the phone raises a card and answers " +
                         "approval-required with that id and its expiry. Call again with **the " +
-                        "same action and arguments** plus this id to remove the app after the " +
-                        "owner approves. An id is used once.",
+                        "same action and arguments** plus this id after the owner answers. An " +
+                        "id is used once, for those arguments only, and only an unlocked phone " +
+                        "can approve.",
                 ),
                 "id" to linkedMapOf(
                     "type" to "string",
                     "description" to
                         "undo: the id an earlier result returned. notification_read: one of the " +
-                        "ids a notifications summary returned — never guess one.",
+                        "ids a notifications summary returned — never guess one. " +
+                        "notification_dismiss: an id a `notifications` summary returned — the " +
+                        "notification to dismiss.",
                 ),
                 "name" to linkedMapOf(
                     "type" to "string",
@@ -308,12 +328,23 @@ object PhoneTool {
                 ),
                 "folder" to linkedMapOf(
                     "type" to "string",
-                    "enum" to PhoneFiles.FOLDERS,
-                    "description" to
-                        "file_list, file_read or file_offer only: which granted folder to look in — " +
-                        "${PhoneFiles.FOLDERS.joinToString(" or ")} (the default is " +
-                        "${PhoneFiles.DEFAULT_FOLDER}). Everything is inside that folder only; " +
-                        "there is no way to name another one.",
+                    // The enum is the owner's grants, built per `tools/list` the way the action
+                    // enum is: a folder that is not granted is not a name the phone can keep.
+                    *folderEnum(folderChoices),
+                    "description" to if (folderChoices.isEmpty()) {
+                        "file_list, file_read or file_offer only: the folder the owner granted. " +
+                            "No folder is granted yet, so these actions refuse no_folder until the " +
+                            "owner picks one in Phone tools → Files."
+                    } else {
+                        val which = if (folderChoices.size == 1) {
+                            "It is the only grant, so it is the default when folder is omitted."
+                        } else {
+                            "Name one of them: with several folders granted there is no default."
+                        }
+                        "file_list, file_read or file_offer only: which granted folder to look in " +
+                            "— ${folderChoices.joinToString(", ")}. $which Everything is inside " +
+                            "that folder only."
+                    },
                 ),
                 "path" to linkedMapOf(
                     "type" to "string",
@@ -357,9 +388,13 @@ object PhoneTool {
                 "length" to linkedMapOf(
                     "type" to "integer",
                     "minimum" to 1,
+                    // One answer is one cap's worth of text. A caller that wants more asks for the
+                    // next window; without a maximum one call reads a whole file into the answer.
+                    "maximum" to PhoneFiles.MAX_READ_BYTES,
                     "description" to
                         "file_read only: the window's size in bytes, ${PhoneFiles.MAX_READ_BYTES} " +
-                        "by default. The result says truncated and the file's total bytes.",
+                        "by default and at most that. The result says truncated and the file's " +
+                        "total bytes; read the rest with a later offset.",
                 ),
                 "start" to linkedMapOf(
                     "type" to "string",
@@ -484,7 +519,15 @@ object PhoneTool {
             override val action = "file_list"
         }
 
-        data class FileOffer(val name: String, val folder: String?) : Call() {
+        /**
+         * Offer one file to the agent. The name and folder are the canonical arguments the
+         * approval id is bound to; the id itself arrives in the call's `approval` argument and
+         * [PhoneEngine] owns the handshake for every action.
+         */
+        data class FileOffer(
+            val name: String,
+            val folder: String?,
+        ) : Call() {
             override val action = "file_offer"
         }
 
@@ -510,6 +553,15 @@ object PhoneTool {
         /** One notification's content, by an id a summary has already shown. */
         data class NotificationRead(val id: String) : Call() {
             override val action = "notification_read"
+        }
+
+        /** Dismiss by one summarised [id], or every notification from [app]; exactly one is set. */
+        data class NotificationDismiss(val id: String?, val app: String?) : Call() {
+            override val action = "notification_dismiss"
+        }
+
+        object Apps : Call() {
+            override val action = "apps"
         }
 
         /** A full or partial contact name, answered with numbers and their labels only. */
@@ -541,11 +593,11 @@ object PhoneTool {
         }
 
         /**
-         * Remove one app. [approvalId] is null on the request call (the phone raises the card) and
-         * the id the card returned on the execute call. The package is the canonical argument the
-         * id is bound to.
+         * Remove one app. The package is the canonical argument the approval id is bound to; the
+         * id itself arrives in the call's `approval` argument and [PhoneEngine] owns the
+         * handshake for every action.
          */
-        data class Uninstall(val packageName: String, val approvalId: String? = null) : Call() {
+        data class Uninstall(val packageName: String) : Call() {
             override val action = "uninstall"
         }
 
@@ -575,6 +627,10 @@ object PhoneTool {
      * answer to a call the model should not have made, and it does not depend on the argument shape.
      * [grants] is read now, so a revocation that happened while this request was in flight is
      * honoured here, not at the next connection.
+     *
+     * **Ask and Allow parse the same way.** Ask is not a refusal: [PhoneEngine] raises the card and
+     * executes only after the owner's answer, so the arguments have to be validated before the card
+     * is shown. Only Off refuses here.
      */
     fun parse(args: Map<String, Any?>, grants: PhoneGrants.Source = PhoneGrants.ALL_OFF): Parsed {
         val action = (args["action"] as? String)?.trim()?.lowercase().orEmpty()
@@ -591,30 +647,9 @@ object PhoneTool {
                         tier = group.tier,
                     )
                 )
-                PhoneGrants.State.ASK -> {
-                    // Ask means two different things by tier, and the difference is the whole
-                    // point of the tier: a Tier 0 group waits for the owner's card, while a
-                    // **Tier 1 (reported)** group acts when the owner turns it on and is reported
-                    // back to them — there is no per-use card to wait for, because the owner has
-                    // already said yes to the group and can see what it did. `uninstall` is the
-                    // one Tier 2 action with a card on this wire, so it goes to the engine's
-                    // two-step handshake rather than being refused outright.
-                    val tier = PhoneGrants.tierOf(action) ?: group.tier
-                    if (tier == PhoneTiers.REPORTED || action == PhoneApproval.ACTION) {
-                        parseArguments(action, args, grants)
-                    } else {
-                        Parsed.Refuse(
-                            PhoneResult.refused(
-                                action,
-                                PhoneReason.APPROVAL,
-                                "the \"${group.label}\" group is set to Ask on this phone; this use waits " +
-                                    "for the owner's approval on the phone and was not performed",
-                                tier = tier,
-                            )
-                        )
-                    }
-                }
-                PhoneGrants.State.ALLOW -> parseArguments(action, args, grants)
+                // Ask raises a card; Allow runs. Both need the arguments, and the card names
+                // what those arguments will do, so neither may skip the validation.
+                PhoneGrants.State.ASK, PhoneGrants.State.ALLOW -> parseArguments(action, args, grants)
             }
         }
         return when (PhoneTiers.of(action)) {
@@ -732,6 +767,15 @@ object PhoneTool {
                     val v = integer(raw)
                         ?: return bad(action, "length must be a whole number of bytes")
                     if (v < 1) return bad(action, "length must be at least one byte")
+                    // One answer is at most one cap of text. Asking for more is not a way to read
+                    // the whole file in one result; it is the next window's job.
+                    if (v > PhoneFiles.MAX_READ_BYTES) {
+                        return bad(
+                            action,
+                            "length is at most ${PhoneFiles.MAX_READ_BYTES} bytes; read the rest " +
+                                "with a later offset",
+                        )
+                    }
                     v
                 }
             }
@@ -826,6 +870,27 @@ object PhoneTool {
                 else -> Parsed.Run(Call.NotificationRead(id))
             }
         }
+        "apps" -> Parsed.Run(Call.Apps)
+        "notification_dismiss" -> {
+            val id = (args["id"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
+            val app = (args["app"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
+            when {
+                id != null && app != null -> bad(
+                    action,
+                    "give id or app, not both: an id dismisses one notification, an app dismisses all " +
+                        "of that app's",
+                )
+                id == null && app == null -> bad(
+                    action,
+                    "id or app is required: an id from a notifications summary, or an app name",
+                )
+                id != null && id.length > MAX_NOTIFICATION_ID_CHARS ->
+                    bad(action, "id is longer than $MAX_NOTIFICATION_ID_CHARS characters")
+                app != null && app.length > MAX_APP_CHARS ->
+                    bad(action, "app is longer than $MAX_APP_CHARS characters")
+                else -> Parsed.Run(Call.NotificationDismiss(id, app))
+            }
+        }
         "contact" -> {
             val name = (args["name"] as? String)?.trim().orEmpty()
             when {
@@ -867,9 +932,8 @@ object PhoneTool {
             }
             Parsed.Run(Call.Open(url, pkg))
         }
-        // The apps group's safe half is launch/open. `uninstall` is the one destructive action
-        // with a card: it parses into a call and the engine runs its two-step handshake. `install`
-        // is still named and refused, because its own installer confirmation is a different lane.
+        // The apps group's safe half is launch/open. `uninstall` is the consequential action: it
+        // parses into a call and the engine cards it at Ask, or runs it at Allow.
         "uninstall" -> {
             val unexpected = args.keys - setOf("action", "package", "approval")
             if (unexpected.isNotEmpty()) {
@@ -885,25 +949,8 @@ object PhoneTool {
                     "package is required and must be a dotted package name, such as " +
                         "org.mozilla.firefox",
                 )
-            val approval = when (val raw = args["approval"]) {
-                null -> null
-                is String -> raw.trim().takeIf { it.isNotEmpty() }
-                else -> return bad(action, "approval must be the id a previous result returned")
-            }
-            if (approval != null && approval.length > MAX_APPROVAL_ID_CHARS) {
-                return bad(action, "approval is longer than $MAX_APPROVAL_ID_CHARS characters")
-            }
-            Parsed.Run(Call.Uninstall(pkg, approval))
+            Parsed.Run(Call.Uninstall(pkg))
         }
-        "install" -> Parsed.Refuse(
-            PhoneResult.refused(
-                action,
-                PhoneReason.APPROVAL,
-                "installing an app needs its own approval card, which is not built; nothing was " +
-                    "performed",
-                tier = PhoneTiers.APPROVAL,
-            )
-        )
         "undo" -> {
             val id = (args["id"] as? String)?.trim().orEmpty()
             if (id.isEmpty()) bad(action, "id is required") else Parsed.Run(Call.Undo(id))
@@ -924,9 +971,11 @@ object PhoneTool {
 
     /**
      * The `to` of a message or a dial: a number, or a contact **name** only when the Contacts
-     * group is not Off. Resolving a name is reading the address book, so a phone whose owner
-     * has not granted Contacts refuses with `not_granted` naming it — never with a generic
-     * complaint about the arguments. [build] receives the recipient and whether it is a name.
+     * group is not Off. Resolving a name is reading the address book whatever action asked for it,
+     * so `dial`/`message` obey the same grant as `contact` itself: Off refuses with
+     * `not_granted`, and Ask parses into the call — [PhoneEngine] raises a card for the lookup and
+     * nothing is read until the owner answers. Neither path is a generic complaint about the
+     * arguments. [build] receives the recipient and whether it is a name.
      */
     private fun recipient(
         action: String,
@@ -943,8 +992,8 @@ object PhoneTool {
         }
         number(raw)?.let { return Parsed.Run(build(it, false)) }
         val contacts = PhoneGrants.GROUPS.first { it.id == "contacts" }
-        if (PhoneGrants.stateOf(grants, contacts) == PhoneGrants.State.OFF) {
-            return Parsed.Refuse(
+        when (PhoneGrants.stateOf(grants, contacts)) {
+            PhoneGrants.State.OFF -> return Parsed.Refuse(
                 PhoneResult.refused(
                     action,
                     PhoneReason.NOT_GRANTED,
@@ -954,6 +1003,7 @@ object PhoneTool {
                     tier = PhoneTiers.of(action),
                 )
             )
+            PhoneGrants.State.ASK, PhoneGrants.State.ALLOW -> Unit
         }
         return Parsed.Run(build(raw, true))
     }
@@ -1037,22 +1087,27 @@ object PhoneTool {
     }
 
     /**
-     * The `folder` argument, as the tool's word or null for the default, together with a refusal
-     * when it is not one of the two words. Shared by the three file actions so the words and their
-     * case can only be read one way.
+     * The `folder` argument, as the folder's own label or null for "the only grant", together with
+     * a refusal when it is not a string.
+     *
+     * The value is not checked against a list here: the list is the owner's grants, read per
+     * request, and the **engine** resolves it against them — a folder that is not granted is
+     * refused `no_folder` with the labels that are, which is more useful than "not one of two
+     * words". The advertised `enum` in [schema] is the same set of labels.
      */
     private fun folderArg(args: Map<String, Any?>, action: String): Pair<String?, Parsed?> =
         when (val raw = args["folder"]) {
             null -> null to null
-            is String -> if (raw.isBlank()) {
-                null to null
-            } else {
-                PhoneFiles.FOLDERS.firstOrNull { it.equals(raw.trim(), ignoreCase = true) }?.let {
-                    it to null
-                } ?: (null to bad(action, "folder must be ${PhoneFiles.FOLDERS.joinToString(" or ")}"))
-            }
+            is String -> raw.trim().takeIf { it.isNotEmpty() } to null
             else -> null to bad(action, "folder must be a string")
         }
+
+    /**
+     * The `folder` property's `enum`, or nothing at all when no folder is granted — an empty enum
+     * would advertise a vocabulary with no words in it.
+     */
+    private fun folderEnum(choices: List<String>): Array<Pair<String, Any?>> =
+        if (choices.isEmpty()) emptyArray() else arrayOf<Pair<String, Any?>>("enum" to choices)
 
     /** A refusal with a reason of its own — `bad_path`, `no_folder`, `not_text`, `too_big`. */
     private fun refused(action: String, reason: String, detail: String): Parsed =
@@ -1086,7 +1141,7 @@ object PhoneTiers {
     /** Acts now, is reported to the mind next turn, and can be undone. */
     const val REPORTED = 1
 
-    /** Leaves the phone or cannot be undone: the owner's approval surface owns it. */
+    /** Consequential, or private to read: no undo, and a card names exactly what will happen. */
     const val APPROVAL = 2
 
     private val TIER_0 = setOf(
@@ -1104,25 +1159,34 @@ object PhoneTiers {
         // Messages/calls (#429 handoff lane): a draft handed to the owner's messaging app, and
         // the dialer opened with a number ready. No SEND_SMS and no CALL_PHONE exist on this path.
         "message", "dial",
-        // Apps (#429 handoff lane): the safe half of the group. Only launchable activities are
-        // resolved, and a launch enters PiP first while a call is live.
-        "launch", "open",
+        // Apps (#429 handoff lane, extended by #apps-and-dismiss): the safe half of the group. Only
+        // launchable activities are resolved, and a launch enters PiP first while a call is live.
+        // `apps` is the installed listing — a read of launchable entries, so it is instant.
+        "launch", "open", "apps",
     )
     private val TIER_1 = setOf(
         "note",
-        // Files (#429 lane 2, listing lane): what is in the folder the owner granted, one named
-        // file inside it, and one file handed to the bridge. Nothing here walks outside the grant.
-        "file_list", "file_read", "file_offer",
+        // Files (#429 lane 2, listing lane): what is in the folder the owner granted, and one named
+        // file inside it. `file_offer` is Tier 2 below: it exports the owner's content to the agent.
+        "file_list", "file_read",
         // Calendar (#429 lane 2): today's events, and one event that can be undone.
         "agenda", "event_create",
+        // Dismissal changes something the owner can see, and cannot be undone.
+        "notification_dismiss",
     )
 
     /**
-     * The consequential capabilities the phone deliberately does **not** execute for the mind.
-     * They are named so a direct call gets "this needs the owner" rather than "unknown action".
+     * The consequential capabilities. `uninstall` and `file_offer` are implemented and run through
+     * the same card handshake as every action at Ask (or directly at Allow). The rest are named so
+     * a direct call gets "this needs the owner" rather than "unknown action"; they are never built,
+     * so they are never offered and can never raise a card.
      */
     private val TIER_2 = setOf(
-        "purchase", "pay", "install", "uninstall", "transfer",
+        "purchase", "pay", "uninstall", "transfer",
+        // `file_offer` exports the owner's content over the tailnet. The folder grant makes the
+        // export possible, not intended: at Ask every offer gets its own card, showing name, type
+        // and size; at Allow the owner has granted the export outright.
+        "file_offer",
         // `call`, `send` and `email` were names under the old messages-calls group. They are gone
         // with it: calls are `dial` (the dialer, never CALL_PHONE) and messages are `message`
         // (SENDTO, never SEND_SMS). A call naming one of them is unknown, not a capability the
@@ -1151,12 +1215,22 @@ object PhoneTiers {
         }
     }
 
-    /** True when the phone itself may perform [action]. */
-    fun executable(action: String): Boolean = of(action)?.let { it <= REPORTED } == true
+    /** True when the phone can perform [action] — directly at Allow, or after its card at Ask. */
+    fun executable(action: String): Boolean {
+        val a = action.trim().lowercase()
+        return of(a)?.let { it <= REPORTED || a == "uninstall" || a == "file_offer" } == true
+    }
 }
 
 /** The machine-readable reasons a result can carry. Stable strings; the model reads them. */
 object PhoneReason {
+    /**
+     * The phone is not in the foreground, so the activity start a handoff needs would be refused
+     * by Android. The action was not attempted — nothing was resolved, opened, ended or sent — and
+     * it can be asked for again once the owner is looking at Vox.
+     */
+    const val BACKGROUND = "background"
+
     /** The args name a path, a URI or a name that resolves outside the folder the owner granted. */
     const val BAD_PATH = "bad_path"
 
@@ -1207,6 +1281,9 @@ object PhoneReason {
 
     /** Three cards are already waiting; nothing was raised and nothing was performed. */
     const val APPROVAL_BUSY = "approval_busy"
+
+    /** The card was answered from a locked phone. Nothing was approved, and the id is burnt. */
+    const val APPROVAL_LOCKED = "approval_locked"
 
     /** The owner has not granted this capability group. Nothing was done, and it is not offered. */
     const val NOT_GRANTED = "not_granted"
@@ -1277,6 +1354,28 @@ data class PhoneResult(
         /** A performed action that cannot be undone (status), or carries no id. */
         fun info(action: String, facts: Map<String, Any?>): PhoneResult =
             PhoneResult(true, action, PhoneTiers.of(action), null, facts = facts)
+
+        /**
+         * The answer for an action whose work was already dispatched but whose outcome the caller
+         * no longer knows: it did not answer in time, or the dispatcher failed after starting it.
+         *
+         * This is deliberately **not** an ordinary refusal. `outcome_uncertain:true` says the
+         * action may still complete, so the mind must check `status` rather than telling the
+         * caller nothing happened. The wording never claims nothing was performed.
+         *
+         * [facts] adds what is known anyway (a dial's recipient and `dialer:"unknown"`); it can
+         * never displace `outcome_uncertain`.
+         */
+        fun uncertain(
+            action: String,
+            detail: String,
+            facts: Map<String, Any?> = emptyMap(),
+        ): PhoneResult {
+            val merged = linkedMapOf<String, Any?>()
+            merged.putAll(facts)
+            merged["outcome_uncertain"] = true
+            return refused(action, PhoneReason.UNAVAILABLE, detail, facts = merged)
+        }
 
         /** Nothing happened, and why. [facts] carries an approval request's id and expiry. */
         fun refused(

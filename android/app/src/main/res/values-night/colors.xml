@@ -15,6 +15,8 @@
          light theme, so the line is written once and is legible in both. -->
     <color name="hv_status">#00E5FF</color>
     <color name="hv_status_live">#35D07F</color>
+    <!-- The blue notice, night: the same semantic token, bright enough on the dark chip. -->
+    <color name="hv_notice">#7CC4FF</color>
     <color name="hv_ok">#34D399</color>
     <color name="hv_warn">#FBBF24</color>
     <color name="hv_danger">#F87171</color>

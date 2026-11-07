@@ -4,11 +4,19 @@
   python3 scripts/test_presence_session_report.py
 """
 import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
+HERE = Path(__file__).resolve().parent
+SCRIPT = HERE / "presence-session-report.py"
+FIXTURE = HERE.parent / "testdata" / "presence-session.txt"
+
 _spec = importlib.util.spec_from_file_location(
-    "presence_report", Path(__file__).with_name("presence-session-report.py")
+    "presence_report", HERE / "presence-session-report.py"
 )
 assert _spec and _spec.loader, "cannot load presence-session-report.py"
 pr = importlib.util.module_from_spec(_spec)
@@ -172,6 +180,14 @@ class Percentiles(unittest.TestCase):
         # Three samples: the tail must be the slowest, not a number between them.
         self.assertEqual(pr.pct([1200, 1400, 9000], 0.95), 9000)
 
+    def test_p95_over_an_odd_number_of_samples(self):
+        self.assertEqual(pr.pct([100, 200, 300], 0.95), 300)
+
+    def test_p95_over_an_even_number_of_samples(self):
+        # Nearest rank: ceil(0.95 × 4) = 4, the slowest of the four — never an interpolation.
+        self.assertEqual(pr.pct([900, 1200, 1400, 4000], 0.95), 4000)
+        self.assertEqual(pr.pct([900, 4000], 0.95), 4000)
+
     def test_median_of_an_even_run_interpolates(self):
         self.assertEqual(pr.pct([1, 3], 0.5), 2)
 
@@ -196,14 +212,17 @@ class NamedBar(unittest.TestCase):
         text = pr.report(pr.parse(log("event=er-presence line=1 interval=1 density=conversational kind=lag")))
         self.assertIn("[er-presence line / skip]", text)
 
-    def test_repeats_are_counted_by_hash_within_a_run(self):
+    def test_repeats_are_counted_by_hash_across_a_session(self):
+        # Two turns of one call (a `reply` stop ends a turn, not the call). The third line
+        # repeats the earlier two across the turn boundary: a repeat is a call-level fact.
         d = pr.summarise(pr.parse(log(
             "event=er-presence line=2 interval=1 density=conversational kind=soul h=aaaa0001",
             "event=er-presence line=3 interval=1 density=conversational kind=soul h=aaaa0001",
             "event=er-presence stop reason=reply lines=3",
             "event=er-presence line=2 interval=1 density=conversational kind=soul h=aaaa0001",
         )))
-        self.assertEqual(d["repeats"], 1)
+        self.assertEqual(d["repeats"], 2)
+        self.assertEqual(d["hashed_lines"], 3)
         self.assertIs(self.row(d, "repeats")["verdict"], False)
 
     def test_repeats_without_hashes_are_unknown_not_a_pass(self):
@@ -229,6 +248,163 @@ class NamedBar(unittest.TestCase):
         d = pr.summarise(pr.parse(log("event=er-presence line=1 interval=1 density=conversational kind=lag")))
         for k in ("rate", "late", "p95"):
             self.assertIn(k, d["checks"])
+
+
+class SessionSummary(unittest.TestCase):
+    """The whole summary over testdata/presence-session.txt — a synthetic log with two
+    conversations (one closed by `stop reason=call-end`), known counts, and one repeat."""
+
+    def setUp(self):
+        self.text = FIXTURE.read_text(encoding="utf-8")
+        self.s = pr.parse(self.text)
+        self.d = pr.summarise(self.s)
+
+    def test_slots_spoken_and_skips_by_reason(self):
+        self.assertEqual(self.d["sessions"], 2)
+        self.assertEqual(self.d["runs"], 3)
+        self.assertEqual(self.d["slots"], 7)
+        self.assertEqual(self.d["spoken"], 5)
+        self.assertAlmostEqual(self.d["rate"], 5 / 7)
+        # A skip with no reason is `unknown`, counted — never dropped from the denominator.
+        self.assertEqual(self.d["skips"], {"silent": 1, "unknown": 1})
+
+    def test_repeats_are_session_scoped(self):
+        # h=aaaa0002 is said in two different turns of the first call: one repeat.
+        self.assertEqual(self.d["repeats"], 1)
+        self.assertEqual(self.d["hashed_lines"], 5)
+
+    def test_render_latency_p50_and_p95(self):
+        self.assertEqual(self.d["render_ms_p50"], 1240)
+        self.assertEqual(self.d["render_ms_p95"], 1500)
+        self.assertEqual(self.d["render_samples"], 3)
+
+    def test_nothing_landed_after_the_reply_in_this_log(self):
+        self.assertEqual(self.d["late_drops"], 0)
+        self.assertEqual(self.d["late_working"], 0)
+        self.assertEqual(self.d["late_total"], 0)
+
+    def test_the_bar_rows_carry_value_and_n(self):
+        rows = {b["name"]: b for b in self.d["bar"]}
+        self.assertAlmostEqual(rows["speak-rate"]["value"], 5 / 7)
+        self.assertEqual(rows["speak-rate"]["n"], 7)
+        self.assertEqual(rows["repeats"]["value"], 1)
+        self.assertEqual(rows["repeats"]["n"], 5)
+        self.assertEqual(rows["late"]["n"], 10)   # soul renders (3) + working slots (7)
+        self.assertEqual(rows["render-p95"]["value"], 1500)
+        self.assertIs(rows["render-p95"]["verdict"], True)
+        self.assertEqual(rows["boundary"]["n"], 3)
+        self.assertIs(rows["boundary"]["verdict"], True)
+
+    def test_the_fixture_fails_only_on_the_repeat(self):
+        failed = [b["name"] for b in self.d["bar"] if b["verdict"] is False]
+        self.assertEqual(failed, ["repeats"])
+        self.assertFalse(self.d["passes_bar"])
+
+    def test_the_report_prints_the_number_beside_each_criterion(self):
+        text = pr.report(self.s)
+        self.assertIn("  sessions             2", text)
+        self.assertIn("  slots offered        7", text)
+        self.assertIn("  skips by reason      silent 1, unknown 1", text)
+        self.assertIn("  repeats              1", text)
+        self.assertIn("  render latency       p50 1240 ms   p95 1500 ms   n=3", text)
+        self.assertIn("fail    repeats", text)
+        self.assertIn("pass    speak-rate", text)
+        self.assertIn("verdict: fail", text)
+
+
+class SkipReasons(unittest.TestCase):
+    def test_a_skip_with_no_reason_is_unknown_not_dropped(self):
+        d = pr.summarise(pr.parse(log(
+            "event=er-presence line=1 interval=4000 density=conversational kind=lag",
+            "event=er-presence skip line=2 density=conversational",
+            "event=er-presence skip line=3 reason=silent density=conversational",
+        )))
+        self.assertEqual(d["slots"], 3)
+        self.assertEqual(d["spoken"], 1)
+        self.assertEqual(d["skips"], {"unknown": 1, "silent": 1})
+        self.assertEqual(sum(d["skips"].values()), 2)
+
+
+class RepeatSessions(unittest.TestCase):
+    def test_the_same_line_in_a_second_call_is_not_a_repeat(self):
+        # `stop reason=call-end` closes the conversation; the next call starting with the same
+        # line is the app being consistent, not repeating itself.
+        d = pr.summarise(pr.parse(log(
+            "event=er-presence line=1 interval=1 density=conversational kind=soul h=aaaa0001",
+            "event=er-presence stop reason=call-end lines=1",
+            "event=er-presence line=1 interval=1 density=conversational kind=soul h=aaaa0001",
+            "event=er-presence stop reason=reply lines=1",
+        )))
+        self.assertEqual(d["sessions"], 2)
+        self.assertEqual(d["hashed_lines"], 2)
+        self.assertEqual(d["repeats"], 0)
+        self.assertIs(next(b for b in d["bar"] if b["name"] == "repeats")["verdict"], True)
+
+    def test_a_second_log_file_is_a_second_session(self):
+        one = pr.parse(log("event=er-presence line=1 interval=1 density=conversational kind=soul h=aaaa0001"))
+        two = pr.parse(log("event=er-presence line=1 interval=1 density=conversational kind=soul h=aaaa0001"))
+        one.merge(two)
+        d = pr.summarise(one)
+        self.assertEqual(d["sessions"], 2)
+        self.assertEqual(d["repeats"], 0)
+        self.assertEqual(d["slots"], 2)
+
+
+class BarCli(unittest.TestCase):
+    def run_script(self, *args):
+        return subprocess.run(
+            [sys.executable, str(SCRIPT), *args],
+            capture_output=True, text=True, check=False,
+        )
+
+    def test_bar_on_a_session_with_no_offers_says_no_data_everywhere(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            empty = Path(tmp) / "empty.log"
+            # A log that never offered a slot: the bar has nothing to measure, so it must not
+            # pass. Five rows, five `no data`.
+            empty.write_text(log("event=er-soul-drop reason=late gen=1"), encoding="utf-8")
+            out = self.run_script("--bar", str(empty))
+            # No data is not a failure and not a pass. Exit 2 keeps a caller from reading
+            # an empty run as a run that met the bar — or as one that missed it.
+            self.assertEqual(2, out.returncode)
+            self.assertEqual(5, out.stdout.count("    no data"))
+            self.assertIn("0 of 5 criteria measured", out.stdout)
+            self.assertIn("verdict: no data", out.stdout)
+            self.assertNotIn("verdict: fail", out.stdout)
+            self.assertNotIn("pass    ", out.stdout)
+
+    def test_bar_on_the_fixture_names_each_criterion_with_its_number(self):
+        out = self.run_script("--bar", str(FIXTURE))
+        self.assertEqual(1, out.returncode, "the fixture repeats a line, so the bar fails")
+        self.assertIn("fail    repeats          1", out.stdout)
+        self.assertIn("pass    speak-rate     71%", out.stdout)
+        self.assertIn("pass    render-p95 1500 ms", out.stdout)
+        self.assertIn("5 of 5 criteria measured, 1 failed", out.stdout)
+
+    def test_json_carries_the_same_numbers_as_the_text_summary(self):
+        out = self.run_script("--json", str(FIXTURE))
+        self.assertEqual(0, out.returncode, out.stderr)
+        d = json.loads(out.stdout)
+        self.assertEqual((2, 3, 7, 5), (d["sessions"], d["runs"], d["slots"], d["spoken"]))
+        self.assertEqual({"silent": 1, "unknown": 1}, d["skips"])
+        self.assertEqual(1, d["repeats"])
+        self.assertEqual(1500, d["render_ms_p95"])
+        self.assertEqual(1240, d["render_ms_p50"])
+        self.assertEqual(len(d["bar"]), 5)
+
+    def test_a_clean_run_passes_the_bar(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            clean = Path(tmp) / "clean.log"
+            clean.write_text(log(
+                "event=er-presence line=1 interval=4000 density=conversational kind=lag h=aaaa0001",
+                "event=er-presence line=2 interval=8000 density=conversational kind=soul h=aaaa0002",
+                "event=er-presence line=3 interval=8000 density=conversational kind=soul h=aaaa0003",
+                "event=er-soul kind=soul decision=spoken chars=20 heard=false mood=- ms=900 boundaryMs=2000",
+                "event=er-presence stop reason=reply lines=3",
+            ), encoding="utf-8")
+            out = self.run_script("--bar", str(clean))
+            self.assertEqual(0, out.returncode, out.stdout + out.stderr)
+            self.assertIn("verdict: pass", out.stdout)
 
 
 if __name__ == "__main__":

@@ -80,6 +80,14 @@ class VoiceController(private val context: Context, private val session: HermesS
         /** #282: the run ended while the request was still up, so it can no longer be
          *  answered. Never a decision — the gateway withdrew it. */
         fun onApprovalClosed(prompt: ApprovalPrompt, reason: String) {}
+        /** The silent ceiling was reached: ask the caller, on the approval card surface,
+         *  whether to keep waiting or stop. Not an approval — [WaitPromptCard] carries no
+         *  id and authorises nothing. */
+        fun onWaitPrompt(card: WaitPromptCard) {}
+        /** The wait card is gone: answered ([WaitPrompt.Outcome.KEEP]/`STOP`), its window
+         *  closed (`NO_ANSWER`), the extension ended (`EXTENDED`), or the stream resumed
+         *  and made it irrelevant (`DISMISSED`). */
+        fun onWaitPromptResolved(card: WaitPromptCard, outcome: WaitPrompt.Outcome) {}
         /** #373: the spoken-replies leg changed. [line] is the reason to show ("" when the
          *  leg is healthy again, so the screen can put the call's own state back);
          *  [degraded] means spoken replies are OFF. Both directions arrive here — a
@@ -162,6 +170,13 @@ class VoiceController(private val context: Context, private val session: HermesS
     /** One cold-start retry per listen session: the audio route can come up a beat after the
      *  call starts, and the platform recogniser reports ERROR_CLIENT/ERROR_AUDIO for that. */
     private var listenRetry = 0
+    /** The cold-start timestamps the bench (`scripts/cold-start-stt.sh`) reads from logcat:
+     *  recogniser ready, eye shown, mic recording, first audio, first partial, first speech. */
+    private val coldMarks = ColdStartMarks()
+    /** When the eye may say listening: warm recogniser + recording + samples delivered. The
+     *  bench measured the eye arriving ~0.2 s before the microphone did, so the state is held
+     *  until the leg can actually hear (see ListenReadiness). */
+    private val readiness = ListenReadiness()
     private var listener: Listener? = null
     private var bargeInEnabled = true
     @Volatile private var ttsReady = false
@@ -178,10 +193,21 @@ class VoiceController(private val context: Context, private val session: HermesS
     // firstAudioPushed arms the first-REAL-AUDIO push (see the streamChunk seam in
     // the streaming worker). Both reset at the top of every runStreamedTurn.
     @Volatile private var firstTextLatch = false     // #40/C4: one first-text push per turn
+    // TurnWait (naturalness, 2026-11-05): the tools the mind opened and closed this turn — a
+    // running tool explains a silent stream, and a started one makes a give-up uncertain — and
+    // the last time the caller's voice was heard, so a wait line never talks over them.
+    @Volatile private var turnToolCalls = 0
+    @Volatile private var turnToolOutputs = 0
+    @Volatile private var callerVoiceAt = 0L
+    /** The source of the glue playing now (SOURCE_WAIT lines hold the barge check, see the drain). */
+    @Volatile private var glueSource = ""
+    /** A wait line's echo tail: the barge drain holds until this uptime. */
+    @Volatile private var waitLineTailUntil = 0L
     // When that first text landed, for the working lane's `late` witness (milliseconds since).
     // 0 until it lands; reset with the latch at every turn.
     @Volatile private var firstTextAtMs = 0L
     @Volatile private var firstAudioPushed = false  // C4: one first-audio push per turn (real audio)
+    @Volatile private var firstSoundPushed = false  // one speech-end → first-sound push per turn
     // C4: wall-clock launch (t0) of the current streamed turn — the streaming worker
     // reads this so time-to-first-AUDIO is measured from the same origin as stt/Byte/Text.
     @Volatile private var turnStartedAt = 0L
@@ -484,7 +510,8 @@ class VoiceController(private val context: Context, private val session: HermesS
     @Volatile private var erActive = false
     /** #222/D16: the host sets this from [PresenceGate] — the user asked for Presence AND
      *  its model is downloaded AND able to start. When false the app is normal operation:
-     *  no presence loop, no asides, and no call-register prefix on the voice turn. */
+     *  no presence loop, no asides, and no presence context on the voice turn. (A spoken turn
+     *  still carries the call register and the voice reasoning effort — see runStreamedTurn.) */
     @Volatile var presenceActive: Boolean =
         PresenceGate.enabled(context) && ModelCatalog.isInstalled(context, "gemma-e2b")
     // ER Phase 5: a live mind turn while Presence runs (the semantic barge scope
@@ -507,9 +534,12 @@ class VoiceController(private val context: Context, private val session: HermesS
     // hold with content, or a turn suppressed by `turnInFlight`. One slot, newest wins; it is
     // submitted when the current turn settles ([runPendingTurn]), never discarded.
     private val pendingTurn = PendingTurn()
-    // B2 (#421): the phone's own actions — timer, alarm, do-not-disturb, volume. Created on first
-    // use so a probe-only controller never touches the alarm/audio services.
-    private val localActions: LocalActions by lazy { LocalActions(context) }
+    // The phone's own actions — timer, alarm, do-not-disturb, volume, and the rest of the tool.
+    // Created on first use so a probe-only controller never touches the alarm/audio services.
+    private val localActions: LocalActions by lazy { LocalActions.shared(context) }
+    // D38: Presence's entire view of the phone. Read-only by type, so the being can report a
+    // running timer and can never set, cancel or change one.
+    private val presenceReadout: PhoneReadout by lazy { localActions }
     // B3 (#421 steps 3–4): the phone as an MCP server, up exactly while the call is. The handler is
     // the SAME LocalActions instance the presence context reports from, so the tool and the context
     // block can never disagree about what the phone is doing.
@@ -584,6 +614,16 @@ class VoiceController(private val context: Context, private val session: HermesS
     @Volatile private var approvalDecoding = false
     private val APPROVAL_PAUSE_MS = 600L
 
+    // ---- The wait prompt (the silent ceiling asks instead of abandoning) -----
+    // This is NOT an approval: it never enters approvalGate, carries no id, and cannot be
+    // answered through submitApproval. It rides the same card surface only.
+    private val waitRun = WaitPromptRun()
+    @Volatile private var waitCardUp = false
+    /** Optional host-stated remaining allowance for the run; null = the app's 120 s default. */
+    @Volatile private var waitHostRemainingMs: Long? = null
+    /** The budget got its one "keep waiting" extension for this turn. */
+    @Volatile private var waitBudgetExtended = false
+
     init {
         // 0.8/M2.1: a PROBE-ONLY controller exists to ping the gateway and nothing
         // else. It must NOT build the speech pipeline. The dial path used to
@@ -599,6 +639,10 @@ class VoiceController(private val context: Context, private val session: HermesS
     /** The speech pipeline: TTS + STT + VAD, each loading its own on-device model.
      *  Built by [init] unless this controller exists only to probe the gateway. */
     private fun initPipeline() {
+        // A fresh pipeline load is the cold-start boundary the bench measures: every marker
+        // may fire again from here, and nowhere else (a second call on a warm pipeline is
+        // not a cold start, so it does not re-stamp ready/eye/first-audio).
+        coldMarks.reset()
         // #373: the voice-output leg is owned by TtsEngineHost from here on. It applies
         // TtsPolicy (requested engine when its model is installed, else the system voice
         // WITH the reason kept), replaces an engine that dies, and is the only thing that
@@ -705,6 +749,9 @@ class VoiceController(private val context: Context, private val session: HermesS
      *  leg so the loop keeps hearing the user instead of a dead RemoteStt. */
     private fun onSttReady(ok: Boolean) {
         sttReady = ok
+        readiness.recognizer(ok)
+        // The moment the recogniser answers — the other side of the bench's eye-vs-ready gap.
+        coldMarks.first("ready", "stage=ready ok=$ok name=${stt?.name}")
         if (ok) return
         // The streaming arm would not load (memory, a damaged file): swap in the selected
         // shipped model — the existing path — and say so (event=stt-fallback reason=init-failed).
@@ -725,10 +772,11 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (fallback != null) fallback.init { onSttReady(it) }
     }
 
-    /** True once the offline STT (+ VAD) is loaded/warm. TTS is deliberately NOT part of
-     *  this: a broken output leg must not keep the call from starting (#330). Use
-     *  [ttsStatus] to report spoken-reply availability separately. */
-    fun isWarm() = sttReady && (vad?.isAvailable != false)
+    /** True once the offline STT (+ VAD) is loaded/warm and the voice leg has DECIDED
+     *  (it need not have succeeded: a refused leg still lets the call gate answer). TTS
+     *  readiness is deliberately not part of warmth — a broken output leg must not keep
+     *  the call from starting (#330). Use [ttsStatus]/[callGate] to report it separately. */
+    fun isWarm() = sttReady && (vad?.isAvailable != false) && (ttsHost?.state?.settled != false)
 
     /** Non-empty when spoken replies are unavailable, with the reason to show the user. */
     fun ttsStatus(): String = if (ttsReady) "" else ttsIssue.ifBlank { "text-to-speech unavailable" }
@@ -737,6 +785,14 @@ class VoiceController(private val context: Context, private val session: HermesS
      *  voice is standing in). The call is fine; the setting is not being honoured, and the
      *  screen says so instead of the app silently substituting an engine. */
     fun ttsFallbackNote(): String = if (ttsReady) ttsNote else ""
+
+    /** The call-start decision for the voice leg. When it refuses, [TtsPolicy.CallGate.line]
+     *  names what is missing and where to get it; when it starts on a stand-in voice, the
+     *  line says which voice speaks. Never both silent and unexplained. */
+    internal fun callGate(): TtsPolicy.CallGate {
+        val st = ttsHost?.state ?: return TtsPolicy.CallGate(starts = true, line = "")
+        return TtsPolicy.callGate(st.settled, st.speaking, st.issue, st.note)
+    }
 
     /** True when the listen loop is actually running (capturing). NOT a sticky flag:
      *  the Activity gates re-open on this, so it can restart after a stop/background/
@@ -754,8 +810,9 @@ class VoiceController(private val context: Context, private val session: HermesS
     fun start(l: Listener, enabled: Boolean): Boolean {
         listener = l; bargeInEnabled = enabled
         listenRetry = 0   // a new call gets its own cold-start retry
-        // B3 (#421 step 3): the mind can only reach the phone while the call is live. Started on
-        // the first start of a call (this method re-enters while warming) and stopped by stop().
+        // B3 (#421 step 3): the mind can only reach the phone while the call is live — or during
+        // the one-button setup's stated window, which PhoneMcp opens for itself. Started on the
+        // first start of a call (this method re-enters while warming) and released by stop().
         if (!phoneMcpUp) {
             phoneMcpUp = true
             try { PhoneMcp.start(context) { args -> localActions.phone(args) } }
@@ -789,9 +846,34 @@ class VoiceController(private val context: Context, private val session: HermesS
         return true
     }
 
+    /** The loudest sample in a raw read, in PCM units — the bench's proof that the recorder is
+     *  delivering signal (an all-zero peak is a digitally silent, i.e. deaf, microphone). */
+    private fun micPeak(buf: ShortArray, n: Int): Int {
+        var peak = 0
+        for (i in 0 until n) {
+            val a = kotlin.math.abs(buf[i].toInt())
+            if (a > peak) peak = a
+        }
+        return peak
+    }
+
     private fun listenOffline(): Boolean {
         if (loopActive) return false
-        listener?.onState("listening"); listening = true
+        // The eye is NOT claimed here. It means "the leg is hearing", and at this point
+        // neither the recorder nor the recogniser has said anything: the bench measured this
+        // line landing ~30–90 ms before the recorder was recording and ~170–220 ms before the
+        // first samples existed, so an utterance begun on it lost its opening. It is announced
+        // from the loop, on the first read that returns samples.
+        listening = true
+        // A cold recogniser cannot hear either. start()'s warm gate normally prevents this;
+        // this is the last line of defence for its forced path (warm retry cap reached), which
+        // used to open a mic against a leg whose every decode returns null — silently.
+        if (stt != null && !sttReady) {
+            VoxLog.w("event=listen-hold reason=stt-not-ready")
+            listening = false
+            listener?.onState("warming")
+            return false
+        }
         val sr = 16000
         val minBuf = AudioRecord.getMinBufferSize(sr, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         if (minBuf <= 0) return listen()
@@ -830,6 +912,10 @@ class VoiceController(private val context: Context, private val session: HermesS
             // mic) instead of throwing into the platform-STT fallback below.
             if (!execSubmit {
                 val seg = ArrayList<Float>(sr)
+                // Cold-start mic level (the bench's evidence about a capture window that is
+                // open but near-silent): one line per 500 ms for the first 4 s of the call.
+                var loopStartedAt = 0L
+                var lastLevelAt = 0L
                 // #12: the interrupting utterance carried out of the last barge drain;
                 // non-null means the next segment STARTS with it (already in speech).
                 var seed: FloatArray? = null
@@ -890,11 +976,14 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // AEC/NS session between turns. Without it, unchanged: start per turn.
                     if (!continuous || r.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
                         try { r.startRecording() } catch (_: Throwable) { break }
+                        coldMarks.first("mic", "stage=mic-recording state=${r.recordingState}")
                     }
-                    // #28: listener callbacks must land on the main thread (the
-                    // documented contract) — the capture loop runs on the executor.
-                    main.post { listener?.onState("listening") }
-                    main.post { listener?.onLog("// hear → listening") }
+                    // The eye goes up on this segment's FIRST SAMPLES, not here: a freshly
+                    // started recorder is not audible yet, and the caller speaks on the eye.
+                    // Every frame read before the announce is fed below like any other, so the
+                    // utterance's opening is decoded and queued into the segment — never dropped.
+                    readiness.rearm()
+                    var eyeShown = false
                     var inSpeech = false; var silentMs = 0
                     var extendedLogged = false   // B2: one endpoint-extended log per utterance
                     // #18: ~250ms pre-roll ring (sr/4 samples @16kHz) so the VAD's
@@ -941,7 +1030,31 @@ class VoiceController(private val context: Context, private val session: HermesS
                     semantic?.reset()
                     while (listening && !commitRequested && !focusPause) {
                         val n = r.read(shortBuf, 0, shortBuf.size)
-                        if (n <= 0) continue
+                        if (n <= 0) {
+                            // Nothing came back: the recorder is open but deaf. This is the
+                            // bench's witness for "the eye is up and the mic is not".
+                            coldMarks.first("read-fail", "stage=read-fail n=$n")
+                            continue
+                        }
+                        // The first samples the microphone actually hands over — the moment the
+                        // capture leg can hear, whatever the recogniser is doing.
+                        coldMarks.first("audio", "stage=first-audio n=$n peak=${micPeak(shortBuf, n)}")
+                        // The eye is earned here: warm recogniser + recording + real samples.
+                        if (!eyeShown && readiness.capture(r.recordingState == AudioRecord.RECORDSTATE_RECORDING, n)) {
+                            eyeShown = true
+                            coldMarks.first("eye", "stage=eye path=on-device")
+                            // #28: listener callbacks must land on the main thread (the
+                            // documented contract) — the capture loop runs on the executor.
+                            main.post { listener?.onState("listening") }
+                            main.post { listener?.onLog("// hear → listening") }
+                        }
+                        if (loopStartedAt == 0L) loopStartedAt = android.os.SystemClock.uptimeMillis()
+                        val levelAt = android.os.SystemClock.uptimeMillis()
+                        if (levelAt - loopStartedAt <= 4_000L && levelAt - lastLevelAt >= 500L) {
+                            lastLevelAt = levelAt
+                            coldMarks.first("level${levelAt - loopStartedAt}",
+                                "stage=level t=${levelAt - loopStartedAt} peak=${micPeak(shortBuf, n)}")
+                        }
                         val frames = FloatArray(n)
                         for (i in 0 until n) frames[i] = shortBuf[i] / 32768f
                         // 0.9.1 FIELD (Pixel 9, speaker at 22/25): the ER soul opens the call
@@ -961,6 +1074,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                             continue
                         }
                         val spoke = (vad?.isAvailable == true) && vad!!.feed(frames)
+                        if (spoke) coldMarks.first("speech", "stage=first-speech")
                         // Pre-roll ONLY the frames BEFORE the VAD fires. If we add the
                         // speech-detected batch here AND again in the seg-accumulator below,
                         // the utterance START is double-counted -> a short word like "Hello"
@@ -977,7 +1091,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // the caller — it may not reset the pause, or the clip would push the
                         // endpoint back. The frames are still kept below.
                         val ackMuted = spoke && Backchannel.vadMuted(android.os.SystemClock.uptimeMillis(), ackLedger)
-                        if (spoke && !ackMuted) { inSpeech = true; silentMs = 0 } else if (inSpeech) silentMs += n * 1000 / sr
+                        if (spoke && !ackMuted) { inSpeech = true; silentMs = 0; callerVoiceAt = android.os.SystemClock.uptimeMillis() } else if (inSpeech) silentMs += n * 1000 / sr
                         if (inSpeech && speechStartAt == 0L) speechStartAt = android.os.SystemClock.uptimeMillis()
                         if (inSpeech) {
                             if (seg.isEmpty() && preBuf.size > 0) preBuf.drainInto(seg)
@@ -1058,6 +1172,9 @@ class VoiceController(private val context: Context, private val session: HermesS
                                             liveFeeds.incrementAndGet()
                                         }
                                         if (t.isNullOrBlank()) return@partial
+                                        // The first hypothesis the recogniser produced for this
+                                        // call: the bench's proof that audio was heard end to end.
+                                        coldMarks.first("partial", "stage=first-partial text=${if (logTranscripts()) t.take(120) else "<hidden>"}")
                                         // A live partial covers the utterance from its first sample.
                                         val hypStart = if (live != null) 0 else snapStart
                                         if (segCounter == segId) latestPartial.set(PartialHyp(segId, t, hypStart, snapEnd))
@@ -1174,6 +1291,15 @@ class VoiceController(private val context: Context, private val session: HermesS
                         VoxLog.dd("realtime: noise-refuse raw=${if (logTranscripts()) t.take(60) else "<hidden>"}")
                         // #228: with continuous capture the recorder never stops between turns
                         // — re-opening it is exactly the seam the switch removes.
+                        if (!continuous) try { r.stop() } catch (_: Throwable) {}
+                        continue
+                    }
+                    // The wait card is answered on the same mic as an approval, but it is
+                    // not a consent request: a non-answer is the caller's next turn.
+                    if (waitPromptPending()) {
+                        val consumed = waitUtterance(cleaned)
+                        VoxLog.d("event=wait-prompt-voice capture=segment consumed=$consumed " +
+                            "text=${if (logTranscripts()) cleaned.take(80) else "<hidden>"}")
                         if (!continuous) try { r.stop() } catch (_: Throwable) {}
                         continue
                     }
@@ -1353,12 +1479,25 @@ class VoiceController(private val context: Context, private val session: HermesS
                         // 0.9.1: the reply's level at the playback head — the echo reference.
                         // Only the on-device voice has one; System TTS keeps the fixed floor.
                         val ref = if (spk) (tts as? SherpaTts)?.playbackRms() else null
-                        if (inGrace || stateSkip) {
+                        // TurnWait: a wait line plays in GENERATION mode (nothing else does with
+                        // Presence off), where no echo reference exists — its own sound must not
+                        // read as the caller and cancel the turn it is waiting on.
+                        val waitLine = !spk && ((glueSpeaking && glueSource == SOURCE_WAIT) || readAt < waitLineTailUntil)
+                        if (inGrace || stateSkip || waitLine) {
                             bargeAudio.hold(frames, ref)   // reset sustains, history only (pre-roll)
                             bargeStat.reset()
                             continue
                         }
                         val vadSpeech = vadAvailable && (vad?.feed(frames) == true)
+                        if (vadSpeech) callerVoiceAt = readAt
+                        // The wait card uses the SAME segmented capture and recogniser as an
+                        // approval, but its answers are KEEP/STOP and nothing it hears can
+                        // authorise an action.
+                        if (waitPromptPending()) {
+                            captureApproval(frames, sr, vadSpeech, readAt)
+                            bargeStat.reset()
+                            continue
+                        }
                         // #282: while an approval is up, the mic answers THAT — it must
                         // not barge-cancel the run that is waiting for the answer. The
                         // same frames, VAD and recogniser as the ordinary loop; only the
@@ -1469,8 +1608,9 @@ class VoiceController(private val context: Context, private val session: HermesS
 
     fun stop() {
         listening = false
-        // B3 (#421 step 3): a hangup closes the phone's MCP listener. The registry in LocalActions
-        // is untouched — what is running stays running; only the socket goes.
+        // B3 (#421 step 3): a hangup releases the call's hold on the phone's MCP listener; a setup
+        // window that is still open keeps it up until its own clock ends. The registry in
+        // LocalActions is untouched — what is running stays running; only the socket goes.
         phoneMcpUp = false
         try { PhoneMcp.stop() } catch (t: Throwable) { VoxLog.w("event=phone-mcp stop-failed reason=${t.javaClass.simpleName}") }
         // A hangup closes the notification board: every record and every id is dropped here, not
@@ -1524,6 +1664,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         // flags so isWarm() reflects reality (a stale true left transcribe returning null).
         ttsReady = false
         sttReady = false
+        readiness.stop()
         voiceState.reset()
         stopped = true   // 0.5.0.1: terminal — fence every submit BEFORE shutdown
         // #19: a stopped controller is terminal — shut the executor down
@@ -1581,6 +1722,9 @@ class VoiceController(private val context: Context, private val session: HermesS
      * "approve" takes the least-privilege yes the gateway offered; "no" is always deny.
      */
     fun approvalVoice(text: String): Boolean {
+        // The wait card is answered by the SAME recogniser and allowlist shape, but its
+        // two answers are keep/stop and nothing it hears authorises an action.
+        if (waitPromptPending()) return waitUtterance(text)
         // The phone's uninstall card comes first: it is a card on this screen (or a notification)
         // and its answer uses the SAME allowlist. A phone card and a gateway card cannot both be
         // up in practice; if they were, the phone's two-word card is the one in front.
@@ -1611,6 +1755,118 @@ class VoiceController(private val context: Context, private val session: HermesS
     /** True while either kind of approval card is up, so the mic answers instead of starting a turn. */
     private fun approvalPending(): Boolean =
         approvalGate.current() != null || localActions.currentApproval() != null
+
+    // ---- The wait prompt (not an approval) ---------------------------------
+
+    /** True while the silent ceiling's question is on screen. */
+    private fun waitPromptPending(): Boolean = waitCardUp
+
+    /** Touch: answer the wait card. A duplicate tap is a local no-op. */
+    fun answerWaitPrompt(answer: WaitPrompt.Answer) {
+        answerWait(answer, "touch")
+    }
+
+    /**
+     * Records the first answer and dismisses the card. KEEP speaks its own short
+     * acknowledgement and grants the one extension; STOP is spoken by the abandonment
+     * path, exactly like the other ceilings. Nothing here touches [approvalGate].
+     */
+    private fun answerWait(answer: WaitPrompt.Answer, source: String) {
+        if (!waitCardUp) {
+            VoxLog.d("event=wait-prompt ignored reason=no-card answer=${answer.name.lowercase()}")
+            return
+        }
+        // Requirement and safety rule: a wait question never answers over an approval.
+        if (approvalPending()) {
+            VoxLog.d("event=wait-prompt dismissed reason=approval-owns-screen")
+            dismissWaitPrompt(WaitPrompt.Outcome.DISMISSED)
+            return
+        }
+        val now = android.os.SystemClock.uptimeMillis()
+        val extensionMs = WaitPrompt.extensionMs(waitHostRemainingMs)
+        if (!waitRun.answer(answer, now, extensionMs)) {
+            VoxLog.d("event=wait-prompt ignored reason=duplicate answer=${answer.name.lowercase()}")
+            return
+        }
+        waitCardUp = false
+        VoxLog.d("event=wait-prompt answer=${answer.name.lowercase()} source=$source " +
+            "extensionMs=${if (answer == WaitPrompt.Answer.KEEP) extensionMs else 0L}")
+        val card = WaitPromptCard()
+        main.post {
+            listener?.onWaitPromptResolved(
+                card,
+                if (answer == WaitPrompt.Answer.KEEP) WaitPrompt.Outcome.KEEP else WaitPrompt.Outcome.STOP,
+            )
+            if (answer == WaitPrompt.Answer.KEEP) speakGlue(WaitPrompt.LINE_KEPT, source = SOURCE_WAIT)
+        }
+    }
+
+    /** Shows and speaks the question. Main thread only; never over an approval card. */
+    private fun showWaitPrompt(gen: Long) {
+        if (gen != turnGen || !turnInFlight || genCancelled) {
+            waitRun.reset()
+            return
+        }
+        if (approvalPending()) {
+            VoxLog.d("event=wait-prompt suppressed reason=approval")
+            waitRun.reset()
+            return
+        }
+        if (waitCardUp) return
+        waitCardUp = true
+        VoxLog.d("event=wait-prompt show gen=$gen windowMs=${WaitPrompt.WINDOW_MS}")
+        listener?.onWaitPrompt(WaitPromptCard())
+        // One short line, in the being's own voice. It is glue: the mind's reply has not
+        // started, and a caller who talks over it barges the turn by the existing rules.
+        speakGlue(WaitPrompt.QUESTION, source = SOURCE_WAIT)
+    }
+
+    /** Dismisses the card without answering it. Thread-safe (the worker may call it). */
+    private fun dismissWaitPrompt(outcome: WaitPrompt.Outcome) {
+        if (!waitCardUp) return
+        waitCardUp = false
+        VoxLog.d("event=wait-prompt dismissed outcome=${outcome.name.lowercase()}")
+        val card = WaitPromptCard()
+        main.post { listener?.onWaitPromptResolved(card, outcome) }
+    }
+
+    /** A new turn, a resumed stream or an approval: the old prompt no longer applies. */
+    private fun resetWaitPrompt() {
+        if (waitCardUp) dismissWaitPrompt(WaitPrompt.Outcome.DISMISSED)
+        waitRun.reset()
+        waitBudgetExtended = false
+        waitHostRemainingMs = null
+    }
+
+    /**
+     * Voice answer while the wait card is up. The whole utterance must be an answer, by
+     * the same allowlist shape as an approval. Anything else is NOT an answer: the card is
+     * dismissed and those words become the caller's next turn (the stalled run is cut the
+     * same way a barge cuts it). A hedge is therefore neither "keep waiting" nor an action.
+     *
+     * Returns true when the wait card consumed the utterance (so it must not start a
+     * normal turn directly).
+     */
+    private fun waitUtterance(text: String): Boolean {
+        if (!waitCardUp) return false
+        val answer = WaitPrompt.resolve(text)
+        VoxLog.d("event=wait-prompt-voice answer=${answer?.name?.lowercase() ?: "none"} " +
+            "text=${if (logTranscripts()) text.take(80) else "<hidden>"}")
+        if (answer != null) {
+            answerWait(answer, "voice")
+            return true
+        }
+        dismissWaitPrompt(WaitPrompt.Outcome.DISMISSED)
+        if (text.isNotBlank()) {
+            // Their words are the newer intent. Queue them and cut the stalled turn; the
+            // gate release submits the queued turn (the F3 path every spoken turn uses).
+            pendingTurn.offer(text, android.os.SystemClock.uptimeMillis())
+            genCancelled = true
+            VoxLog.d("event=wait-prompt question-as-turn chars=${text.length}")
+            main.post { silenceAll("wait-question") }
+        }
+        return true
+    }
 
     /**
      * 0.9.1 soak: an utterance arrived while [request]'s card is up and it was not an answer.
@@ -1707,6 +1963,14 @@ class VoiceController(private val context: Context, private val session: HermesS
 
     /** Called from the stream worker when an `approval.request` arrives. */
     private fun approvalArrived(request: ApprovalRequest, runAlive: Boolean, fromTurn: Boolean = false) {
+        // The approval owns the screen. A wait question never coexists with it; the
+        // unanswered card is dismissed and its state dropped (the approval event also
+        // resets the silence clock, so a later silence may ask again).
+        if (waitCardUp) {
+            dismissWaitPrompt(WaitPrompt.Outcome.DISMISSED)
+            waitRun.reset()
+            waitBudgetExtended = false
+        }
         val accepted = approvalGate.offer(request, runAlive)
         if (accepted == null) {
             VoxLog.d("event=approval ignored reason=${if (!runAlive) "run-ended" else "duplicate"} " +
@@ -1874,14 +2138,14 @@ class VoiceController(private val context: Context, private val session: HermesS
      * socket on /v1/responses (which aborts the generation), or POST /stop on /v1/runs
      * (where the socket is only a subscriber and the run would otherwise keep going).
      */
-    private fun abandonTurn(gen: Long, streamId: String, route: TurnRoute, budget: TurnBudget) {
+    private fun abandonTurn(gen: Long, streamId: String, route: TurnRoute, budget: TurnBudget, why: String) {
         // A runs stream's own id maps to its run. L1 (0.9.1 review): there is no fallback.
         // The id is empty only while the admission is in flight, and the card heading the
         // queue then may be an earlier turn's held card or the arm's — stopping it would
         // stop another turn's run. Closing this turn's own stream is enough: the cancel and
         // the admission meet in `StreamState.bindRun`, which stops the run once it is named.
         val runId = session.runIdOf(streamId)
-        VoxLog.w("event=turn-abandon gen=$gen route=${route.name.lowercase()} reason=budget " +
+        VoxLog.w("event=turn-abandon gen=$gen route=${route.name.lowercase()} reason=$why " +
             "run=${runId.ifEmpty { "-" }} elapsedMs=${budget.elapsedMs()} " +
             "pausedMs=${budget.pausedMs()} limitMs=${StreamPollGate.STREAM_TURN_TIMEOUT_MS}")
         val stopped = TurnAbandon.perform(
@@ -1957,6 +2221,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                 val said = raw?.let {
                     (TranscriptValidator.validate(it, -1L, -1L) as? TranscriptValidator.Verdict.Accept)?.text
                 } ?: raw
+                if (waitPromptPending()) {
+                    // Not an answer = the caller's next turn; blank = no answer yet.
+                    if (!said.isNullOrBlank()) waitUtterance(said)
+                    return@execSubmit
+                }
                 if (!said.isNullOrBlank() && localActions.currentApproval() != null) {
                     val answer = localActions.approvalVoice(said)
                     VoxLog.d(
@@ -2003,6 +2272,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 readyAnnounced = true
                 // #328: the eye means "the mic is capturing", not "the controller intends to".
                 listener?.onState("listening")
+                coldMarks.first("eye", "stage=eye path=platform")
             }
         }
         return try {
@@ -2022,6 +2292,11 @@ class VoiceController(private val context: Context, private val session: HermesS
                     val cleaned = text.replace(Regex("\\[[^\\]]{0,30}\\]|\\([^)]{0,30}\\)"), " ").trim()
                     // #282: on this leg the same recogniser is armed for the approval
                     // while one is pending; its answer never becomes a turn.
+                    if (waitPromptPending()) {
+                        waitUtterance(cleaned)
+                        if (listening && waitPromptPending()) listen()
+                        return
+                    }
                     if (approvalPending()) {
                         val matched = approvalVoice(cleaned)
                         VoxLog.d("event=approval-voice capture=platform matched=$matched " +
@@ -2069,49 +2344,15 @@ class VoiceController(private val context: Context, private val session: HermesS
     }
 
     /**
-     * B2 (#421 step 2): take a recognised local action instead of a mind turn.
-     *
-     * The utterance never becomes a stream: the action runs, the caller hears one short, TRUE line,
-     * and the registry B1 reports is updated so the mind can answer follow-ups about it ("how long
-     * left?"). The turn's gate is released by [speak]'s completion, exactly like a reply's, so the
-     * mic reopens when the confirmation has finished rather than over the top of it.
-     *
-     * The receipt says `reason=local-action`: the mind did not see this turn, by design — the phone
-     * did it. `ok=false` would otherwise read as a swallowed turn in the field log.
-     */
-    private fun takeLocalAction(text: String, intent: LocalActionGrammar.Intent, gen: Long) {
-        // The turn's gate, armed here because this turn never reaches the stream body that
-        // normally arms it: the confirmation's completion releases it (as a reply's would), and
-        // the capture loop's drain is waiting on the same latch.
-        turnInFlight = true
-        voiceState.arm()
-        listener?.onLog(if (logTranscripts()) "// you → $text" else "// (you spoke)")
-        val outcome = localActions.run(intent)
-        VoxLog.d("event=local-action kind=${intent.kind} ok=${outcome.ok} " +
-            "registry=\"${localActions.registry().joinToString(",")}\" " +
-            "text=${if (logTranscripts()) text.take(80) else "<hidden>"}")
-        noteHandoff(gen, false, ErHandoff.REASON_LOCAL_ACTION, "-", text.length)
-        listener?.onLog("// local: ${if (outcome.ok) "done" else "refused or failed"}")
-        main.post {
-            // The confirmation is the turn's answer: it belongs in the transcript, and it is
-            // spoken on the authoritative path so the mic does not reopen into the middle of it.
-            listener?.onReply(outcome.line)
-            turnInFlight = false   // the action is done; only its one line is still playing
-            if (shouldSpeak()) speak(outcome.line, gen)
-            else { listener?.onState("idle"); releaseTurnGate(gen, "local-action") }
-        }
-        // The presence window belongs to the mind's work; there is none here.
-        erActive = false; erMindLive = false
-        turnUtterance = null
-    }
-
-    /**
      * B1 (#421 step 1): what the phone is doing, for the voice turn's `instructions`.
      *
      * Every fact here is cheap and readable without a permission we do not have: the local clock,
      * the battery percentage, whether there is a validated network, whether Do Not Disturb is on,
-     * the presence layer's own state, and the registry of actions the phone took itself. Never
-     * transcript text — the caller's words reach the mind as `input`, once.
+     * the presence layer's own state, and the registry of actions the mind has taken through the
+     * `phone` tool. Never transcript text — the caller's words reach the mind as `input`, once.
+     *
+     * Only [PhoneReadout] is touched. Presence may look and may never act (D38): the being gets
+     * the registry and the device facts, not [LocalActions]' mutating calls.
      */
     private fun presenceContextBlock(): String {
         val now = java.util.Calendar.getInstance()
@@ -2133,7 +2374,10 @@ class VoiceController(private val context: Context, private val session: HermesS
             soul = PresenceContext.soulToken(lastHeardSource, erPresenceOn && presenceActive),
             speaking = speaking || glueSpeaking,
             lastLine = lastHeardLine,
-            actions = localActions.registry(),
+            actions = presenceReadout.registry(
+                android.os.SystemClock.elapsedRealtime(),
+                System.currentTimeMillis(),
+            ),
             clock = clock,
             battery = battery,
             online = online,
@@ -2156,12 +2400,8 @@ class VoiceController(private val context: Context, private val session: HermesS
         // A turn the caller just started by speaking is newer than anything queued: their own
         // words supersede the queued echo of an earlier ones (the pending slot is "newest wins").
         pendingTurn.clear()
-        // B2 (#421 step 2): an utterance the local grammar recognises is taken on the phone NOW,
-        // with no network round trip. Everything else falls through untouched.
-        if (fromVoice && !pasted) {
-            val local = LocalActionGrammar.parse(text)
-            if (local != null) { takeLocalAction(text, local, gen); return }
-        }
+        // D38: the phone parses nothing. Every voice turn goes to the mind, which decides what it
+        // means and whether to act through the `phone` tool — with that path's grant and card.
         val voiceTurn = fromVoice && presenceActive
         // 0.6.2 user-facing gates: the semantic-barge scope and the presence
         // runtime are user-togglable in Settings (er_semantic_barge / er_presence).
@@ -2243,7 +2483,12 @@ class VoiceController(private val context: Context, private val session: HermesS
         firstTextLatch = false
         firstTextAtMs = 0L
         firstAudioPushed = false
+        firstSoundPushed = false
+        turnToolCalls = 0; turnToolOutputs = 0
         genCancelled = false
+        // A new turn starts with no wait question: the previous one's card (if any) is
+        // retired and its one extension does not carry over.
+        resetWaitPrompt()
         replyGen = gen
         if (!replies.begin(gen)) VoxLog.w("event=reply-begin refused gen=$gen (already open or ended)")   // #240
         armTranscript()         // 0.5.0-A: a fresh reveal cursor for this turn
@@ -2324,16 +2569,26 @@ class VoiceController(private val context: Context, private val session: HermesS
                 if (resume != null) VoxLog.d("event=resume-offer heardChars=${resume.first.heard.length} " +
                     "unsaidChars=${resume.first.unsaid.length} ageMs=${android.os.SystemClock.uptimeMillis() - resume.first.atMs}")
                 val turnText = if (resume != null) resume.second + text else text
-                // The voice turn's request: the register + presence context in `instructions`
-                // (ephemeral, never stored), and the reasoning effort the user chose (default
-                // low — a voice turn wants the fast answer, not the deepest one).
-                val instructions = if (voiceTurn) VoiceTurn.instructions(sync, presenceContextBlock()) else ""
-                val reasoning = if (voiceTurn)
+                // The voice turn's request: the register in `instructions` (ephemeral, never
+                // stored) plus, with Presence, the presence context; and the reasoning effort
+                // the user chose (default low — a voice turn wants the fast answer).
+                // Naturalness #1 (2026-11-05): this keys on SPOKEN, not on Presence. A spoken
+                // turn with Presence off used to ride startStream(text) bare — no register and
+                // no reasoning override — so the gateway ran its default effort and a long-form
+                // answer: first text 80–91 s on the Pixel 7 against 7–13 s for the same
+                // question with Presence on, both streams open in ~60 ms. The register and
+                // the effort are about being on a call, not about the being.
+                val instructions = when {
+                    voiceTurn -> VoiceTurn.instructions(sync, presenceContextBlock())
+                    fromVoice -> VoiceTurn.instructions()
+                    else -> ""
+                }
+                val reasoning = if (fromVoice)
                     com.hermesvox.core.ResponsesClient.reasoningOption(
                         prefString(VoiceTurn.PREF_REASONING, com.hermesvox.core.ResponsesClient.DEFAULT_EFFORT))
                 else null
-                val sid = if (voiceTurn) session.voiceTurn(turnText, instructions, reasoning) else session.startStream(text)
-                VoxLog.d("startStream -> $sid voiceTurn=$voiceTurn reasoning=${prefString(VoiceTurn.PREF_REASONING, com.hermesvox.core.ResponsesClient.DEFAULT_EFFORT)}")
+                val sid = if (fromVoice) session.voiceTurn(turnText, instructions, reasoning) else session.startStream(text)
+                VoxLog.d("startStream -> $sid spoken=$fromVoice presence=$voiceTurn reasoning=${if (fromVoice) prefString(VoiceTurn.PREF_REASONING, com.hermesvox.core.ResponsesClient.DEFAULT_EFFORT) else "-"}")
                 // THE RECEIPT (the reporter's check): one line per turn proving the mind was
                 // handed the turn, with the soul's decision that preceded it.
                 val handed = sid.isNotBlank()
@@ -2358,6 +2613,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 var lastEventAt = android.os.SystemClock.uptimeMillis()
                 var stall5 = false
                 var stall15 = false
+                var checkInsSaid = 0
                 while (true) {
                     val tick = android.os.SystemClock.uptimeMillis()
                     // Idempotent: repeated true ticks pause once; repeated false ticks
@@ -2433,6 +2689,12 @@ class VoiceController(private val context: Context, private val session: HermesS
                             lastEventAt = tick
                             stall5 = false; stall15 = false
                             lastActivityAt = tick   // T2: a real SSE delta/event batch is turn activity
+                            // The stream is alive again, so the wait question no longer applies.
+                            if (waitCardUp) {
+                                dismissWaitPrompt(WaitPrompt.Outcome.DISMISSED)
+                                waitRun.reset()
+                                waitBudgetExtended = false
+                            }
                             VoxLog.dd("event=stream-poll gen=$gen ev=${evts?.length() ?: 0} done=$doneNow textLen=$textLen err=${pollErr.take(70)}")
                         } else {
                             val idle = tick - lastEventAt
@@ -2443,8 +2705,74 @@ class VoiceController(private val context: Context, private val session: HermesS
                             val waiting = turnApprovalWaiting()
                             if (!waiting && idle >= 15000 && !stall15) { stall15 = true; VoxLog.w("event=stream-stall gen=$gen idleMs=$idle no-events=15s"); main.post { listener?.onLog("$STREAM_STALL idleMs=$idle") } }
                             else if (!waiting && idle >= 5000 && !stall5) { stall5 = true; VoxLog.w("event=stream-stall gen=$gen idleMs=$idle no-events=5s"); main.post { listener?.onLog("$STREAM_STALL idleMs=$idle") } }
+                            // The optional host statement of how much of the run's allowance
+                            // remains; absent on today's gateway, where the 120 s default applies.
+                            val hostRemaining = obj.optLong("run_remaining_ms", -1L)
+                            if (hostRemaining >= 0L) waitHostRemainingMs = hostRemaining
+                            // TurnWait: a stream that stays open and sends NOTHING had no
+                            // failure path short of the budget. At the silent ceiling the app
+                            // now ASKS instead of abandoning; the caller's answer, not the
+                            // clock, decides whether to wait or stop.
+                            if (idle >= TurnWait.SILENT_STREAM_MS || waitRun.answer() != null || waitCardUp) {
+                                if (waitRun.extensionGiven() && !waitBudgetExtended) {
+                                    waitBudgetExtended = true
+                                    val extra = waitRun.grantedExtensionMs()
+                                    budget.extend(extra)
+                                    VoxLog.d("event=wait-prompt extend gen=$gen extraMs=$extra " +
+                                        "deadlineMs=${budget.deadlineMs(tick)}")
+                                }
+                                val step = waitRun.step(
+                                    silentForMs = idle,
+                                    nowMs = tick,
+                                    toolRunning = turnToolCalls > turnToolOutputs,
+                                    // ANY card owns the screen, not only this turn's (a held or
+                                    // debug-arm approval must not have a wait question on top).
+                                    approvalWaiting = waiting || approvalPending(),
+                                )
+                                if (step == WaitPrompt.Step.ASK && waitRun.markAsked(tick)) {
+                                    // The card's window must be answerable. The agent budget can
+                                    // be seconds from expiring when the question goes up (a run
+                                    // that goes quiet 55 s into the turn asks at 115 s, five
+                                    // seconds before the 120 s budget): without this the card
+                                    // would vanish almost at once and the caller would hear the
+                                    // timeout line instead of the question's own outcome.
+                                    // Granting exactly the window buys only the ten seconds it
+                                    // takes to answer; "keep waiting" is the separate, once-only
+                                    // extension below.
+                                    budget.extend(WaitPrompt.WINDOW_MS)
+                                    VoxLog.w("event=wait-silent gen=$gen idleMs=$idle " +
+                                        "tools=$turnToolCalls/$turnToolOutputs — asking " +
+                                        "windowMs=${WaitPrompt.WINDOW_MS}")
+                                    main.post { showWaitPrompt(gen) }
+                                }
+                                val why = WaitPrompt.reason(step)
+                                if (why != null) {
+                                    WaitPrompt.stopOutcome(step)?.let { dismissWaitPrompt(it) }
+                                    VoxLog.w("event=stream-silent gen=$gen idleMs=$idle " +
+                                        "tools=$turnToolCalls/$turnToolOutputs — stopping the wait reason=$why")
+                                    abandoned = true
+                                    abandonTurn(gen, sid, route, budget, why)
+                                    throw Exception(why)
+                                }
+                            }
                         }
                         emitEvents(evts, t0, gen)
+                        // TurnWait: with Presence silent, a spoken turn that has not started its
+                        // reply gets at most two short, true check-ins (15 s, 40 s).
+                        if (fromVoice && !doneNow && checkInsSaid < TurnWait.MAX_CHECK_INS) {
+                            val line = TurnWait.checkIn(tick - t0, checkInsSaid, firstTextLatch,
+                                presenceSpeaks = voiceTurn && erPresenceOn,
+                                approvalWaiting = turnApprovalWaiting(),
+                                callerQuietMs = tick - callerVoiceAt)
+                            if (line != null) {
+                                checkInsSaid++
+                                VoxLog.d("event=wait-line gen=$gen n=$checkInsSaid waitedMs=${tick - t0}")
+                                main.post {
+                                    if (gen == turnGen && turnInFlight && !genCancelled && !firstTextLatch)
+                                        speakGlue(line, source = SOURCE_WAIT)
+                                }
+                            }
+                        }
                         if (obj.optBoolean("done")) {
                             done = true
                             readerRunEnd = obj.optString("run_end", "")   // H3: "lost" = the run may outlive the turn
@@ -2502,13 +2830,20 @@ class VoiceController(private val context: Context, private val session: HermesS
                     // /v1/responses closes the socket; /v1/runs stops the run itself, so
                     // it is never left working (or parked on an approval) with no client.
                     abandoned = true
-                    abandonTurn(gen, sid, route, budget)
+                    abandonTurn(gen, sid, route, budget, "budget")
                     throw Exception("timeout")
                 }
             } catch (e: Throwable) {
                 noteLiveFailure(e.message)   // K1: only a real auth rejection moves the live verdict
                 VoxLog.e("event=stream-turn-failed gen=$gen err=${e.message}")
-                val reason = if (e.message == "timeout") "turn-timeout" else "stream-error"
+                val reason = when (e.message) {
+                    "timeout" -> TurnRepair.REASON_TIMEOUT
+                    TurnRepair.REASON_SILENT -> TurnRepair.REASON_SILENT
+                    TurnRepair.REASON_WAIT_STOP -> TurnRepair.REASON_WAIT_STOP
+                    TurnRepair.REASON_WAIT_NO_ANSWER -> TurnRepair.REASON_WAIT_NO_ANSWER
+                    TurnRepair.REASON_WAIT_EXTENDED -> TurnRepair.REASON_WAIT_EXTENDED
+                    else -> "stream-error"
+                }
                 when (val action = terminal.fail(reason)) {
                     is StreamAction.Fallback -> deliverFallback(action, gen)
                     is StreamAction.Failure -> {
@@ -2528,6 +2863,10 @@ class VoiceController(private val context: Context, private val session: HermesS
             } finally {
                 currentStream = null
                 turnInFlight = false
+                // A wait card belongs to its turn; the turn is over, so the question is too.
+                if (waitCardUp) dismissWaitPrompt(WaitPrompt.Outcome.DISMISSED)
+                waitRun.reset()
+                waitBudgetExtended = false
                 // F3: the mind's turn is over. If words were queued during it, they are next —
                 // runPendingTurn waits for this reply's voice to finish if it is still playing.
                 main.post { runPendingTurn() }
@@ -2588,12 +2927,14 @@ class VoiceController(private val context: Context, private val session: HermesS
                     main.post { listener?.onLog("// entity responding…") }
                 "response.output_item.added" -> when (e.optString("item_type")) {
                     "function_call" -> {
+                        turnToolCalls++
                         val name = e.optString("name")
                         val args = e.optString("arguments")
                         mindTool = if (args.isBlank()) name else "$name (${args.take(60)})"
                         main.post { listener?.onLog("◆ tool: $name ${args.take(80)}"); listener?.onTool(name, args) }
                     }
                     "function_call_output" -> {
+                        turnToolOutputs++
                         val raw = e.optString("output")
                         val out = raw.replace("\n", " ")
                         main.post { listener?.onLog("◆ tool · ${out.take(120)}"); listener?.onToolOutput(raw) }
@@ -2781,8 +3122,9 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (!TurnRepair.speaks(
                 cancelled = genCancelled, stopped = stopped, listening = listening,
                 voiceOn = shouldSpeak(), sameTurn = gen == turnGen)) return false
-        VoxLog.er("event=repair reason=$reason gen=$gen")
-        speak(TurnRepair.LINE, gen)
+        val workStarted = turnToolCalls > 0
+        VoxLog.er("event=repair reason=$reason gen=$gen workStarted=$workStarted")
+        speak(TurnRepair.line(reason, workStarted), gen)
         return true
     }
 
@@ -2878,9 +3220,14 @@ class VoiceController(private val context: Context, private val session: HermesS
                             // beat is a few trailing words: let it land (bounded), cut it if it
                             // runs long, then re-open the stream so this chunk plays whole. A
                             // mid-run aside is filler about the wait that just ended: cut at once.
+                            // Naturalness (2026-11-05): so is a beat the caller has not heard yet —
+                            // one still synthesizing when the answer is ready is abandoned cleanly
+                            // (nothing of it was audible), instead of holding the reply's first
+                            // audio for up to HANDOFF_WAIT_MS while it renders and plays.
                             if (glueSpeaking) {
                                 val t0h = android.os.SystemClock.uptimeMillis()
-                                while (glueSpeaking && !glueCutAtHandoff && !genCancelled && !sClosed &&
+                                val heard = glueAudible
+                                while (glueSpeaking && heard && !glueCutAtHandoff && !genCancelled && !sClosed &&
                                     android.os.SystemClock.uptimeMillis() - t0h < HANDOFF_WAIT_MS) {
                                     try { Thread.sleep(20) } catch (_: InterruptedException) { break }
                                 }
@@ -2888,7 +3235,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                                 if (cut) { stopTts(); glueSpeaking = false }
                                 if (genCancelled || sClosed) { VoxLog.d("event=tts-stop gen=$turnGen worker-break chunkIdx=$chunkIdx"); break }
                                 try { (tts as? SherpaTts)?.startStreaming() } catch (_: Throwable) {}
-                                VoxLog.er("event=er-audio-handoff gen=$turnGen waitedMs=${android.os.SystemClock.uptimeMillis() - t0h} cut=$cut chunkIdx=$chunkIdx")
+                                VoxLog.er("event=er-audio-handoff gen=$turnGen waitedMs=${android.os.SystemClock.uptimeMillis() - t0h} cut=$cut heard=$heard chunkIdx=$chunkIdx")
                             }
                             replyOwnsTrack = true   // from here a glue's late reopen must not reset the track
                             speaking = true
@@ -2906,8 +3253,15 @@ class VoiceController(private val context: Context, private val session: HermesS
                             // exactly-once; the timestamp is measured from the same t0 (turnStartedAt)
                             // as firstByte/firstText, keeping the fields comparable within a version.
                             val wrote = try { (tts as? SherpaTts)?.streamChunk(chunk.text) ?: false } catch (_: Throwable) { false }
+                            if (!wrote && !genCancelled && !sClosed) {
+                                // A streaming synth that returned no audio is an engine failure,
+                                // not a cut. Feed it to the same bounded lifecycle the one-shot
+                                // path uses: one re-warm, one degradation, then a stated reason.
+                                ttsHost?.noteFailure("stream-synth")
+                            }
                             if (wrote && !firstAudioPushed) {
                                 firstAudioPushed = true
+                                noteFirstSound("reply")
                                 val audioAt = android.os.SystemClock.uptimeMillis()
                                 LatencyStats.pushFirstAudio(audioAt - turnStartedAt)
                                 // Phase 1: and the number the conversational target is written in.
@@ -3196,6 +3550,9 @@ class VoiceController(private val context: Context, private val session: HermesS
     @Volatile private var replyOwnsTrack = false
     /** The glue playing is a mid-run aside: the reply's first audio cuts it without waiting. */
     @Volatile private var glueCutAtHandoff = false
+    /** The glue line has reached the speaker (its TTS start callback fired). A beat that is
+     *  still synthesizing when the reply is ready is abandoned, not waited for. */
+    @Volatile private var glueAudible = false
     /** How long the mind's first audio waits for a soul beat to finish before cutting it. */
     private val HANDOFF_WAIT_MS = 1200L
     // Streaming TTS: speak the reply as it streams (sync with the crawl), not after the
@@ -3265,7 +3622,7 @@ class VoiceController(private val context: Context, private val session: HermesS
      *  Preempted by the authoritative Hermes reply (see speak). If the controller
      *  isn't in a reply, this just voices the presence glue. */
     fun speakGlue(text: String, critical: Boolean = false, source: String = "unspecified",
-                  onPlayed: (() -> Unit)? = null) {
+                  onPlayed: (() -> Unit)? = null, onDone: (() -> Unit)? = null) {
         if (text.isBlank()) return
         // 0.8/M3: RECORD the glue text and its source. The 09-10 field session produced a
         // 60-character spoken line during the mind-work window that matched no ErFillers
@@ -3335,7 +3692,9 @@ class VoiceController(private val context: Context, private val session: HermesS
             stopTts()
         }
         glueSpeaking = true
-        glueCutAtHandoff = source == SOURCE_WORKING
+        glueAudible = false
+        glueSource = source
+        glueCutAtHandoff = source == SOURCE_WORKING || source == SOURCE_WAIT
         // #223: every line the presence layer actually voices is conversation, in the
         // order it was said. This is the one funnel all of them pass through (soul answer,
         // beat, working aside, filler, greeting, tool narration), so the transcript cannot
@@ -3351,10 +3710,16 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // B1: the caller can hear it now, so the mind may be told about it.
                 lastHeardLine = text
                 lastHeardSource = source
+                if (speakSeq.get() == seq) glueAudible = true
+                noteFirstSound("glue:$source")
                 try { onPlayed?.invoke() } catch (_: Throwable) {}
             }) { _ ->
+                // The utterance is over (spoken, or cut). This is when a handoff that must
+                // not cut the line may tear down; TTS start is too early (H1).
+                try { onDone?.invoke() } catch (_: Throwable) {}
                 if (speakSeq.get() == seq) {
                     glueSpeaking = false
+                    if (source == SOURCE_WAIT) waitLineTailUntil = android.os.SystemClock.uptimeMillis() + WAIT_LINE_TAIL_MS
                     // 0.6.5: the REOPEN. A glue's stopTts() (arbiter Preempt / the
                     // one-voice rule) closes the fence, which is the reply's
                     // streamChunk gate. When a glue ends and a streamed reply is
@@ -3372,9 +3737,26 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // #373: nothing could speak the line (the host logged which engine and why).
                 // Release the glue latch so the next line is not refused by our own gate.
                 glueSpeaking = false
+                // There is no utterance to finish; settle the caller's continuation now
+                // rather than making a handoff wait for the fallback bound.
+                try { onDone?.invoke() } catch (_: Throwable) {}
                 VoxLog.er("event=er-glue-skip source=$source reason=no-engine")
             }
         }
+    }
+
+    /**
+     * The first sound the caller could hear since they stopped talking, from any source — the
+     * thinking cue (the host calls this when the cue went to the speaker, not as a vibration),
+     * a glue line at its TTS start, the reply's first audible write. Once per turn, and only
+     * while the turn is live, so a later aside never reports against an old anchor.
+     */
+    fun noteFirstSound(by: String) {
+        if (firstSoundPushed || !(turnInFlight || speaking)) return
+        val se = turnSpeechEndAt
+        val now = android.os.SystemClock.uptimeMillis()
+        firstSoundPushed = true
+        if (se > 0L && now > se) LatencyStats.pushSpeechToFirstSound(now - se, by)
     }
 
     private fun speak(text: String, gen: Long) {
@@ -3392,7 +3774,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (streamed) stopStreaming()
         speaking = true
         listener?.onState("speaking")
-        val took = host?.speak(text) { _ ->
+        val took = host?.speak(text, { noteFirstSound("reply-oneshot") }) { _ ->
             if (speakSeq.get() == seq) {
                 speaking = false
                 // #28: the TTS completion callback runs on the engine thread; the
@@ -3891,6 +4273,10 @@ class VoiceController(private val context: Context, private val session: HermesS
         /** The glue source of a mid-run soul line (PresenceCadence) — the field log's tag, and
          *  the mark that lets the reply's first audio cut it without the beat's wait. */
         const val SOURCE_WORKING = "soul-working"
+        /** The glue source of a [TurnWait] check-in — the app's own line while the mind is slow. */
+        const val SOURCE_WAIT = "wait"
+        /** How long the barge drain holds after a wait line ends (its echo tail). */
+        const val WAIT_LINE_TAIL_MS = 300L
         /** F3: how often the queued turn is retried while the floor is busy. */
         const val PENDING_RETRY_MS = 400L
         /** 0.9.1 soak: the once-per-card "say approve or no". */

@@ -146,21 +146,24 @@ a second or two while the models warm, then the line opens and it goes.
    - **No turn ends in silence** — put the phone in airplane mode mid-call, ask something,
      and you must hear *"Sorry — I didn't get an answer back on that. Want me to try
      again?"* (`event=repair reason=stream-lost`), not just a cue and a pill.
-7. **Local actions (#421 step 2)** — say each of these in a call, and read the log:
-   - *"set a timer for one minute"* → *"Timer set for 1 minute."*, `event=local-action
-     kind=timer ok=true`, and the timer actually rings (ringtone + notification) one minute
-     later. No network turn appears in the log.
-   - *"set an alarm for 7:30"* → the line names 7:30 am or pm correctly; the alarm rings
-     through Vox at that time (not the system Clock app — see D32).
-   - *"do not disturb on"* → *"Do not disturb on."* and the system DND icon appears. If
-     Do Not Disturb **access** has not been granted (Settings → Notifications → Do Not
-     Disturb access), the phone must say *"I can't change do-not-disturb, the phone hasn't
-     given me permission."* — never pretend.
-   - *"turn the volume up"* → *"Volume N percent."* with N the level after the change.
-   - *"what's the weather"* / *"set a timer for five minutes and then email Bob"* → neither
-     is a local action; both are ordinary turns.
-   - **Then ask a follow-up** — *"how long is left on that timer?"* — and the answer must
-     be right: that is B1's `local_actions:` block proving it reached the mind.
+7. **Phone actions belong to the mind (D38)** — set up **Phone tools**, grant the timer and volume
+   groups, then in a call:
+   - *"set a timer for one minute"* → Hermes answers, the phone tool runs, and the timer actually
+     rings (ringtone + notification) one minute later. The console shows the turn reaching the mind
+     (`event=er-handoff ok=true`), not `event=local-action kind=timer`. No local grammar decides.
+   - *"set an alarm for 7:30"* → the mind's result names 7:30 am or pm correctly; the alarm rings
+     through Vox at that time (not the system Clock app — see D38).
+   - *"do not disturb on"* → the mind calls the phone tool and the system DND icon appears. If Do Not
+     Disturb **access** has not been granted (Settings → Notifications → Do Not Disturb access), the
+     result says so and Hermes tells you — never pretend.
+   - *"turn the volume up"* → the result names the level after the change.
+   - Turn **Phone tools** off (or leave the timer group Off) and ask *"set a timer for one minute"* →
+     the turn still reaches the mind, and Hermes says it cannot act on the phone. The phone must not
+     start a timer behind the conversation.
+   - **Then ask a follow-up** — *"how long is left on that timer?"* — and the answer must be right:
+     that is B1's `local_actions:` block proving the mind can read what it did, while Presence may
+     only look at it.
+
 8. **The presence context** — the turn's instructions carry `presence: soul=… last_line=…`,
    `local_actions:` and `device: <time>, battery N%, online/offline, dnd=on/off`, under 200
    characters, and never any of your spoken words.

@@ -159,29 +159,33 @@ small on-device model as the *soul's voice*, never a second brain ([design][er-d
 - **Measured (`ErTelemetry`).** Per call: soul-first-word, soul-spoke %, render
   p50/p95, arbiter and barge outcomes.
 
-### 5. The phone acts — local actions and MCP (#421, D32–D35)
-Two lanes, deliberately not one wire:
+### 5. The phone acts — the mind, through MCP (#421, D38)
+One actor. The phone does not parse the caller's words; every voice turn goes to the mind.
 
-- **The caller's lane.** `LocalActionGrammar` recognises a timer, alarm, Do Not Disturb
-  or volume command in one utterance, and `LocalActions` executes it on the phone with no
-  network round trip. It is Tier 0 only: reversible, private, nothing outward-facing.
-  The presence context then tells the mind what the phone did.
-- **The mind's lane.** While a call is live, `PhoneMcpServer` serves **one** MCP tool,
+- **The mind's lane.** The mind decides whether the phone should act, and while a call is live
+  `PhoneMcpServer` serves **one** MCP tool,
   `phone`, on the phone's tailnet address (`100.64.0.0/10`, port 8765, `/mcp`), behind a
   128-bit bearer token stored in the Android Keystore. Every call returns one JSON
   result with `ok` and the facts of what happened; a refusal is a result with a `reason`,
-  never a transport error. Tier 2 actions are refused (`approval-required`) and belong to
-  the gateway's approval surface.
+  never a transport error. Every action at Ask raises the phone's own card
+  (`approval-required`) and executes only on a second call with that id and the same
+  arguments; Allow runs without a card.
 - **Grants.** `PhoneGrants` defines thirteen capability groups once, each Off / Ask /
   Allow and Off by default. The tool's advertised `enum` is built from the live grants on
   every `tools/list` and `tools/call`, so a revocation takes effect on the next call.
-  Allow is a Tier 0 word only. `docs/MCP-PHONE.md` is the contract.
+  The three states mean the same thing for every group; the tier only describes the
+  consequence and whether an undo exists. `docs/MCP-PHONE.md` is the contract.
+- **Presence may look, never act.** The being reads the registry and device facts through
+  `PhoneReadout`, which exposes no mutating call. Presence and Phone tools are independent
+  Alpha sets; continuous listening belongs with Presence because it is how the being hears.
 
 ### 6. Profiles — saved connections
 A profile is the whole connection: base URL (`https://host/p/<name>`), its own key, model,
 agent name, session scope and provider (`Profiles.kt`). The list comes from the host
 (`/v1/models` plus the agent's own answer, `ProfilesAsk` / `HostProfiles`); unknown names
-are marked unavailable, never deleted. Switching writes the profile into the ordinary
+are marked unavailable, never deleted. **It is a picker, not an editor:** profiles are
+configured on the host, so nothing in Vox creates or changes one, and a host that serves none
+says so. Switching writes the profile into the ordinary
 prefs and rebuilds the session, so a switch starts a fresh conversation and ends a live
 call.
 
@@ -202,14 +206,16 @@ verifies the hash, and nothing leaves the phone until the card is confirmed.
 
 ### 8. The Alpha gate (#402, D29)
 **One gate for everything unfinished.** `AlphaGate` has a master switch, **off on a
-fresh install**, and five sets a tester selects individually: **Presence**, **Continuous
-listening**, **Turn-taking**, **Phone tools** and **Switching profiles**. A set runs only
+fresh install**, and four sets a tester selects individually: **Presence**, **Continuous
+listening**, **Turn-taking** and **Phone tools**. A set runs only
 when the master is on *and* that set is selected (`AlphaGate.allows`); with the master
 off every alpha surface is dimmed and unreachable, and the runtime readers ask
 `AlphaGate`, not the feature's own preference. A set's own prefs keep their meaning
 inside the gate. Quiet calls (#325) is deliberately **not** a set: it is its own switch,
 off by default, with no master in front of it. An upgrade keeps what was already running
-(`AlphaGate.migrate`); a fresh install gets nothing.
+(`AlphaGate.migrate`); a fresh install gets nothing. **Sessions** and **Switching profiles**
+left the gate on 2026-11-06 (D39): `/sessions`, the session picker and the profile switcher
+are on for every install.
 
 ### 9. The being and the words — UI
 The being is drawn on the GPU (OpenGL ES 3, on its own thread: `BeingThread`,
@@ -278,9 +284,11 @@ in the dark theme.
   runnable on Android; see the bake-off.
 - **Half-duplex.** Vox listens *or* speaks (with barge-in), not both. Full-duplex
   models are the long-horizon path ([research][research]).
-- **The phone's surface is narrow on purpose.** Twelve capability groups are defined;
-  nine have no action yet, their grants are stored and their schema entries appear only
-  when the capability lands. Tier 2 stays on the gateway's approval surface.
+- **The phone's surface is narrow on purpose.** Thirteen capability groups are defined and
+  every advertised action is built. A group's actions appear in the schema only while its
+  grant is on; Off is absent, Ask raises the phone's card for every action, and Allow runs
+  without one. Tier 2 is a description, not a refusal: `uninstall` and `file_offer` run at
+  Allow or after their card, and the unbuilt names are never advertised.
 
 [sesame]: https://www.sesame.com/research/crossing_the_uncanny_valley_of_voice
 [er-design]: DESIGN-enhanced-realtime-voice.md

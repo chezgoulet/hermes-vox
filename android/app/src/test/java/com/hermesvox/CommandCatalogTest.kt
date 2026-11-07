@@ -190,39 +190,76 @@ class CommandCatalogTest {
     }
 
     /**
-     * #437: the session browser uses the same Gate as /profiles and /diagnostics — one way a
-     * row is absent — so with its Alpha set off it is gone from the sheet, the search, /help
-     * and the typed word, and nothing else moves.
+     * #437, amended by D39: `/sessions` left the Alpha gate on 2026-11-06, so it is not a
+     * switchable command any more — no Gate can take it off the sheet, the search, /help or
+     * the typed word, and nothing else moves.
      */
-    @Test fun sessions_disappears_from_the_sheet_search_and_help_when_its_set_is_off() {
-        val noSessions = CommandCatalog.Gate { it.name != "/sessions" }
-        val rows = CommandCatalog.grouped(gate = noSessions).flatMap { it.second }.map { it.name }
-        assertFalse("/sessions", rows.contains("/sessions"))
-        assertTrue("the rest of the catalogue is untouched", rows.contains("/new"))
-        assertFalse(CommandCatalog.search("session", gate = noSessions).any { it.name == "/sessions" })
-        assertTrue(CommandCatalog.search("session", gate = CommandCatalog.Gate.EVERYTHING)
-            .any { it.name == "/sessions" })
-        assertFalse(CommandCatalog.helpText(noSessions).contains("/sessions"))
-        assertTrue(CommandCatalog.helpText(CommandCatalog.Gate.EVERYTHING).contains("/sessions"))
+    @Test fun sessions_is_no_longer_gated() {
+        val nothing = CommandCatalog.Gate.NOTHING
+        val rows = CommandCatalog.grouped(gate = nothing).flatMap { it.second }.map { it.name }
+        assertTrue("/sessions", rows.contains("/sessions"))
+        assertTrue(CommandCatalog.search("session", gate = nothing).any { it.name == "/sessions" })
+        assertTrue(CommandCatalog.helpText(nothing).contains("/sessions"))
+        assertFalse("it is not a gated command", CommandCatalog.ALL.first { it.name == "/sessions" }.gated)
         // It is a card command: its row reports no state, because the card is the report.
-        val c = CommandCatalog.find("/sessions", CommandCatalog.Gate.EVERYTHING)!!
+        val c = CommandCatalog.find("/sessions", nothing)!!
         assertEquals(CommandCatalog.Kind.CARD, c.kind)
         assertFalse(CommandCatalog.reportsOnRow(c))
         // And it is in the conversation group, next to /new, where a person looks for threads.
         assertEquals("This conversation", c.group.label)
     }
 
-    @Test fun profiles_disappears_from_the_sheet_search_and_help_when_its_set_is_off() {
-        // The same Gate mechanism the diagnostic command uses: one way to hide a row.
-        val noProfiles = CommandCatalog.Gate { it.name != "/profiles" }
-        val all = CommandCatalog.grouped(gate = noProfiles).flatMap { it.second }.map { it.name }
-        assertFalse("/profiles", all.contains("/profiles"))
-        assertTrue("the rest of the catalogue is untouched", all.contains("/models"))
-        assertFalse(CommandCatalog.search("profiles", gate = noProfiles).any { it.name == "/profiles" })
-        assertTrue(
-            CommandCatalog.search("profiles", gate = CommandCatalog.Gate.EVERYTHING)
-                .any { it.name == "/profiles" })
-        assertFalse(CommandCatalog.helpText(noProfiles).contains("/profiles"))
-        assertTrue(CommandCatalog.helpText(CommandCatalog.Gate.EVERYTHING).contains("/profiles"))
+    /**
+     * #436, amended by D39: `/profiles` left the Alpha gate on 2026-11-06 too, so it is no more
+     * switchable than `/sessions` — the picker is every install's.
+     */
+    @Test fun profiles_is_no_longer_gated() {
+        val nothing = CommandCatalog.Gate.NOTHING
+        val rows = CommandCatalog.grouped(gate = nothing).flatMap { it.second }.map { it.name }
+        assertTrue("/profiles", rows.contains("/profiles"))
+        assertTrue(CommandCatalog.search("profiles", gate = nothing).any { it.name == "/profiles" })
+        assertTrue(CommandCatalog.helpText(nothing).contains("/profiles"))
+        assertFalse("it is not a gated command", CommandCatalog.ALL.first { it.name == "/profiles" }.gated)
+        // It is a card command under The agent, and switching still costs a fresh conversation.
+        val c = CommandCatalog.find("/profiles", nothing)!!
+        assertEquals(CommandCatalog.Kind.CARD, c.kind)
+        assertFalse(CommandCatalog.reportsOnRow(c))
+        assertEquals("The agent", c.group.label)
+        assertTrue("the cost line is stated", c.cost != null)
+    }
+
+    /** Only the diagnostic summary is left behind a switch, and it stays that way. */
+    @Test fun theDiagnosticCommandIsTheOneStillGated() {
+        val gated = CommandCatalog.ALL.filter { it.gated }.map { it.name }
+        assertEquals(listOf(DiagnosticSummary.COMMAND), gated)
+    }
+
+    /**
+     * #499: the screen listed `/reconnect` and `/health` twice — under a "Fits now" heading
+     * and again under The agent. What fits the moment is a fact about one row, so it is said
+     * on that row's state slot and the command keeps its one home in its group.
+     */
+    @Test fun whatFitsTheMomentIsAMarkOnTheRowNotASecondRow() {
+        val down = CommandCatalog.Situation(connected = false, lastTurnFailed = false, sessionTurns = 0)
+        val failed = CommandCatalog.Situation(connected = true, lastTurnFailed = true, sessionTurns = 0)
+        for (s in listOf(down, failed)) {
+            assertEquals(listOf("/reconnect", "/health"),
+                CommandCatalog.suggest(s).map { it.name })
+            assertTrue(CommandCatalog.fitsNow(CommandCatalog.find("/reconnect")!!, s))
+            assertTrue(CommandCatalog.fitsNow(CommandCatalog.find("/health")!!, s))
+            assertFalse(CommandCatalog.fitsNow(CommandCatalog.find("/models")!!, s))
+        }
+        // A long conversation offers the compaction, and nothing else.
+        val long = CommandCatalog.Situation(connected = true, lastTurnFailed = false,
+            sessionTurns = CommandCatalog.COMPRESS_AFTER_TURNS)
+        assertEquals(listOf("/compress"), CommandCatalog.suggest(long).map { it.name })
+
+        // The sheet renders `grouped`: one row per listed command, in two groups, so no
+        // command can appear twice whatever fits. (The extra mark cannot add a row.)
+        val rendered = CommandCatalog.grouped(gate = CommandCatalog.Gate.EVERYTHING)
+            .flatMap { it.second }.map { it.name }
+        assertEquals(rendered.size, rendered.toSet().size)
+        assertEquals(CommandCatalog.Group.values().size, 2)
+        assertEquals("fits now", CommandCatalog.FITS_NOW)
     }
 }

@@ -2,6 +2,7 @@ package com.hermesvox
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -59,8 +60,9 @@ class AlphaGateTest {
     }
 
     @Test fun master_on_and_one_set_selected_enables_exactly_that_set() {
-        val s = Fake(mutableMapOf(AlphaGate.KEY_MASTER to true, L.key to true))
-        assertTrue(AlphaGate.allows(s, L))
+        val phone = AlphaGate.FeatureSet.PHONE_TOOLS
+        val s = Fake(mutableMapOf(AlphaGate.KEY_MASTER to true, phone.key to true))
+        assertTrue(AlphaGate.allows(s, phone))
         assertFalse(AlphaGate.allows(s, P))
         assertEquals(1, AlphaGate.selectedCount(s))
     }
@@ -90,33 +92,28 @@ class AlphaGateTest {
         assertFalse("the gate is the only thing that enables it", AlphaGate.allows(Fake(), set))
     }
 
-    @Test fun switching_profiles_is_a_set_with_its_own_key_and_the_owners_words() {
-        val set = AlphaGate.FeatureSet.PROFILES
-        assertEquals("alpha_set_profiles", set.key)
-        assertEquals("Switching profiles", set.label)
-        assertTrue(set.blurb, set.blurb.contains("switching starts a fresh conversation"))
-        assertTrue(set.blurb, set.blurb.contains("#436"))
-        assertFalse("the gate is the only thing that enables it", AlphaGate.allows(Fake(), set))
-    }
-
     /**
      * #437: the session browser is a set of its own, the sibling of Switching profiles — the
      * same class of unfinished surface, off until selected, with the owner's words on the panel.
+     *
+     * Superseded: Sessions left Alpha (D39, 2026-11-06), so the set is gone from
+     * [AlphaGate.FeatureSet]. The claims below are what remains true of it as a feature.
      */
-    @Test fun sessions_is_a_set_with_its_own_key_and_the_owners_words() {
-        val set = AlphaGate.FeatureSet.SESSIONS
-        assertEquals("alpha_set_sessions", set.key)
-        assertEquals("Sessions", set.label)
-        assertTrue(set.blurb, set.blurb.contains("See the conversations your agent already has"))
-        assertTrue(set.blurb, set.blurb.contains("including ones you started at your desk"))
-        assertTrue(set.blurb, set.blurb.contains("continues the same conversation"))
-        // Selecting it without the master is not enough, exactly like every other set.
-        assertFalse("the gate is the only thing that enables it", AlphaGate.allows(Fake(), set))
-        assertTrue(AlphaGate.allows(Fake(mutableMapOf(AlphaGate.KEY_MASTER to true, set.key to true)), set))
-        // It is the last set, after Switching profiles: the two leave Alpha together.
-        assertEquals(set, AlphaGate.FeatureSet.entries.last())
-        assertEquals(AlphaGate.FeatureSet.PROFILES,
-            AlphaGate.FeatureSet.entries[AlphaGate.FeatureSet.entries.size - 2])
+    @Test fun sessions_is_no_longer_a_set_and_the_word_needs_no_gate() {
+        assertFalse("the set left the panel",
+            AlphaGate.FeatureSet.entries.any { it.key == "alpha_set_sessions" })
+        assertFalse("nothing selects it any more",
+            AlphaGate.FeatureSet.entries.any { it.label == "Sessions" })
+        // The word reaches the card with the master off and nothing selected.
+        assertEquals(Sessions.COMMAND, Sessions.commandFor("/sessions")?.name)
+        assertEquals(Sessions.COMMAND, Sessions.commandFor("  Sessions ")?.name)
+        // It is not a gated command: the catalogue lists it even for a gate that allows nothing.
+        assertTrue("the catalogue no longer hides it",
+            CommandCatalog.commands(CommandCatalog.Gate.NOTHING).any { it.name == Sessions.COMMAND })
+        // It is still the last-but-one row of the conversation group, beside /new.
+        val c = CommandCatalog.find("/sessions", CommandCatalog.Gate.EVERYTHING)!!
+        assertEquals("This conversation", c.group.label)
+        assertNull("nothing is lost, so there is no cost line", c.cost)
     }
 
     @Test fun quiet_calls_is_not_an_alpha_set_any_more() {        val gate = File(src, "AlphaGate.kt").readText()
@@ -130,21 +127,24 @@ class AlphaGateTest {
     }
 
     /**
-     * #437 §1: with the Sessions set off, the command is absent AND no other path adopts a
-     * session. The catalogue gate is one half; the last door is the other, and both refuse.
+     * #437 §1, as amended by D39: Sessions left Alpha, so no door asks the gate any more —
+     * with the master off, `/sessions` is on the sheet, opens the card and may adopt. What
+     * remains is that the pick still runs: nothing else adopts a session.
      */
-    @Test fun sessions_are_gated_at_every_door() {
+    @Test fun sessions_are_reachable_with_the_master_gate_off() {
         val main = File(src, "MainActivity.kt").readText()
-        // The pick refuses before it writes anything.
+        assertFalse("no door refuses on Alpha", main.contains("Sessions.refusal("))
+        // The pick is still the only path, and it still sets the conversation.
         val adopt = main.substringAfter("private fun adoptSession(row: Sessions.Row): Boolean {")
-            .substringBefore("val s = session")
-        assertTrue(adopt, adopt.contains("Sessions.refusal(AlphaGate.reader(prefs))"))
-        assertTrue(adopt, adopt.contains("return false"))
-        // The card does not open either.
-        val show = main.substringAfter("protected fun showSessions() {").substringBefore("if (missingKeyPrompt())")
-        assertTrue(show, show.contains("Sessions.refusal(AlphaGate.reader(prefs))"))
-        // A typed or dictated word goes through the same catalogue gate as the sheet.
-        assertTrue(main.contains("Sessions.commandFor(text, commandGate())"))
+            .substringBefore("clearConversationUi()")
+        assertFalse(adopt, adopt.contains("AlphaGate"))
+        assertTrue(adopt, adopt.contains("s.adoptConversation(row.id)"))
+        // The card's door is not gated either.
+        val show = main.substringAfter("protected fun showSessions() {").substringBefore("\n    }")
+        assertFalse(show, show.contains("AlphaGate"))
+        assertTrue(show, show.contains("sessionsSheet.show()"))
+        // A typed or dictated word goes straight to the command.
+        assertTrue(main.contains("Sessions.commandFor(text)?.let"))
         assertTrue(main.contains("Sessions.COMMAND ->"))
     }
 
@@ -168,11 +168,16 @@ class AlphaGateTest {
         assertFalse(AlphaGate.masterOn(s))
     }
 
-    @Test fun an_upgrade_with_continuous_capture_on_keeps_continuous_listening() {
+    @Test fun an_upgrade_with_continuous_capture_on_keeps_the_choice_but_it_is_inert_without_presence() {
         val s = Fake(mutableMapOf(PresenceGate.KEY_PRESENCE_ENABLED to false, ContinuousCapture.KEY to true))
         AlphaGate.migrate(s, presenceModelInstalled = false)
-        assertTrue(AlphaGate.allows(s, L))
+        // The tester's pick survives, but the dependency refuses it: an earlier build cannot
+        // leave continuous listening running with no being to hear for.
+        assertTrue("the stored selection is kept", AlphaGate.selected(s, L))
+        assertFalse("and is inert until Presence is selected", AlphaGate.allows(s, L))
         assertFalse(AlphaGate.allows(s, P))
+        s.putBoolean(P.key, true)
+        assertTrue(AlphaGate.allows(s, L))
     }
 
     @Test fun the_legacy_enhanced_choice_counts_as_presence_running() {
@@ -191,6 +196,104 @@ class AlphaGateTest {
         // D29: their preferences default on; the gate is what keeps them from running.
         assertTrue(ContinuousCapture.DEFAULT_ON)
         assertTrue(SemanticEndpoint.DEFAULT_ON)
+    }
+
+    /**
+     * D38: continuous listening is how the being hears, so it belongs with Presence. The stored
+     * preference is not enough — an earlier build could have left it selected without Presence.
+     */
+    @Test fun continuous_listening_cannot_run_without_presence() {
+        val s = Fake(mutableMapOf(AlphaGate.KEY_MASTER to true, L.key to true))
+        assertFalse("selected alone is inert", AlphaGate.allows(s, L))
+        assertEquals(
+            "Requires Presence: continuous listening is how the being hears.",
+            AlphaGate.dependencyRefusal(s, L),
+        )
+        s.putBoolean(P.key, true)
+        assertNull("Presence makes it reachable", AlphaGate.dependencyRefusal(s, L))
+        assertTrue(AlphaGate.allows(s, L))
+        // Turning Presence off leaves the stored selection in place but inert.
+        s.putBoolean(P.key, false)
+        assertTrue(AlphaGate.selected(s, L))
+        assertFalse(AlphaGate.allows(s, L))
+        // The master still rules everything.
+        s.putBoolean(AlphaGate.KEY_MASTER, false)
+        assertFalse(AlphaGate.allows(s, L))
+    }
+
+    /** D38: Phone tools is the mind acting on the phone; Presence is the being. Neither needs the other. */
+    @Test fun phone_tools_and_presence_are_independent_sets() {
+        val phoneOnly = Fake(mutableMapOf(
+            AlphaGate.KEY_MASTER to true,
+            AlphaGate.FeatureSet.PHONE_TOOLS.key to true,
+        ))
+        assertTrue("the phone is the mind's capability", AlphaGate.allows(phoneOnly, AlphaGate.FeatureSet.PHONE_TOOLS))
+        assertFalse("and not a reason to run the being", AlphaGate.allows(phoneOnly, P))
+
+        val presenceOnly = Fake(mutableMapOf(
+            AlphaGate.KEY_MASTER to true,
+            P.key to true,
+        ))
+        assertTrue("the being is a voice", AlphaGate.allows(presenceOnly, P))
+        assertFalse("and it does not open the phone tool", AlphaGate.allows(presenceOnly, AlphaGate.FeatureSet.PHONE_TOOLS))
+        assertNull("the dependency table only names continuous listening",
+            AlphaGate.dependencyRefusal(phoneOnly, AlphaGate.FeatureSet.PHONE_TOOLS))
+    }
+
+    /** The picker refuses the impossible selection where the user makes it, with the reason on screen. */
+    @Test fun the_picker_refuses_continuous_listening_without_presence() {
+        val panel = File(src, "AlphaPanel.kt").readText()
+        assertTrue("the row asks the one dependency question", panel.contains("AlphaGate.dependencyRefusal("))
+        assertTrue("a refused tap does not store the preference", panel.contains("if (refusal != null)"))
+        assertTrue("the row shows the returned line", panel.contains("text = if (inert) \"Inert — \$why\" else why"))
+        val gate = File(src, "AlphaGate.kt").readText()
+        assertTrue("the line says why", gate.contains("Requires Presence: continuous listening is how the being hears."))
+        assertTrue("allows() refuses the stale preference too",
+            gate.contains("dependencyRefusal(r, set) == null"))
+    }
+
+    /**
+     * #436/D39: Switching profiles left Alpha on 2026-11-06, its device pass made, so the set is
+     * gone and a profile switch is reachable with the master off and nothing selected.
+     */
+    @Test fun profiles_are_reachable_with_the_master_gate_off() {
+        assertFalse("the set left the panel",
+            AlphaGate.FeatureSet.entries.any { it.key == "alpha_set_profiles" })
+        assertFalse("nothing selects it any more",
+            AlphaGate.FeatureSet.entries.any { it.label == "Switching profiles" })
+        val main = File(src, "MainActivity.kt").readText()
+        // The last door asks nothing of the gate any more.
+        val switch = main.substringAfter("private fun switchProfile(p: Profiles.Profile) {")
+            .substringBefore("protected fun connectFromPrefs")
+        assertFalse(switch, switch.contains("AlphaGate"))
+        assertTrue("the switch still switches", switch.contains("putString(Profiles.PREF_ACTIVE"))
+        // Nor does the command, nor the picker's opening.
+        assertTrue(main.contains("\"/profiles\" -> {"))
+        val dialogs = File(src, "ProfileDialogs.kt").readText()
+        assertFalse(dialogs, dialogs.contains("AlphaGate"))
+        // The catalogue no longer hides it either.
+        assertTrue(CommandCatalog.commands(CommandCatalog.Gate.NOTHING)
+            .any { it.name == "/profiles" })
+    }
+
+    /**
+     * The panel is drawn from [AlphaGate.FeatureSet.entries], so the list the owner sees is this
+     * list: four sets, and no row left behind for the two that left Alpha.
+     */
+    @Test fun the_panel_lists_four_sets_and_no_stale_row() {
+        assertEquals(
+            listOf("Presence", "Continuous listening", "Turn-taking", "Phone tools"),
+            AlphaGate.FeatureSet.entries.map { it.label },
+        )
+        assertEquals(4, AlphaGate.FeatureSet.entries.size)
+        val gate = File(src, "AlphaGate.kt").readText()
+        assertFalse(gate.contains("alpha_set_profiles"))
+        assertFalse(gate.contains("alpha_set_sessions"))
+        // The panel renders exactly the entries and nothing else.
+        val panel = File(src, "AlphaPanel.kt").readText()
+        assertTrue(panel.contains("for (set in AlphaGate.FeatureSet.entries) list.addView(row(set))"))
+        assertFalse("no hand-written row survives", panel.contains("\"Switching profiles\""))
+        assertFalse(panel.contains("\"Sessions\""))
     }
 
     // ---- the wiring, pinned at source level (the readers are Android-bound) ----
@@ -221,28 +324,19 @@ class AlphaGateTest {
         }
     }
 
-    @Test fun profile_switching_is_gated_at_every_door_but_the_header_stays() {
+    /**
+     * D39, met: the header is still a connection fact and not a control, and it is unchanged by
+     * the promotion. The switcher's doors are pinned by
+     * [profiles_are_reachable_with_the_master_gate_off].
+     */
+    @Test fun the_header_names_the_active_profile_and_is_not_a_control() {
         val main = File(src, "MainActivity.kt").readText()
-        val sheet = File(src, "ProfileSheet.kt").readText()
-        val dialogs = File(src, "ProfileDialogs.kt").readText()
-        val commands = File(src, "CommandsSheet.kt").readText()
-        // The last door refuses before it writes anything.
-        val switch = main.substringAfter("private fun switchProfile(p: Profiles.Profile) {")
-            .substringBefore("// Settings → Entity edits")
-        assertTrue(switch, switch.contains("AlphaGate.allows(prefs, AlphaGate.FeatureSet.PROFILES)"))
-        assertTrue(switch, switch.contains("return"))
-        // The row, the search and the manage rows all ask the same question.
-        assertTrue(commands.contains("gate = gate"))
-        assertTrue(main.contains("AlphaGate.allows(prefs, AlphaGate.FeatureSet.PROFILES)"))
-        assertTrue(main.contains("CommandCatalog.Gate { c ->"))
-        assertTrue(main.contains("\"/profiles\" -> profiles"))
-        assertTrue(main.contains("diagnostics.on(c) && sessions.on(c)"))
-        assertTrue(sheet.contains("if (!allowed())"))
-        assertTrue(dialogs.contains("AlphaGate.allows(activity, AlphaGate.FeatureSet.PROFILES)"))
-        // The active profile is a connection fact, not a control: the header is not gated.
         val header = main.substringAfter("private fun headerLabel(model: String): String {")
             .substringBefore("fun switchProfile")
         assertTrue(header, header.contains("profiles.activeName()"))
         assertFalse(header, header.contains("AlphaGate"))
+        // The commands sheet is still the way in, and it still asks the one gate object.
+        assertTrue(File(src, "CommandsSheet.kt").readText().contains("gate = gate"))
+        assertTrue(main.contains("CommandGate.of(DiagnosticSummary.store(prefs))"))
     }
 }

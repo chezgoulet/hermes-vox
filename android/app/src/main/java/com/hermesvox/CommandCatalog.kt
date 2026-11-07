@@ -57,18 +57,23 @@ object CommandCatalog {
         /** #284: the words a person uses for what they want, not for the command. */
         val keywords: List<String> = emptyList(),
         /** Whether the sheet lists it. `/help` answers a typed or spoken "/help", but on the
-         *  sheet it would be a row that opens a copy of the sheet. Search still finds it. */
+         *  sheet it would be a row that opens a copy of the sheet. */
         val listed: Boolean = true,
         /** #418: whether the command exists only while its own switch is on. A gated command
          *  with the switch off is not a hidden row — it is a name no build answers to, so the
-         *  sheet, the search, the /help card and a typed word all treat it as unknown. */
+         *  sheet, the /help card and a typed word all treat it as unknown. */
         val gated: Boolean = false,
+        /** The row's own drawing, when its category's still would say the wrong thing (#3).
+         *  Null means "the category's still" ([CommandMotion.verbFor]). `/clear` and `/new`
+         *  are both CLEAR to the being — one empties the screen, one starts a thread — so
+         *  `/new` names [Marks.Mark.NEW_THREAD] and the two rows stop looking identical. */
+        val glyph: Marks.Mark? = null,
     )
 
     /**
      * Which optional commands exist right now. There is one today (`/diagnostics`, behind the
      * switch in Settings › About › Diagnostic summary), and the answer is the same one every
-     * surface asks: the sheet, the search, /help, and the typed word's dispatch.
+     * surface asks: the sheet, /help, and the typed word's dispatch.
      */
     fun interface Gate {
         fun on(c: Command): Boolean
@@ -99,30 +104,35 @@ object CommandCatalog {
             effect = "Start a fresh thread; the agent forgets this one",
             cost = Cost("This thread cannot be brought back", risk = true),
             category = Category.CLEAR, kind = Kind.INLINE,
-            listOf("start over", "fresh", "new topic", "forget", "begin again")),
-        // #437: the other half of /new — pick up a thread that already exists. Gated: listed
-        // only while the Alpha gate allows "Sessions", and with the set off it is a name no
-        // build answers to (the same rule as /profiles and /diagnostics).
+            listOf("start over", "fresh", "new topic", "forget", "begin again"),
+            glyph = Marks.Mark.NEW_THREAD),
+        // #437: the other half of /new — pick up a thread that already exists. It left Alpha
+        // with the Sessions set, so it is in the catalogue for every install (#437, D39).
         Command(Sessions.COMMAND, emptyList(), Group.CONVERSATION,
             effect = "Pick up a thread the agent already has",
             cost = null,   // nothing is lost: the session keeps its history, and so does this app
             category = Category.CHOOSE, kind = Kind.CARD,
             listOf("session", "conversation", "thread", "history", "resume", "pick up",
                 "earlier", "desktop", "before", "past"),
-            gated = true),
+            // #3: a list of the threads the host already has. /models chose the PULSE nucleus
+            // too, and the two rows sat one above the other in the sheet looking identical.
+            glyph = Marks.Mark.SESSIONS),
         Command("/models", emptyList(), Group.AGENT,
             effect = "Choose the model the agent thinks with",
             cost = Cost("Switching starts a fresh thread", risk = false),
             category = Category.CHOOSE, kind = Kind.CARD,
             listOf("smarter", "faster", "cheaper", "switch", "brain", "llm", "model")),
-        // Gated (#402): listed only while the Alpha gate allows "Switching profiles".
+        // Profiles left Alpha on 2026-11-06 (#436, D39), so the switcher is a command every
+        // install has.
         Command("/profiles", emptyList(), Group.AGENT,
             effect = "Talk to another of this host's agents",
             cost = Cost("Switching starts a fresh conversation", risk = false),
             category = Category.CHOOSE, kind = Kind.CARD,
             listOf("profile", "agent", "another agent", "who am i talking to", "switch agent",
                 "connection", "home", "work"),
-            gated = true),
+            // #3: /models chooses and draws PULSE; this row chooses an *agent*, and the two are
+            // neighbours on the sheet now that profiles is ungated.
+            glyph = Marks.Mark.SWITCH),
         Command("/reconnect", emptyList(), Group.AGENT,
             effect = "Reach the gateway again; a live call re-dials",
             cost = null,   // nothing is lost: the thread and the call both survive
@@ -164,6 +174,9 @@ object CommandCatalog {
         category = Category.CHOOSE,
         kind = Kind.CARD,
         keywords = listOf("share", "file", "clipboard", "attach", "document", "send file"),
+        // #3: the platform's share mark, not the nucleus the CHOOSE motion would give it —
+        // this row opens Android's share, and the owners' eyes already know that drawing.
+        glyph = Marks.Mark.SHARE,
     )
 
     /** The command a typed or spoken name means, by its name or an alias — and whether it
@@ -211,6 +224,10 @@ object CommandCatalog {
      * The commands that match [query], best first. Matched against what a person would say —
      * the effect line and each command's keywords — as well as its name, so "it's slow" finds
      * /compress and "can't reach it" finds /reconnect. A blank query is the whole catalogue.
+     *
+     * Nothing on a screen searches since #500: the sheet shows its groups. The vocabulary
+     * stays because it is the catalogue's own — what a person means, not what a command is
+     * called — and this is the single place that reads it.
      */
     fun search(query: String, gate: Gate = Gate.NOTHING): List<Command> {
         val q = query.trim().lowercase().removePrefix("/")
@@ -240,19 +257,30 @@ object CommandCatalog {
      *  retire or tune it if the field says the offer comes too early or too late). */
     const val COMPRESS_AFTER_TURNS = 16L
 
-    /** The commands that fit now, shown first on the screen — the interface revealing what
-     *  became relevant (#284). Never more than two, and nothing when nothing fits. */
     /** How a row tints its verb mark: the warning colour for a command that loses something
      *  for good (the same fact as its amber cost line), the accent otherwise. */
     enum class Tint { ACCENT, RISK }
     fun tint(c: Command): Tint = if (c.cost?.risk == true) Tint.RISK else Tint.ACCENT
 
+    /** What a row says when its command fits the moment (#284/#499) — the row's own state
+     *  slot, so the screen marks the row it already has rather than repeating it. */
+    const val FITS_NOW = "fits now"
+
+    /** The commands that fit now — the interface revealing what became relevant (#284).
+     *  Never more than two, and nothing when nothing fits. The sheet asks [fitsNow] of each
+     *  row, so this list marks rows in place: a command has one home ([Group]) and one row. */
     fun suggest(s: Situation, gate: Gate = Gate.NOTHING): List<Command> = when {
         !s.connected || s.lastTurnFailed ->
             listOfNotNull(find("/reconnect", gate), find("/health", gate))
         s.sessionTurns >= COMPRESS_AFTER_TURNS -> listOfNotNull(find(CompressCommand.NAME, gate))
         else -> emptyList()
     }
+
+    /** Whether one row fits the moment. The sheet marks the row it already has — its state
+     *  slot reads [FITS_NOW] — instead of printing the command a second time under a heading
+     *  of its own (#499: the screen showed `/reconnect` and `/health` twice). */
+    fun fitsNow(c: Command, s: Situation, gate: Gate = Gate.NOTHING): Boolean =
+        suggest(s, gate).any { it.name == c.name }
 
     /** The /help card, written from the catalogue so the two cannot disagree. */
     fun helpText(gate: Gate = Gate.NOTHING): String =

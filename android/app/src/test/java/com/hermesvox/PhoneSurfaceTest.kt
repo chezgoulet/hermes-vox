@@ -18,8 +18,12 @@ import org.junit.Test
  *  * `now_playing` says `known:false` and explains itself rather than inventing a title, and names
  *    the app and track only when the platform's session list is granted;
  *  * `state` reports `null` for anything the platform will not answer, never a plausible zero;
- *  * `clip` reports only the text's length, and `clip_read` returns the clipboard only when the
- *    platform allows the read — a backgrounded or empty clip is a refusal, not empty content.
+ *  * `clip` reports only the text's length, and it attempts the write wherever the call is — a
+ *    background or PiP call writes, because Android restricts clipboard reads, not writes; a
+ *    platform refusal is reported with the platform's own reason;
+ *  * `clip_read` returns the clipboard only when the platform allows the read — an empty clip is a
+ *    refusal, not empty content, and when the platform returns nothing without focus the refusal
+ *    names focus as the likely cause without claiming to know it.
  *
  * The fake is deliberately dumb: it records what it was asked and answers what it is told to
  * answer, so a test that passes proves the engine, not the fake.
@@ -61,16 +65,26 @@ class PhoneSurfaceTest {
 
         val clips = ArrayList<String>()
         var clipRefuse = false
+        var clipRefusal = "Android refused the clipboard write (SecurityException); nothing was written"
 
-        override fun clip(text: String): Boolean {
+        override fun clip(text: String): PhoneEngine.PhonePlatform.ClipWrite {
             clips.add(text)
-            return !clipRefuse
+            return if (clipRefuse) {
+                PhoneEngine.PhonePlatform.ClipWrite.Refused(clipRefusal)
+            } else {
+                PhoneEngine.PhonePlatform.ClipWrite.Done
+            }
         }
 
         var clipRead: PhoneEngine.PhonePlatform.ClipRead =
             PhoneEngine.PhonePlatform.ClipRead.Empty
 
-        override fun readClip(): PhoneEngine.PhonePlatform.ClipRead = clipRead
+        var clipReads = 0
+
+        override fun readClip(): PhoneEngine.PhonePlatform.ClipRead {
+            clipReads++
+            return clipRead
+        }
     }
 
     private val fake = Fake()
@@ -79,15 +93,32 @@ class PhoneSurfaceTest {
 
     private val entries = ArrayList<PhoneAudit.Entry>()
 
+    /** Every card the engine raises; a group at Ask must raise one rather than refuse. */
+    private class Surface : PhoneApproval.Surface {
+        val raised = ArrayList<PhoneApproval.Card>()
+        override fun raise(card: PhoneApproval.Card): Boolean {
+            raised.add(card)
+            return true
+        }
+    }
+
+    private val surface = Surface()
+
     /** Only the named group granted, everything else Off — the screen's own shape. */
     private fun only(id: String) = PhoneGrants.Source { g ->
         if (g.id == id) PhoneGrants.State.ALLOW else PhoneGrants.State.OFF
+    }
+
+    /** The named group at Ask, everything else Off. */
+    private fun askOnly(id: String) = PhoneGrants.Source { g ->
+        if (g.id == id) PhoneGrants.State.ASK else PhoneGrants.State.OFF
     }
 
     private fun engine(grants: PhoneGrants.Source) = PhoneEngine(
         fake,
         grants = grants,
         audit = { result, args, at -> entries.add(PhoneAudit.entry(at, args, result)) },
+        approvalSurface = surface,
     )
 
     private fun call(arguments: Map<String, Any?>, grants: PhoneGrants.Source = only("media")) =
@@ -197,7 +228,11 @@ class PhoneSurfaceTest {
         val ask = call(mapOf("action" to "play"), PhoneGrants.Source { PhoneGrants.State.ASK })
         assertFalse(ask.ok)
         assertEquals(PhoneReason.APPROVAL, ask.reason)
-
+        assertEquals(
+            "Ask raises a card that names the action",
+            "Your agent wants to play. Approve?",
+            surface.raised.single().line,
+        )
         assertEquals("nothing reached the audio service", emptyList<PhoneEngine.PhonePlatform.MediaKey>(), fake.mediaKeys)
     }
 
@@ -285,6 +320,7 @@ class PhoneSurfaceTest {
         val ask = call(mapOf("action" to "state"), PhoneGrants.Source { PhoneGrants.State.ASK })
         assertFalse(ask.ok)
         assertEquals(PhoneReason.APPROVAL, ask.reason)
+        assertEquals("the card names the read", "Your agent wants to read this phone's state. Approve?", surface.raised.last().line)
     }
 
     @Test fun state_is_read_only_and_writes_one_audit_row() {
@@ -350,13 +386,63 @@ class PhoneSurfaceTest {
         assertNull(entry.undoId)
     }
 
-    @Test fun a_clipboard_that_would_not_take_the_text_is_unavailable() {
+    @Test fun a_clip_the_platform_refuses_reports_the_platforms_reason() {
         fake.clipRefuse = true
+        AppFocus.reset()
         val r = call(mapOf("action" to "clip", "text" to "hello"), only("clipboard"))
         assertFalse(r.ok)
         assertEquals(PhoneReason.UNAVAILABLE, r.reason)
         assertNull("a refusal never carries a success fact", r.facts["chars"])
-        assertTrue("the sentence says nothing was written", r.detail!!.contains("nothing was written"))
+        assertTrue(
+            "the platform's own reason is what the caller reads",
+            r.detail!!.contains("SecurityException"),
+        )
+        assertTrue("and it says nothing was written", r.detail!!.contains("nothing was written"))
+        assertEquals("the write was attempted anyway", listOf("hello"), fake.clips)
+    }
+
+    /**
+     * Android restricts clipboard **reads**, not writes: `setPrimaryClip` needs no focus, so a
+     * backgrounded call writes like any other. The engine asks the platform and reports its answer;
+     * there is no pre-emptive focus gate to turn this into `unavailable`.
+     */
+    @Test fun a_background_clip_attempts_the_write() {
+        AppFocus.reset()
+        val r = call(mapOf("action" to "clip", "text" to "hello"), only("clipboard"))
+        assertTrue(r.json(), r.ok)
+        assertEquals("the platform was asked to write", listOf("hello"), fake.clips)
+        assertEquals(5, r.facts["chars"])
+        AppFocus.reset()
+    }
+
+    /**
+     * PiP pauses the activity while the call stays live, so nothing is resumed — the state the old
+     * gate treated as "cannot clip". Both actions now behave exactly as in the background case: the
+     * write is attempted, and the read reports the platform's own answer.
+     */
+    @Test fun in_pip_both_clipboard_actions_behave_as_in_the_background() {
+        AppFocus.reset()
+        AppFocus.onActivityResumed()
+        AppFocus.onActivityPaused()
+        assertFalse("a PiP activity is paused, not resumed", AppFocus.inFront)
+        try {
+            val clip = call(mapOf("action" to "clip", "text" to "hello"), only("clipboard"))
+            assertTrue("a PiP clip still writes", clip.ok)
+            assertEquals(listOf("hello"), fake.clips)
+
+            fake.clipRead = PhoneEngine.PhonePlatform.ClipRead.Unavailable(
+                "Android returned no clipboard and Vox is not the app on screen; the likely " +
+                    "reason is that Android 10+ only lets the focused app read a clip, so " +
+                    "nothing was read",
+            )
+            val read = call(mapOf("action" to "clip_read"), only("clipboard"))
+            assertFalse("a PiP read reports the platform's outcome", read.ok)
+            assertEquals(PhoneReason.UNAVAILABLE, read.reason)
+            assertTrue("the likely cause is named", read.detail!!.contains("likely"))
+            assertTrue("and it is focus", read.detail!!.contains("focused"))
+        } finally {
+            AppFocus.reset()
+        }
     }
 
     @Test fun clip_needs_its_group_and_its_argument() {
@@ -364,6 +450,16 @@ class PhoneSurfaceTest {
         assertFalse(off.ok)
         assertEquals(PhoneReason.NOT_GRANTED, off.reason)
         assertTrue(off.detail!!.contains("Clipboard"))
+
+        val ask = call(mapOf("action" to "clip", "text" to "hello"), askOnly("clipboard"))
+        assertFalse("Ask does not write", ask.ok)
+        assertEquals(PhoneReason.APPROVAL, ask.reason)
+        assertEquals(
+            "the card says how much would be written, not the text",
+            "Your agent wants to put 5 characters on the clipboard. Approve?",
+            surface.raised.last().line,
+        )
+        assertFalse("the text is not on the card", surface.raised.last().line.contains("hello"))
 
         val empty = call(mapOf("action" to "clip", "text" to "  "), only("clipboard"))
         assertFalse(empty.ok)
@@ -428,8 +524,19 @@ class PhoneSurfaceTest {
         assertEquals(PhoneReason.NOT_GRANTED, off.reason)
         assertTrue(off.detail!!.contains("Clipboard"))
 
+        val ask = call(mapOf("action" to "clip_read"), askOnly("clipboard"))
+        assertFalse("Ask does not read", ask.ok)
+        assertEquals(PhoneReason.APPROVAL, ask.reason)
+        assertEquals(
+            "the card names the read",
+            "Your agent wants to read your clipboard. Approve?",
+            surface.raised.last().line,
+        )
+
+        val before = fake.clipReads
         val on = call(mapOf("action" to "clip_read"), only("clipboard"))
         assertTrue("offered once the group is on", on.ok || on.reason != PhoneReason.NOT_GRANTED)
+        assertEquals("the platform was finally asked", before + 1, fake.clipReads)
     }
 
     @Test fun app_focus_counts_resumed_activities_and_never_goes_below_zero() {

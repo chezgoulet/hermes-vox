@@ -38,24 +38,35 @@ object CallWindow {
         /** Enter PiP now. False means the window would not float (see [Pip.supported]). */
         fun enterPip(): Boolean
 
-        /** Run [action] later on the host's own thread (the main thread, on device). */
-        fun post(delayMs: Long, action: () -> Unit)
+        /**
+         * Run [action] later on the host's own thread (the main thread, on device).
+         *
+         * Returns false when the window cannot take it — the activity is finishing or being
+         * destroyed — so a launch that will never run is refused rather than reported (M6).
+         */
+        fun post(delayMs: Long, action: () -> Unit): Boolean
     }
 
     /** The two arrivals, named so a caller (and a test) can say which one happened. */
     enum class Order { PIP_THEN_LAUNCH, LAUNCH_NOW }
 
     /**
-     * Start [start] — through PiP when a call is live and the window will float, otherwise
-     * straight away. Returns the [Order] used, which is what the tests assert; callers do
-     * not branch on it.
+     * How the start was arranged: [order], and whether the host accepted a posted start.
+     * `posted` is always true for [Order.LAUNCH_NOW] because the start ran immediately.
      */
-    fun launch(host: Host, start: () -> Unit): Order {
+    data class Plan(val order: Order, val posted: Boolean)
+
+    /**
+     * Start [start] — through PiP when a call is live and the window will float, otherwise
+     * straight away. Returns the [Plan], which is what the tests assert and the engine uses to
+     * decide whether it is a start, a pending handoff, or a refusal.
+     */
+    fun launch(host: Host, start: () -> Unit): Plan {
         if (!host.callLive() || !host.enterPip()) {
             start()
-            return Order.LAUNCH_NOW
+            return Plan(Order.LAUNCH_NOW, posted = true)
         }
-        host.post(AFTER_PIP_MS, start)
-        return Order.PIP_THEN_LAUNCH
+        val posted = host.post(AFTER_PIP_MS, start)
+        return Plan(Order.PIP_THEN_LAUNCH, posted)
     }
 }

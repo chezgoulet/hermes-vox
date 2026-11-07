@@ -61,8 +61,10 @@ object CommandGlyph {
         }
     }
 
-    /** Steve ships: a setting must not change the app's look until someone chooses to. */
-    val DEFAULT = Icon.STEVE
+    /** Clanker ships (#second phone pass): the robot is the app's default mark. The pref is
+     *  only ever written by the chooser, so an install that has never chosen one gets this,
+     *  and an explicit choice (Steve included) is left exactly as it was saved. */
+    val DEFAULT = Icon.CLANKER
 
     /** The one pref read. Every screen calls this; none of them decodes the token itself. */
     fun current(context: Context): Icon = Icon.of(
@@ -118,7 +120,7 @@ object CommandGlyph {
     /**
      * The five drawings.
      *
-     * Steve — the command symbol: a square knot between four loops (the shipped look).
+     * Steve — the command symbol: a square knot between four loops (the original look).
      * Bill — the letters CMD, three stroked letterforms.
      * Linus — a shell prompt: `>` and an underscore.
      * Hermes — a caduceus: winged staff with two interwoven snakes.
@@ -208,7 +210,15 @@ object CommandGlyph {
 
     /** Paints [icon] into the square of side [size] at ([left], [top]). */
     fun paint(canvas: Canvas, icon: Icon, ink: Int, left: Float, top: Float, size: Float) =
-        GlyphPainter.paint(canvas, icon, ink, left, top, size)
+        GlyphPainter.paint(canvas, shapes(icon), ink, left, top, size)
+
+    /**
+     * The same painter, for any drawing authored in this vocabulary — the commands sheet's
+     * row marks ([Marks]) and the model row's capability marks are geometry data exactly like
+     * the entry glyphs, so they are laid out and measured by the same code (#3/#5).
+     */
+    fun paint(canvas: Canvas, shapes: List<Shape>, ink: Int, left: Float, top: Float, size: Float) =
+        GlyphPainter.paint(canvas, shapes, ink, left, top, size)
 
     private class GlyphDrawable(private val icon: Icon, private val ink: Int) : Drawable() {
         override fun draw(canvas: Canvas) {
@@ -233,7 +243,7 @@ object CommandGlyph {
         private val path = Path()
         private val oval = RectF()
 
-        fun paint(canvas: Canvas, icon: Icon, ink: Int, left: Float, top: Float, size: Float) {
+        fun paint(canvas: Canvas, shapes: List<Shape>, ink: Int, left: Float, top: Float, size: Float) {
             stroke.color = ink
             fill.color = ink
             val k = size / GRID
@@ -241,7 +251,7 @@ object CommandGlyph {
             canvas.save()
             canvas.translate(left, top)
             canvas.scale(k, k)
-            for (shape in shapes(icon)) {
+            for (shape in shapes) {
                 path.reset()
                 when (shape) {
                     is Poly -> {

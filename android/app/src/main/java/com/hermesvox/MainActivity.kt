@@ -33,13 +33,23 @@ open class MainActivity : AppCompatActivity() {
     // #282: the approval surface. The card exists for the decision; the state line
     // carries the waiting phase; the transcript keeps the timed-out request visible.
     private lateinit var approvalCard: android.widget.LinearLayout
+    private lateinit var approvalTitle: TextView
     private lateinit var approvalLine: TextView
     private lateinit var approvalState: TextView
     private lateinit var approvalChoices: android.widget.LinearLayout
     private var approvalBusy = false
     private var approvalWaiting = false
+    /** The silent ceiling's keep/stop question is on the same card surface (never an approval). */
+    private var waitCardUp = false
     /** The phone action card currently on screen ("" when the gateway's card is the one shown). */
     private var phoneApprovalId = ""
+
+    /**
+     * An approval answer carried by the notification's Approve action, waiting for this activity
+     * to be resumed. The answer is delivered **here**, not from the receiver, because the action
+     * it authorises starts another activity and Android blocks that from the background (B2).
+     */
+    private var pendingApprovalAnswer: String? = null
 
     /**
      * The in-app half of [PhoneApprovals]. The notification half lives in that object; this is the
@@ -52,7 +62,9 @@ open class MainActivity : AppCompatActivity() {
                 phoneApprovalId = card.id
                 approvalBusy = false
                 approvalWaiting = true
+                waitCardUp = false
                 approvalCard.visibility = View.VISIBLE
+                approvalTitle.text = "APPROVAL NEEDED"
                 approvalLine.text = card.line
                 approvalLine.contentDescription = card.line
                 approvalState.text = "Two minutes"
@@ -75,6 +87,7 @@ open class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 approvalBusy = false
                 approvalWaiting = false
+                waitCardUp = false
                 approvalChoices.removeAllViews()
                 approvalChoices.visibility = View.GONE
                 approvalCard.visibility = View.GONE
@@ -96,6 +109,17 @@ open class MainActivity : AppCompatActivity() {
     private var coachStatusWasVisible = false
     protected val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private lateinit var agentName: TextView
+
+    // The resting sub-pill says which model answers; a change the person caused says so in
+    // blue for a few seconds ([HeaderNotice]) and then settles back to the model.
+    private val headerNotice = HeaderNotice()
+    private var noticeRunnable: Runnable? = null
+    private var noticeToken = 0
+    /** True while the pill carries an action/phase (the green line): that line always wins. */
+    private var actionLine = false
+    /** The model's own name for the resting pill (catalogue name after a switch). */
+    private var modelLabel = ""
+
     private lateinit var reply: CrawlView
     private lateinit var stream: CrawlView
     protected lateinit var avatar: AvatarView
@@ -263,7 +287,8 @@ open class MainActivity : AppCompatActivity() {
         lastCueState = state
         when (state) {
             "listening" -> cues?.play(CueSynth.Cue.LISTENING)
-            "thinking" -> cues?.play(CueSynth.Cue.THINKING)
+            "thinking" -> if (cues?.play(CueSynth.Cue.THINKING)?.action == CuePolicy.Action.AUDIO)
+                liveController?.noteFirstSound("cue")
         }
     }
 
@@ -439,12 +464,36 @@ open class MainActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: android.content.Intent?) {
         super.onNewIntent(intent); setIntent(intent)
+        // A notification's Approve action opens Vox with the card's id; answer from here.
+        captureApprovalAnswer(intent)
         // #329: the assist gesture, arriving at a call screen that already exists (the
         // bridge starts us with CLEAR_TOP|SINGLE_TOP so this is the same instance, not a
         // second one). Deferred like the harness so the intent never runs inside dispatch.
         if (intent?.getBooleanExtra(EXTRA_ASSIST, false) == true) mainHandler.post { onAssistInvoked() }
         // §B: a file shared to Vox while the call screen is already up.
         handleShareIntent(intent)
+    }
+
+    /**
+     * Read the notification's Approve action. It is answered once this activity is resumed, so
+     * the platform's own uninstall confirmation has a visible window to open from (B2).
+     */
+    private fun captureApprovalAnswer(intent: Intent?) {
+        if (intent == null) return
+        if (!intent.getBooleanExtra(PhoneApprovals.EXTRA_APPROVE, false)) return
+        pendingApprovalAnswer = intent.getStringExtra(PhoneApprovals.EXTRA_ID)
+            ?.takeIf { it.isNotEmpty() }
+        // Consume the flag: a rotation or a later onNewIntent must not answer twice.
+        intent.removeExtra(PhoneApprovals.EXTRA_APPROVE)
+        mainHandler.post { answerPendingApproval() }
+    }
+
+    /** Deliver a captured approval answer from the resumed activity. Nothing else answers it. */
+    private fun answerPendingApproval() {
+        val id = pendingApprovalAnswer ?: return
+        pendingApprovalAnswer = null
+        val outcome = PhoneApprovals.answer(id, approve = true, via = "notification")
+        VoxLog.d("event=phone-approval source=activity outcome=${outcome.name.lowercase()}")
     }
 
     /**
@@ -477,6 +526,8 @@ open class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         applyTheme(prefs.getString("theme", "system")!!)
         super.onCreate(savedInstanceState)
+        // A notification's Approve action arrives as this intent; answer it from the activity.
+        captureApprovalAnswer(intent)
         active = this
         setContentView(R.layout.activity_main)
         VoxLog.init(applicationContext)
@@ -492,6 +543,7 @@ open class MainActivity : AppCompatActivity() {
         status.setTextColor(ContextCompat.getColor(this, R.color.hv_status))
         status.visibility = android.view.View.GONE
         approvalCard = findViewById(R.id.approval_card)
+        approvalTitle = findViewById(R.id.approval_title)
         approvalLine = findViewById(R.id.approval_line)
         approvalState = findViewById(R.id.approval_state)
         approvalChoices = findViewById(R.id.approval_choices)
@@ -612,6 +664,11 @@ open class MainActivity : AppCompatActivity() {
     /** #373: the last state line the screen showed, so a recovered voice leg can put it
      *  back instead of inventing one. */
     private var lastStateLine = ""
+    /** The spoken-replies line that must survive ordinary state changes: a stand-in voice
+     *  ("Piper model not installed — using the system voice") or a stopped leg. It used to
+     *  be written once and immediately overwritten by "On call", which is why the owner
+     *  never saw it. Empty = the leg is clean and the state line owns the pill. */
+    private var voiceLegLine = ""
     private var callSeconds = 0
     private val callHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val callTicker = object : Runnable {
@@ -760,18 +817,28 @@ open class MainActivity : AppCompatActivity() {
             }
         }
         // #330: warmth no longer includes TTS, so a broken engine reaches this point.
-        // Say so once, non-blocking, and name the real cause instead of blaming the models.
-        val ttsIssueNow = c.ttsStatus()
-        if (ttsIssueNow.isNotBlank()) {
-            VoxLog.w("event=tts-degraded reason=$ttsIssueNow")
-            setStatus("Spoken replies off — $ttsIssueNow", true)
-        } else {
-            // #373: the requested voice is not the one that will speak (a model that is not
-            // installed, or an engine that would not load). The call is fine; saying which
-            // voice actually speaks is the difference between a bug report and a setting.
-            val fallbackNow = c.ttsFallbackNote()
-            if (fallbackNow.isNotBlank()) setStatus(fallbackNow, true)
+        // The voice leg has now DECIDED. Two honest outcomes:
+        //  - a stand-in voice speaks (missing model / refused engine): the call opens and
+        //    the line names the voice that is actually speaking;
+        //  - no engine can speak at all: REFUSE the call here, before it starts, naming
+        //    what is missing and where to get it. Proceeding into silence is forbidden.
+        val gate = c.callGate()
+        if (!gate.starts) {
+            VoxLog.w("event=call-refused reason=${gate.line}")
+            warmingNow = false
+            warmRetries = 0
+            if (::warming.isInitialized) warming.visibility = android.view.View.GONE
+            setStatus(gate.line, true)
+            // No call started, so the controller's pipeline is not needed. Drop it so a
+            // later attempt after the user installs/enables a voice builds a fresh leg
+            // instead of reusing this terminal refusal.
+            liveController?.stop()
+            liveController = null
+            return
         }
+        // The line is sticky: it must still be there after "On call" and after every
+        // Listening…/Speaking… state update (see onState + onSpokenReplies).
+        voiceLegLine = gate.line
         // Warmth just completed. THIS is the moment the gateway may honestly be
         // tested (B2c): re-dial now, so the pill moves Initializing -> Dialing ->
         // Connected instead of sitting on a single sticky word. The line opens
@@ -806,7 +873,7 @@ open class MainActivity : AppCompatActivity() {
         c.setVoiceChannelOpen(true)   // the voice channel is open -> replies may speak
         c.start(listener, prefs.getBoolean("duplex", true))
         enterCallUi()
-        setStatus("On call", false)
+        setStatus(if (voiceLegLine.isBlank()) "On call" else voiceLegLine, voiceLegLine.isNotBlank())
         // 0.8/M3c: THE SOUL OPENS THE CALL. With Presence on the entity greets you first,
         // in its own voice, before the mind has anything to answer — so there is no race
         // to lose and the layer is perceptible from the first second rather than only on
@@ -831,6 +898,7 @@ open class MainActivity : AppCompatActivity() {
         unregisterRouteCallback()  // C3: route callback lives exactly as long as the call
         VoiceService.stop(this)
         exitCallUi()
+        voiceLegLine = ""   // a new call re-decides the voice; never carry a stale line over
         setStatus(idleStatus(), false)
         feed(MotionState.Signal.REST)
         // Phase 4: the call is over; the presence engine's ~2.2 GB has nothing left to
@@ -839,6 +907,9 @@ open class MainActivity : AppCompatActivity() {
         // default (MemoryBudget.release) — whether the trade is worth it is the owner's
         // decision, not this branch's.
         (express as? GemmaExpress)?.requestUnload("call-end")
+        // A dial handoff ends the call from inside PiP. Leaving an idle app floating
+        // contradicts CallWindow's own rule: an idle app must never float (H1).
+        if (Build.VERSION.SDK_INT >= Pip.MIN_API && isInPictureInPictureMode) finish()
         // #384: a profile refresh that arrived during the call waited for exactly this
         // moment — the conversation is over, so asking now cannot disturb it.
         profiles.runDeferredAsk()
@@ -1066,27 +1137,35 @@ open class MainActivity : AppCompatActivity() {
      * still happens, immediately.
      */
     private fun launchOutside(start: () -> Unit) {
-        val order = CallWindow.launch(pipHost, start)
-        if (order == CallWindow.Order.PIP_THEN_LAUNCH) VoxLog.d("event=launch pip-first callLive=$callLive")
+        val plan = CallWindow.launch(pipHost, start)
+        if (plan.order == CallWindow.Order.PIP_THEN_LAUNCH) {
+            VoxLog.d("event=launch pip-first callLive=$callLive posted=${plan.posted}")
+        }
     }
 
     private val pipHost = object : CallWindow.Host {
         override fun callLive(): Boolean = callLive
         override fun enterPip(): Boolean = this@MainActivity.enterPip()
-        override fun post(delayMs: Long, action: () -> Unit) {
-            mainHandler.postDelayed({ if (!isFinishing && !isDestroyed) action() }, delayMs)
+        override fun post(delayMs: Long, action: () -> Unit): Boolean {
+            if (isFinishing || isDestroyed) return false
+            return mainHandler.postDelayed({
+                if (!isFinishing && !isDestroyed) action()
+            }, delayMs)
         }
     }
 
     /**
      * The screen's half of the phone's handoff actions. The dial line is voiced through the
      * **existing being** ([VoiceController.speakGlue]) and the rest of the handoff — the
-     * hang-up teardown, then the dialer — runs when that line is audible. A short fallback
-     * fires if nothing can speak, because a dial must never wait on TTS: the line is a courtesy
-     * at the handoff, not a gate on the owner's call.
+     * hang-up teardown, then the dialer — runs when that line is **done**. Firing on start
+     * would let the teardown cut the line that has just begun (H1). A bounded fallback fires
+     * if the engine never reports done, because a dial must never wait on TTS forever.
      */
     private val phoneHost = object : PhoneHandoff.Host {
         override fun callLive(): Boolean = callLive
+
+        override fun canStartActivity(): Boolean =
+            !isFinishing && !isDestroyed && (AppFocus.inFront || isInPictureInPictureMode)
 
         override fun announceDial(line: String, after: () -> Unit) {
             val c = liveController
@@ -1094,12 +1173,14 @@ open class MainActivity : AppCompatActivity() {
                 after()
                 return
             }
-            val fired = java.util.concurrent.atomic.AtomicBoolean(false)
-            val go = {
-                if (fired.compareAndSet(false, true)) mainHandler.post(after)
-            }
-            c.speakGlue(line, critical = true, source = "dial-handoff", onPlayed = { go() })
-            mainHandler.postDelayed({ go() }, ANNOUNCE_FALLBACK_MS)
+            val once = DialHandoff.AnnounceOnce { mainHandler.post(after) }
+            c.speakGlue(
+                line,
+                critical = true,
+                source = "dial-handoff",
+                onDone = { once.onDone() },
+            )
+            mainHandler.postDelayed({ once.onFallback() }, ANNOUNCE_FALLBACK_MS)
         }
 
         override fun endCall() = this@MainActivity.endCall()
@@ -1136,9 +1217,14 @@ open class MainActivity : AppCompatActivity() {
 
     private var statusOfferShown = false
     protected fun setStatus(text: String, show: Boolean) {
+        // An action or a phase taking the pill retires a blue notice: the green line wins.
+        if (show) retireHeaderNotice()
         if (statusOfferShown) { statusOfferShown = false; status.setOnClickListener(null) }   // #284: the offer goes with its line
-        status.text = text
-        status.visibility = if (show) android.view.View.VISIBLE else android.view.View.GONE
+        actionLine = show
+        // With nothing to act on, the pill rests on the model's name: the header says who
+        // you are talking to, the pill says what answers. It is no longer a blank line.
+        status.text = if (show) text else idleStatus()
+        status.visibility = android.view.View.VISIBLE
         // A real phase/status replaces the models-warning pill: drop its tap
         // handler so phase pills never read as warnings or navigate to the model
         // store by accident (#12/#6).
@@ -1151,6 +1237,67 @@ open class MainActivity : AppCompatActivity() {
         // chip and follow the call tone without a call-only colour surviving the call.
         status.setTextColor(ContextCompat.getColor(this,
             if (callLive) R.color.hv_status_live else R.color.hv_status))
+    }
+
+    // ---- the blue notice: a change the person caused, said once -------------------------
+
+    /** Retire the notice and any fade in flight, restoring the pill's ink. */
+    private fun cancelNoticeVisual() {
+        noticeToken++
+        noticeRunnable?.let { mainHandler.removeCallbacks(it) }
+        noticeRunnable = null
+        status.animate().cancel()
+        status.alpha = 1f
+    }
+
+    private fun retireHeaderNotice() {
+        cancelNoticeVisual()
+        headerNotice.clear()
+    }
+
+    /** Put the resting line back: the model's own name, in the pill's normal ink. */
+    private fun paintIdleLine() {
+        if (!::status.isInitialized) return
+        status.alpha = 1f
+        status.text = idleStatus()
+        status.visibility = android.view.View.VISIBLE
+        status.setTextColor(ContextCompat.getColor(this, R.color.hv_status))
+        status.setOnClickListener(null)
+    }
+
+    /** Repaint the resting model line unless an action or a blue notice owns the pill. */
+    private fun paintRestingLine() {
+        if (actionLine || headerNotice.showing(android.os.SystemClock.uptimeMillis())) return
+        paintIdleLine()
+    }
+
+    /**
+     * Announce a switch the person caused: the model's name (a model switch) or the
+     * session's title (a session switch), in blue, for [Header.NOTICE_MS], then faded out
+     * to the resting model line. One notice at a time; an action on the pill wins outright.
+     */
+    private fun showHeaderNotice(text: String) {
+        val now = android.os.SystemClock.uptimeMillis()
+        if (!headerNotice.arm(text, now, actionRunning = actionLine)) return
+        cancelNoticeVisual()
+        val token = noticeToken
+        status.animate().cancel()
+        status.alpha = 1f
+        status.text = Header.switchNotice(text)
+        status.visibility = android.view.View.VISIBLE
+        status.setTextColor(ContextCompat.getColor(this, R.color.hv_notice))
+        status.setOnClickListener(null)
+        val fade = Runnable {
+            if (token != noticeToken) return@Runnable
+            headerNotice.clear()
+            status.animate().alpha(0f).setDuration(Header.FADE_MS).withEndAction {
+                if (token != noticeToken) return@withEndAction
+                paintIdleLine()
+            }.start()
+        }
+        noticeRunnable = fade
+        mainHandler.postDelayed(fade, Header.NOTICE_MS - Header.FADE_MS)
+        VoxLog.d("event=header-notice text=${Header.switchNotice(text)}")
     }
 
     // -----------------------------------------------------------------------
@@ -1472,8 +1619,14 @@ open class MainActivity : AppCompatActivity() {
     }
 
     /** The quiet idle word — never "Connected" while the host has told us the profile is gone. */
-    private fun idleStatus(): String =
-        if (ProfileReach.isMissing()) ProfileReach.line() else getString(R.string.hv_connected)
+    private fun idleStatus(): String = when {
+        ProfileReach.isMissing() -> ProfileReach.line()
+        // With nothing to act on, the sub-pill names the model that answers — plainly, the
+        // way the catalogue names it. It is not the header's job: that is the agent's name.
+        else -> Header.modelLine(modelLabel.ifBlank {
+            ModelChoices.displayName(prefs.getString("model", "hermes-agent").orEmpty())
+        })
+    }
 
     /** DIALING: reach out to the configured gateway and let the answer move the pill.
      *  Ping-only by default — opening the app should not fire a real model turn just
@@ -1925,7 +2078,13 @@ open class MainActivity : AppCompatActivity() {
          * call anyway. A courtesy, not a gate: no TTS engine, or a reply already owning the
          * voice, must never leave the owner waiting on a dialer.
          */
-        const val ANNOUNCE_FALLBACK_MS = 900L
+        /**
+         * The bound on waiting for the dial line to finish, measured from the moment it is
+         * handed to TTS. Long enough for a short line to synthesise and play; the no-engine
+         * path settles immediately, so this only catches an engine that never reports done.
+         * A longer synthesis than this must not cut the line at 900 ms (H1).
+         */
+        const val ANNOUNCE_FALLBACK_MS = 5_000L
 
         // Single canonical HermesSession: MainActivity, the live controller, and
         // Settings all share THIS instance so a reset reaches the same conversation.
@@ -2038,14 +2197,18 @@ open class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** The header: the agent's name, and the active profile's once there is a choice. */
+    /** The header: the agent's name, and the active profile's once there is a choice.
+     *
+     *  The title never names the model — that is what the sub-pill is for. A host that has
+     *  named the entity (`agent_name`) wins, and the Hermes agent's own name is the floor,
+     *  so a fresh install shows an entity rather than a route id. The call notification is
+     *  given the same words: one entity, one name. */
     private fun headerLabel(model: String): String {
-        // With no entity name yet, the model names the header — as words, not its route id
-        // (`deepseek-v4-flash` reads "DeepSeek V4 Flash", the same name the switcher shows).
-        val agent = prefs.getString("agent_name", "").orEmpty().ifBlank { ModelChoices.displayName(model) }
+        val agent = Header.agent(prefs.getString("agent_name", "").orEmpty())
         val list = profiles.list()
         val active = profiles.activeName()
-        VoiceService.title = if (list.size < 2 || active.isBlank()) "Hermes Vox" else "Hermes Vox · $active"
+        VoiceService.title = Header.callTitle(agent, active, list.size)
+        modelLabel = ModelChoices.displayName(model)
         return Profiles.headerLabel(agent, active, list.size)
     }
 
@@ -2060,12 +2223,6 @@ open class MainActivity : AppCompatActivity() {
      * device-wide value only where it has none, which is the one place that fallback lives.
      */
     private fun switchProfile(p: Profiles.Profile) {
-        // Alpha gate: switching is behind the Switching profiles set, and this is the last
-        // door — a banner, an intent or a restored state cannot switch behind it.
-        if (!AlphaGate.allows(prefs, AlphaGate.FeatureSet.PROFILES)) {
-            VoxLog.d("event=profile-switch refused reason=alpha-off profile=${p.name}")
-            return
-        }
         // Settings → Entity edits the live keys, so fold them back into the profile being
         // left before overwriting them; otherwise an edit made there is lost on the switch.
         val cur = profiles.activeName()
@@ -2154,6 +2311,9 @@ open class MainActivity : AppCompatActivity() {
         // The header shows the agent's name (the Hermes profile name, or the name
         // entered in onboarding) — center-top, with the status pill beneath.
         agentName.text = headerLabel(m)
+        // The pill rests on the model's name from the first connect: the header says who,
+        // the pill says what answers. An action already on the pill keeps it.
+        paintRestingLine()
         appendStream("// connected → $u")
         // No auto-open: real-time/enhanced starts ONLY on the call button. A live call
         // (surviving an app-close) is detected on create and resumed below.
@@ -2250,10 +2410,9 @@ open class MainActivity : AppCompatActivity() {
             return
         }
         if (missingKeyPrompt()) return   // C0: empty key -> clear Settings prompt
-        // #437: a typed (or dictated) "/sessions" opens the session card. With the Alpha set
-        // off [commandFor] is null, so the word goes on to the agent like any name nothing
-        // answers to — it never opens a card and never adopts a session.
-        Sessions.commandFor(text, commandGate())?.let { c ->
+        // #437: a typed (or dictated) "/sessions" opens the session card. It left Alpha
+        // (#437, D39), so the word reaches the card for every install.
+        Sessions.commandFor(text)?.let { c ->
             runCommand(c) {}
             return
         }
@@ -2295,7 +2454,7 @@ open class MainActivity : AppCompatActivity() {
                 if (state == "thinking") { replyBuf = ""; revealHadCursor = false; revealBufLoggedFor = -1 }
                 // #282: a new turn retires the PREVIOUS approval card; a request that is
                 // still waiting is never hidden by its own run's state.
-                if (state == "thinking" && !approvalWaiting) approvalCard.visibility = View.GONE
+                if (state == "thinking" && !approvalWaiting && !waitCardUp) approvalCard.visibility = View.GONE
                 // 0.5.1: the controller's own "warming" state is the LOCAL pipeline
                 // loading, and it now says so on the pill instead of falling through
                 // to a silent "Connected" it has not earned yet.
@@ -2319,10 +2478,21 @@ open class MainActivity : AppCompatActivity() {
                 }
                 // #282: while a request waits, the line says so — a late state callback
                 // must not put the waiting phase back into "working".
-                val line = if (approvalWaiting) "Waiting for your approval"
+                val base = if (approvalWaiting) "Waiting for your approval"
                     else StateLine.words(running, opHeld, words)
-                lastStateLine = line   // #373: what to put back when a voice leg recovers
-                setStatus(line, approvalWaiting || StateLine.visible(running != null, opHeld != null, state, callLive))
+                // #373 follow-up: the spoken-replies line outranks the ambient words but
+                // never a running step or a held failure. Without this it was overwritten
+                // by the very next Listening…/Speaking… state — present for a frame, then
+                // gone, which is indistinguishable from never raised.
+                val voiceOwnsLine = voiceLegLine.isNotBlank() && !approvalWaiting &&
+                    running == null && opHeld == null
+                val line = if (voiceOwnsLine) voiceLegLine else base
+                lastStateLine = base   // #373: what to put back when a voice leg recovers
+                setStatus(
+                    line,
+                    approvalWaiting || voiceOwnsLine ||
+                        StateLine.visible(running != null, opHeld != null, state, callLive),
+                )
                 if (callLive) VoiceService.update(this@MainActivity, line)
                 // previewB: the state is a SIGNAL now, not a shape + a made-up level.
                 // The level it used to pass (0.6 for "speaking") was a placeholder;
@@ -2496,8 +2666,10 @@ open class MainActivity : AppCompatActivity() {
         override fun onApproval(prompt: ApprovalPrompt) { runOnUiThread {
             approvalBusy = false
             approvalWaiting = true
+            waitCardUp = false
             phoneApprovalId = ""
             approvalCard.visibility = View.VISIBLE
+            approvalTitle.text = "APPROVAL NEEDED"
             approvalLine.text = prompt.line
             approvalLine.contentDescription = prompt.line
             approvalState.text = ""
@@ -2546,13 +2718,69 @@ open class MainActivity : AppCompatActivity() {
             appendConvo("! Approval ended with the run: ${prompt.action}")
         } }
         /**
+         * The silent ceiling's question. It uses the approval card's layout and tap-or-voice
+         * interaction, but it is not a consent request: [WaitPromptCard] has no id, no
+         * action and authorises nothing, and it is never shown over an approval.
+         */
+        override fun onWaitPrompt(card: WaitPromptCard) { runOnUiThread {
+            if (approvalWaiting) return@runOnUiThread   // the approval owns the screen
+            approvalBusy = false
+            waitCardUp = true
+            phoneApprovalId = ""
+            approvalCard.visibility = View.VISIBLE
+            approvalTitle.text = card.title
+            approvalLine.text = card.question
+            approvalLine.contentDescription = card.question
+            approvalState.text = "10 seconds — then I stop"
+            approvalState.visibility = View.VISIBLE
+            buildWaitButtons(card)
+            setStatus("Still working — keep waiting or stop?", true)
+            if (callLive) VoiceService.update(this@MainActivity, "Still working — keep waiting or stop?")
+        } }
+        override fun onWaitPromptResolved(card: WaitPromptCard, outcome: WaitPrompt.Outcome) { runOnUiThread {
+            waitCardUp = false
+            approvalBusy = false
+            // If an approval took the screen while this dismissal was in flight, the
+            // approval owns it now; do not hide its card.
+            if (approvalWaiting) return@runOnUiThread
+            approvalChoices.removeAllViews()
+            approvalChoices.visibility = View.GONE
+            approvalCard.visibility = View.GONE
+            when (outcome) {
+                WaitPrompt.Outcome.KEEP -> {
+                    setStatus("The entity is working…", true)
+                    if (callLive) VoiceService.update(this@MainActivity, "The entity is working…")
+                }
+                WaitPrompt.Outcome.STOP -> {
+                    setStatus("Stopped waiting", true)
+                    if (callLive) VoiceService.update(this@MainActivity, "Stopped waiting")
+                }
+                WaitPrompt.Outcome.NO_ANSWER -> {
+                    appendStream("// no answer — stopped waiting")
+                    setStatus("Stopped waiting", true)
+                    if (callLive) VoiceService.update(this@MainActivity, "Stopped waiting")
+                }
+                WaitPrompt.Outcome.EXTENDED -> {
+                    appendStream("// still silent after the extra time — stopped")
+                    setStatus("Stopped waiting", true)
+                    if (callLive) VoiceService.update(this@MainActivity, "Stopped waiting")
+                }
+                WaitPrompt.Outcome.DISMISSED -> {
+                    // The stream resumed, a new turn started, or an approval took the screen.
+                    // Hide silently; the ordinary state line owns what comes next.
+                }
+            }
+        } }
+        /**
          * #373: the spoken-replies leg changed. Both directions land here: a fallback that
          * dies shows the reason, and one that recovers puts the call's own line back — the
          * screen used to learn this exactly once, at call open.
          */
         override fun onSpokenReplies(line: String, degraded: Boolean) { runOnUiThread {
             if (line.isBlank()) {
-                // Recovered: put back the state this screen was already showing.
+                // Recovered: clear the sticky line and put back the state this screen was
+                // already showing.
+                voiceLegLine = ""
                 if (callLive) {
                     val back = lastStateLine.ifBlank { "Listening…" }
                     setStatus(back, false)
@@ -2561,6 +2789,7 @@ open class MainActivity : AppCompatActivity() {
                 return@runOnUiThread
             }
             val shown = if (degraded) "Spoken replies off — $line" else line
+            voiceLegLine = shown
             setStatus(shown, true)
             if (callLive) VoiceService.update(this@MainActivity, shown)
         } }
@@ -2597,8 +2826,10 @@ open class MainActivity : AppCompatActivity() {
                 val phoneId = phoneApprovalId
                 if (phoneId.isNotEmpty()) {
                     // The phone action's answer; the desk withdraws the card when it lands.
-                    if (!PhoneApprovals.answer(phoneId, choice != "deny", "tap")) {
-                        approvalState.text = "EXPIRED"
+                    when (PhoneApprovals.answer(phoneId, choice != "deny", "tap")) {
+                        PhoneApprovals.Outcome.LOCKED -> approvalState.text = "LOCKED"
+                        PhoneApprovals.Outcome.NOT_PENDING -> approvalState.text = "EXPIRED"
+                        else -> Unit
                     }
                 } else {
                     liveController?.answerApproval(choice)
@@ -2607,6 +2838,40 @@ open class MainActivity : AppCompatActivity() {
             approvalChoices.addView(b)
         }
         approvalChoices.visibility = if (prompt.choices.isEmpty()) View.GONE else View.VISIBLE
+    }
+
+    /**
+     * The wait card's two choices, on the same row the approval card uses. STOP is the
+     * filled, safe-default control and sits last for the same reason deny does: doing
+     * nothing must cost no more than stopping. Nothing here is an approval answer and the
+     * controller never hands it to the approval gate.
+     */
+    private fun buildWaitButtons(card: WaitPromptCard) {
+        approvalChoices.removeAllViews()
+        val density = resources.displayMetrics.density
+        for (answer in card.answers) {
+            val stop = answer == WaitPrompt.Answer.STOP
+            val b = Button(this)
+            b.text = card.label(answer)
+            b.textSize = 12f
+            b.isAllCaps = false
+            b.letterSpacing = 0.06f
+            b.setTextColor(ContextCompat.getColor(this, if (stop) R.color.hv_text else R.color.hv_cyan))
+            b.background = ContextCompat.getDrawable(this, if (stop) R.drawable.bg_chip else R.drawable.bg_button_ghost)
+            b.contentDescription = if (stop) "Stop waiting" else "Keep waiting"
+            b.layoutParams = android.widget.LinearLayout.LayoutParams(
+                0, (44 * density).toInt(), 1f).apply { marginEnd = (6 * density).toInt() }
+            b.setOnClickListener {
+                if (approvalBusy) return@setOnClickListener
+                approvalBusy = true
+                for (i in 0 until approvalChoices.childCount) approvalChoices.getChildAt(i).isEnabled = false
+                approvalState.text = if (stop) "STOPPING…" else "KEEPING WAITING…"
+                approvalState.visibility = View.VISIBLE
+                liveController?.answerWaitPrompt(answer)
+            }
+            approvalChoices.addView(b)
+        }
+        approvalChoices.visibility = View.VISIBLE
     }
 
     /** Show the heard line: fade in, hold for its reading time (longer when a
@@ -2668,21 +2933,11 @@ open class MainActivity : AppCompatActivity() {
     private var stuckShownThisCall = false
     private var callTurns = 0L
     /** Which optional commands exist right now: `/diagnostics` while its own switch is on
-     *  (#418), `/profiles` only while the Alpha gate allows "Switching profiles" (#402), and
-     *  `/sessions` only while it allows "Sessions" (#437). One gate for the sheet, the search,
-     *  /help and the typed word — there is no second way a row is absent. */
-    private fun commandGate(): CommandCatalog.Gate {
-        val r = AlphaGate.reader(prefs)
-        val diagnostics = DiagnosticSummary.gate(DiagnosticSummary.store(prefs))
-        val sessions = Sessions.gate(r)
-        val profiles = AlphaGate.allows(r, AlphaGate.FeatureSet.PROFILES)
-        return CommandCatalog.Gate { c ->
-            when (c.name) {
-                "/profiles" -> profiles
-                else -> diagnostics.on(c) && sessions.on(c)
-            }
-        }
-    }
+     *  (#418), and nothing else. One gate for the sheet, /help and the typed word — there is
+     *  no second way a row is absent (#501). `/profiles` and `/sessions` left Alpha (#436,
+     *  #437, D39) and are no longer asked. */
+    private fun commandGate(): CommandCatalog.Gate =
+        CommandGate.of(DiagnosticSummary.store(prefs))
 
     protected fun showCommands() = commandsSheet.show()
 
@@ -2708,13 +2963,9 @@ open class MainActivity : AppCompatActivity() {
         )
     }
 
-    /** `/sessions`, and the typed word. Behind the Alpha set at both ends: the command does
-     *  not exist with it off, and this door refuses before it asks the host anything. */
+    /** `/sessions`, and the typed word. Sessions left Alpha (#437, D39): the command is in
+     *  the catalogue for every install, and this door opens the card. */
     protected fun showSessions() {
-        Sessions.refusal(AlphaGate.reader(prefs))?.let {
-            VoxLog.d("event=sessions refused reason=alpha-off")
-            return
-        }
         if (missingKeyPrompt()) return
         sessionsSheet.show()
     }
@@ -2729,12 +2980,6 @@ open class MainActivity : AppCompatActivity() {
      * profile switch, and the live call is the same agent.
      */
     private fun adoptSession(row: Sessions.Row): Boolean {
-        Sessions.refusal(AlphaGate.reader(prefs))?.let {
-            // The last door (§1): no path adopts a session with the set off.
-            VoxLog.d("event=session-adopt refused reason=alpha-off id=${row.id}")
-            setStatus(it, true)
-            return false
-        }
         val s = session ?: run { setStatus("Connect first", true); return false }
         s.adoptConversation(row.id)
         adoption.adopt(row)
@@ -2742,7 +2987,9 @@ open class MainActivity : AppCompatActivity() {
         // stays behind it (and a stored turn's id was rotated with the session object).
         clearConversationUi()
         VoxLog.d("event=session-adopt id=${row.id} source=${row.source}")
-        setStatus("Resumed · ${row.label}", true)
+        // A session switch announces itself in blue: the session's own title, once. The
+        // model pill underneath is unchanged — the mind is the same.
+        showHeaderNotice(row.label)
         fetchResumed(row.id)
         return true
     }
@@ -3056,32 +3303,19 @@ open class MainActivity : AppCompatActivity() {
             // inherited from the closed six-verb grammar; the card is the share sheet.
             CommandCatalog.SHARE.name -> { showShare(); done(true) }
             "/models" -> showModelChooser()
-            // Per-profile pass: the switcher is a command now — the commands sheet is where a
-            // person goes to change the agent, and this row opens it on the sheets' own scaffold.
-            // Alpha gate: with Switching profiles off it is not a command the app knows.
+            // Per-profile pass: the switcher is a command — the commands sheet is where a
+            // person goes to change the agent, and this row opens it on the sheets' own
+            // scaffold. Profiles left Alpha (#436, D39), so every install has it.
             "/profiles" -> {
-                if (!AlphaGate.allows(prefs, AlphaGate.FeatureSet.PROFILES)) {
-                    VoxLog.d("event=command name=/profiles state=refused reason=alpha-off")
-                    showHelpCard()
-                    done(false)
-                } else {
-                    profiles.showSwitcher()
-                    done(true)
-                }
+                profiles.showSwitcher()
+                done(true)
             }
             "/health" -> showHealthCard()
-            // #437: the session browser. With the Alpha set off this command does not exist
-            // (the catalogue has no such row and no such word), and this is the last door —
-            // it refuses before anything is listed or adopted.
+            // #437: the session browser. Sessions left Alpha (#437, D39), so the card is the
+            // command's whole behaviour for every install.
             Sessions.COMMAND -> {
-                if (Sessions.refusal(AlphaGate.reader(prefs)) != null) {
-                    VoxLog.d("event=command name=/sessions state=refused reason=alpha-off")
-                    showHelpCard()
-                    done(false)
-                } else {
-                    showSessions()
-                    done(true)
-                }
+                showSessions()
+                done(true)
             }
             // #418: the second door to the report block the Presence row copies. Same
             // collector, same bytes — the door only decides when, never what.
@@ -3095,7 +3329,9 @@ open class MainActivity : AppCompatActivity() {
     }
 
     /** /models — the model switcher (UI/UX pass): the REAL gateway catalog (GET
-     *  /api/model/options) fanned out provider → category → model in [ModelSheet], on the
+     *  /api/model/options) as provider → model in [ModelSheet] (#5 dropped the category
+     *  level: a provider opens onto all its models, each carrying the capability flags the
+     *  gateway states), on the
      *  app's ground, instead of a stock list of raw strings. Selecting a model sets the app
      *  model+provider prefs that the /v1/responses client sends per request (the blessed
      *  LIGHT PATH) — the gateway overrides the entity's inference backend, while the entity's
@@ -3122,8 +3358,12 @@ open class MainActivity : AppCompatActivity() {
         LatencyStats.resetSessionTurns()   // C3: fresh backend = fresh session
         sesModel = modelId; sesProvider = prov
         agentName.text = headerLabel(modelId)
-        // The outcome on the status line, in words: the model's name, not "prov/id".
-        setStatus(ModelChoices.switchedLine(p, m), true)
+        // The outcome: the catalogue's own name for the model, plainly. The pill rests on
+        // it and a blue notice announces the change, then fades back to the same name.
+        val line = ModelChoices.switchedLine(p, m)
+        modelLabel = Header.modelLine(line)
+        paintRestingLine()
+        showHeaderNotice(line)
         VoxLog.d("event=model-switch provider=$prov model=$modelId")
     }
 
@@ -3324,7 +3564,7 @@ open class MainActivity : AppCompatActivity() {
     private fun updateStreamVisibility() {
         stream.visibility = if (prefs.getBoolean("dev_console", false)) View.VISIBLE else View.GONE
     }
-    override fun onResume() { super.onResume(); runOnUiThread { updateStreamVisibility(); handleModeUi(); applyParticlePrefs(); applyCommandIcon(); resumeLiveCallIfAny(); applyKeepScreenOn(); refreshModelsGate(); maybeShowCoachMarks(); maybeRefetchResumed() } }
+    override fun onResume() { super.onResume(); runOnUiThread { answerPendingApproval(); updateStreamVisibility(); handleModeUi(); applyParticlePrefs(); applyCommandIcon(); resumeLiveCallIfAny(); applyKeepScreenOn(); refreshModelsGate(); maybeShowCoachMarks(); maybeRefetchResumed() } }
 
     /**
      * #437 §5: a resumed session may be written by another surface while the phone is in a

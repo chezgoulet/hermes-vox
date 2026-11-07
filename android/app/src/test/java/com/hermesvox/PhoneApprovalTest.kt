@@ -46,7 +46,8 @@ class PhoneApprovalTest {
                 network = null, tailnetPresent = null, freeStorageBytes = null, mediaVolume = null,
                 dnd = null, timeZoneId = null, utcOffsetMinutes = null,
             )
-        override fun clip(text: String): Boolean = true
+        override fun clip(text: String): PhoneEngine.PhonePlatform.ClipWrite =
+            PhoneEngine.PhonePlatform.ClipWrite.Done
 
         override fun appLabel(packageName: String): String? = labels[packageName]
         override fun uninstall(packageName: String): PhoneEngine.PhonePlatform.Uninstall {

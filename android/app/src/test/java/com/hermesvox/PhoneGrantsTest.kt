@@ -15,7 +15,7 @@ import org.junit.Test
  *
  *  * **every group defaults to Off**, and Off advertises nothing;
  *  * **thirteen groups**, each with one tier, a one-line description and a unique id;
- *  * **Allow exists for Tier 0 only** — a stored Allow on Tier 1/2 reads back as Ask;
+ *  * **Off, Ask and Allow are offered for every tier** — one meaning each, honoured as stored;
  *  * **no allow-all**; the one bulk shortcut touches Tier 0 alone.
  */
 class PhoneGrantsTest {
@@ -55,7 +55,7 @@ class PhoneGrantsTest {
 
     @Test fun the_two_read_groups_are_instant_and_offer_allow() {
         for ((id, actions) in listOf(
-            "notifications" to listOf("notifications", "notification_read"),
+            "notifications" to listOf("notifications", "notification_read", "notification_dismiss"),
             "contacts" to listOf("contact"),
         )) {
             val group = PhoneGrants.GROUPS.first { it.id == id }
@@ -104,33 +104,37 @@ class PhoneGrantsTest {
         }
     }
 
-    @Test fun allow_is_offered_for_tier_zero_only() {
-        assertEquals(
-            listOf(PhoneGrants.State.OFF, PhoneGrants.State.ASK, PhoneGrants.State.ALLOW),
-            PhoneGrants.statesFor(PhoneTiers.INSTANT),
-        )
-        assertEquals(
-            listOf(PhoneGrants.State.OFF, PhoneGrants.State.ASK),
-            PhoneGrants.statesFor(PhoneTiers.REPORTED),
-        )
-        assertEquals(
-            listOf(PhoneGrants.State.OFF, PhoneGrants.State.ASK),
-            PhoneGrants.statesFor(PhoneTiers.APPROVAL),
-        )
-        assertTrue(PhoneGrants.permits(PhoneTiers.INSTANT, PhoneGrants.State.ALLOW))
-        assertFalse(PhoneGrants.permits(PhoneTiers.REPORTED, PhoneGrants.State.ALLOW))
-        assertFalse(PhoneGrants.permits(PhoneTiers.APPROVAL, PhoneGrants.State.ALLOW))
+    /**
+     * The defect this replaced: Allow existed for Tier 0 only, and a stored Allow on a Tier 1 or
+     * Tier 2 group was quietly read back as Ask. Every tier now offers the same three words.
+     */
+    @Test fun every_tier_offers_the_same_three_states() {
+        for (tier in listOf(PhoneTiers.INSTANT, PhoneTiers.REPORTED, PhoneTiers.APPROVAL)) {
+            assertEquals(
+                "tier $tier must offer Off, Ask and Allow",
+                listOf(PhoneGrants.State.OFF, PhoneGrants.State.ASK, PhoneGrants.State.ALLOW),
+                PhoneGrants.statesFor(tier),
+            )
+        }
     }
 
-    @Test fun a_stored_allow_on_a_tier_one_group_reads_back_as_ask() {
-        val notes = PhoneGrants.GROUPS.first { it.id == "notes" }
-        assertEquals(
-            "a grant that cannot be given is not a grant",
-            PhoneGrants.State.ASK,
-            PhoneGrants.effective(notes, PhoneGrants.State.ALLOW),
-        )
-        val timers = PhoneGrants.GROUPS.first { it.id == "timers-alarms" }
-        assertEquals(PhoneGrants.State.ALLOW, PhoneGrants.effective(timers, PhoneGrants.State.ALLOW))
+    /**
+     * A stored value is the policy: no tier normalises Allow to Ask, and no group reads back a
+     * state other than the one written. The row and the engine therefore cannot disagree.
+     */
+    @Test fun a_stored_state_is_honoured_as_stored_for_every_group() {
+        for (group in PhoneGrants.GROUPS) {
+            for (wanted in PhoneGrants.statesFor(group.tier)) {
+                val source = PhoneGrants.Source { g ->
+                    if (g.id == group.id) wanted else PhoneGrants.State.OFF
+                }
+                assertEquals(
+                    "${group.id} must read back ${wanted.id}",
+                    wanted,
+                    PhoneGrants.stateOf(source, group),
+                )
+            }
+        }
     }
 
     @Test fun setting_one_group_on_adds_exactly_its_actions() {
@@ -149,19 +153,82 @@ class PhoneGrantsTest {
         assertEquals(listOf("timer", "alarm", "note", "undo", "status"), PhoneGrants.advertised(both))
     }
 
-    @Test fun the_one_bulk_shortcut_touches_tier_zero_only() {
+    /**
+     * The M8 rule survives in its corrected form: an entry in the enum is a capability the phone
+     * must be able to keep, and now every action at Ask has a card to keep it. So Ask advertises
+     * the group's whole action list — nothing is withheld for want of an approval path.
+     */
+    @Test fun ask_advertises_every_action_because_every_action_can_raise_a_card() {
+        for (group in PhoneGrants.GROUPS) {
+            if (group.actions.isEmpty()) continue
+            val on = PhoneGrants.Source { g ->
+                if (g.id == group.id) PhoneGrants.State.ASK else PhoneGrants.State.OFF
+            }
+            assertEquals(
+                "${group.id} at Ask must offer its actions behind a card",
+                group.actions + PhoneGrants.ALWAYS,
+                PhoneGrants.advertised(on),
+            )
+        }
+    }
+
+    /**
+     * The row has to say what Allow means where that is not obvious. A Messages row set to Allow
+     * is telling the owner that Vox may compose a text and open the messaging app without asking.
+     */
+    @Test fun a_consequential_group_says_what_allow_means_on_its_row() {
+        for (id in listOf("messages", "calls", "contacts", "notifications", "clipboard", "files", "apps")) {
+            val group = PhoneGrants.GROUPS.first { it.id == id }
+            val warning = group.allowWarning
+            assertNotNull("$id must say what Allow means", warning)
+            assertTrue("$id's Allow warning must say 'without asking': $warning", warning!!.contains("without asking"))
+        }
+        val messages = PhoneGrants.GROUPS.first { it.id == "messages" }
+        assertTrue(
+            "the Messages warning must name the text: ${messages.allowWarning}",
+            messages.allowWarning!!.contains("text"),
+        )
+        val apps = PhoneGrants.GROUPS.first { it.id == "apps" }
+        assertTrue(
+            "the Apps warning must name the removal: ${apps.allowWarning}",
+            apps.allowWarning!!.contains("remove an app"),
+        )
+    }
+
+    /**
+     * L7 of the 0.9.1 review: the one bulk shortcut must not grant the privacy-read groups. A tap
+     * that turned Notifications, Contacts and Apps on at once would hand over other people's words
+     * and the uninstall request path without the owner deciding to.
+     */
+    @Test fun the_one_bulk_shortcut_touches_tier_zero_but_not_the_private_groups() {
+        assertEquals(
+            "the exempt set is exactly the groups a bulk tap must not decide",
+            setOf("notifications", "contacts", "apps"),
+            PhoneGrants.BULK_EXEMPT,
+        )
+        for (id in PhoneGrants.BULK_EXEMPT) {
+            val group = PhoneGrants.GROUPS.first { it.id == id }
+            assertEquals("$id is Tier 0, so the exemption has to be explicit", PhoneTiers.INSTANT, group.tier)
+        }
+
         val before = PhoneGrants.GROUPS.associate { it.id to PhoneGrants.State.OFF }
         val after = PhoneGrants.instantAll(before)
         for (group in PhoneGrants.GROUPS) {
-            if (group.tier == PhoneTiers.INSTANT) {
-                assertEquals("${group.id} is instant", PhoneGrants.State.ALLOW, after[group.id])
-            } else {
-                assertEquals("${group.id} must stay Off", PhoneGrants.State.OFF, after[group.id])
+            when {
+                group.id in PhoneGrants.BULK_EXEMPT -> assertEquals(
+                    "${group.id} stays a decision of its own",
+                    PhoneGrants.State.OFF,
+                    after[group.id],
+                )
+                group.tier == PhoneTiers.INSTANT ->
+                    assertEquals("${group.id} is instant", PhoneGrants.State.ALLOW, after[group.id])
+                else ->
+                    assertEquals("${group.id} must stay Off", PhoneGrants.State.OFF, after[group.id])
             }
         }
     }
 
-    @Test fun planned_actions_resolve_to_their_group_but_are_never_advertised() {
+    @Test fun uninstall_resolves_to_apps_and_install_is_no_longer_an_action() {
         val apps = PhoneGrants.groupOf("uninstall")
         assertEquals("apps", apps?.id)
         assertEquals(PhoneTiers.APPROVAL, PhoneGrants.tierOf("uninstall"))
@@ -170,17 +237,15 @@ class PhoneGrantsTest {
             "the card's action is offered when its group is on",
             "uninstall" in PhoneGrants.advertised(PhoneGrants.Source { PhoneGrants.State.ALLOW }),
         )
-        val install = PhoneGrants.groupOf("install")
-        assertEquals("apps", install?.id)
-        assertFalse("install is still planned", "install" in install!!.actions)
+        // `install` left the surface with the apps-and-dismiss lane: no group, no tier, no promise.
+        assertNull("install belongs to no group", PhoneGrants.groupOf("install"))
+        assertNull("install is not a phone action", PhoneGrants.tierOf("install"))
         for (g in PhoneGrants.GROUPS) {
-            for (planned in g.planned) {
-                assertFalse("$planned is planned, not built", planned in g.actions)
-                assertFalse(
-                    "$planned must not be advertised even when its group is allowed",
-                    planned in PhoneGrants.advertised(PhoneGrants.Source { PhoneGrants.State.ALLOW }),
-                )
-            }
+            assertTrue("${g.id} must have no planned actions left", g.planned.isEmpty())
+            assertFalse(
+                "install must not be advertised even when every group is allowed",
+                "install" in PhoneGrants.advertised(PhoneGrants.Source { PhoneGrants.State.ALLOW }),
+            )
         }
         assertNull(PhoneGrants.groupOf("fly"))
         assertNull(PhoneGrants.tierOf("fly"))

@@ -9,11 +9,11 @@ import org.junit.Test
  * #451: the poll's rule — a tick repaints the phone tools sheet only when the sheet would draw
  * something new.
  *
- * The sheet polls once a second so the clock can move *waiting* → *timed out* and so the "last
- * request" line can age. It used to repaint on the clock itself: for as long as a setup was
- * WAITING or TIMED_OUT the whole content view was replaced every second, which put the scroll back
- * at the top and dropped a drag in flight. On a phone that had ever asked its agent to set itself
- * up, nothing below the fold could be reached at all — the sheet read as unscrollable.
+ * The sheet polls once a second so the "last request" line and a setup's silence age can move.
+ * It used to repaint on the clock itself: for as long as a setup was WAITING the whole content view
+ * was replaced every second, which put the scroll back at the top and dropped a drag in flight. On a
+ * phone that had ever asked its agent to set itself up, nothing below the fold could be reached at
+ * all — the sheet read as unscrollable.
  *
  * What the sheet draws is data ([PhoneToolsSheet.Drawn]), so the rule is proved without a device:
  * a second passing is not, on its own, a reason to rebuild the column. [PhoneToolsSheetLayoutTest]
@@ -50,24 +50,23 @@ class PhoneToolsSheetPollTest {
         assertFalse("a tick that draws the same sheet must not repaint", PhoneToolsSheet.repaints(shown, next))
     }
 
-    @Test fun a_tick_a_second_later_after_the_timeout_draws_the_same_sheet() {
-        val late = now + PhoneSetup.TIMEOUT_MS + 60_000L
-        val shown = PhoneToolsSheet.drawn(status(), waiting(), tag, late)
-        val next = PhoneToolsSheet.drawn(status(), waiting(), tag, late + 1_000L)
-        assertEquals(PhoneSetup.State.TIMED_OUT, shown.state)
-        assertEquals(shown, next)
-        assertFalse(
-            "a timed-out setup used to repaint the sheet every second for ever",
-            PhoneToolsSheet.repaints(shown, next),
-        )
-    }
-
-    @Test fun the_tick_that_crosses_the_timeout_repaints() {
+    /**
+     * There is no timeout to cross. A setup that has been waiting for six hours draws exactly the
+     * same sheet as one that has been waiting a second: *waiting* is a fact about the evidence, not
+     * about a clock, and a tick is not a change.
+     */
+    @Test fun a_setup_that_has_waited_hours_draws_the_same_sheet() {
+        val hoursLater = now + 6 * 60 * 60_000L
         val shown = PhoneToolsSheet.drawn(status(), waiting(), tag, now)
-        val next = PhoneToolsSheet.drawn(status(), waiting(), tag, now + PhoneSetup.TIMEOUT_MS)
+        val next = PhoneToolsSheet.drawn(status(), waiting(), tag, hoursLater)
         assertEquals(PhoneSetup.State.WAITING, shown.state)
-        assertEquals(PhoneSetup.State.TIMED_OUT, next.state)
-        assertTrue("waiting → timed out is a change, so it is drawn", PhoneToolsSheet.repaints(shown, next))
+        assertEquals("no deadline moved the state", PhoneSetup.State.WAITING, next.state)
+        assertEquals("no timeout line exists to change", shown.bootstrap, next.bootstrap)
+        assertEquals(shown.listening, next.listening)
+        assertEquals(shown.activity, next.activity)
+        assertEquals(shown.silence, next.silence)
+        // The sheet still redraws when the handshake line's age rolls over; that is a fact about
+        // when the `initialize` was seen, not about a countdown ending the attempt.
     }
 
     @Test fun a_request_landing_repaints_because_the_last_request_line_changed() {
@@ -93,5 +92,37 @@ class PhoneToolsSheetPollTest {
 
     @Test fun the_first_paint_always_happens() {
         assertTrue(PhoneToolsSheet.repaints(null, PhoneToolsSheet.drawn(status(), waiting(), tag, now)))
+    }
+
+    /**
+     * The step after the handover: the agent has written the entry, the gateway restarts, the tool
+     * connects, and the phone's own server records the `initialize`. Nothing else happens — the
+     * sheet is not reopened, the prompt is not re-sent — and the next tick draws Connected.
+     */
+    @Test fun a_handshake_after_a_restart_clears_the_waiting_state_by_itself() {
+        val asked = PhoneSetup.replied(waiting(), "Added vox to my configuration; the gateway needs a restart.")
+        val shown = PhoneToolsSheet.drawn(status(), asked, tag, now)
+        assertEquals("asked, and nothing has connected yet", PhoneSetup.State.WAITING, shown.state)
+        assertEquals(PhoneToolsView.WAITING_HEADING, PhoneToolsView.setupHeadline(shown.state, shown.record.failure))
+
+        val handshake = PhoneSetup.observedHandshake(asked, now + 30_000L, tag)
+        val next = PhoneToolsSheet.drawn(status(), handshake, tag, now + 31_000L)
+        assertEquals("the handshake alone is the transition", PhoneSetup.State.CONNECTED, next.state)
+        assertTrue("the owner sees the change on the next tick", PhoneToolsSheet.repaints(shown, next))
+        assertEquals(PhoneToolsView.CONNECTED_HEADING, PhoneToolsView.setupHeadline(next.state, next.record.failure))
+    }
+
+    /**
+     * The same clearing, from a sheet that was never asked anything: a gateway already holding the
+     * entry connects on its own, and the loud not-set-up block goes away without a setup turn.
+     */
+    @Test fun a_handshake_alone_connects_a_sheet_that_was_never_asked() {
+        val shown = PhoneToolsSheet.drawn(status(), PhoneSetup.Record(), tag, now)
+        assertEquals(PhoneSetup.State.IDLE, shown.state)
+        assertEquals(PhoneToolsView.NOT_SET_UP_HEADING, PhoneToolsView.setupHeadline(shown.state))
+
+        val next = PhoneToolsSheet.drawn(status(), PhoneSetup.observedHandshake(PhoneSetup.Record(), now, tag), tag, now + 1_000L)
+        assertEquals(PhoneSetup.State.CONNECTED, next.state)
+        assertTrue(PhoneToolsSheet.repaints(shown, next))
     }
 }

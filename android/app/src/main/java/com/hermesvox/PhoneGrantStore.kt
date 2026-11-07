@@ -10,10 +10,10 @@ import android.content.Context
  * effect on the very next tool call — including one the agent has already started. A cached
  * snapshot would be a revocation that waits for the next call to begin, which is not a revocation.
  *
- * **The tier rule is enforced on write and on read.** [set] refuses to store Allow for a Tier 1 or
- * Tier 2 group (it stores Ask instead and says so in the log); [state] normalises anything a stale
- * or hand-edited preference might hold through [PhoneGrants.effective]. The UI never offers the
- * choice, but a preference file is not a UI.
+ * **The stored value is the policy, honoured as stored.** Every group offers Off, Ask and Allow,
+ * and the three words mean the same thing whatever the group, so [state] returns what [set] wrote
+ * with no normalisation in between. An Allow on a consequential group is a real permission; the
+ * warning on its row is what tells the owner so.
  *
  * The log line names the group and the state only: a grant is not a secret, but the phone's log is
  * attached to bug reports, so nothing else belongs in it.
@@ -26,8 +26,7 @@ object PhoneGrantStore {
     /** The stored state of [group]. A missing or unreadable value is Off, never On. */
     fun state(context: Context, group: PhoneGrants.Group): PhoneGrants.State {
         val raw = prefs(context).getString(PREFIX + group.id, null)
-        val stored = PhoneGrants.State.of(raw) ?: PhoneGrants.DEFAULT
-        return PhoneGrants.effective(group, stored)
+        return PhoneGrants.State.of(raw) ?: PhoneGrants.DEFAULT
     }
 
     /** Every group's state, in [PhoneGrants.GROUPS] order. */
@@ -38,19 +37,17 @@ object PhoneGrantStore {
     }
 
     /**
-     * Store the owner's choice and return the state that is actually in force. An Allow for a group
-     * whose tier does not permit it is stored as Ask: the sheet does not offer it, and the store
-     * does not pretend to have granted something that will be refused anyway.
+     * Store the owner's choice and return the state that is now in force. There is nothing to
+     * normalise: every state is legal for every group, so what was picked is what is kept.
      */
     fun set(context: Context, group: PhoneGrants.Group, wanted: PhoneGrants.State): PhoneGrants.State {
-        val effective = PhoneGrants.effective(group, wanted)
-        if (effective == PhoneGrants.DEFAULT) {
+        if (wanted == PhoneGrants.DEFAULT) {
             prefs(context).edit().remove(PREFIX + group.id).apply()
         } else {
-            prefs(context).edit().putString(PREFIX + group.id, effective.id).apply()
+            prefs(context).edit().putString(PREFIX + group.id, wanted.id).apply()
         }
-        VoxLog.d("event=phone-grants group=${group.id} state=${effective.id}")
-        return effective
+        VoxLog.d("event=phone-grants group=${group.id} state=${wanted.id}")
+        return wanted
     }
 
     /**

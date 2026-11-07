@@ -697,6 +697,20 @@ not the four described while the panel was being designed; the fifth arrived whe
 switching was gated (#402/#436). With the master off, everything alpha is dimmed and unreachable.
 It is a deliberate back door for testers, not a buried switch.
 
+**Amended 2026-11-05.** The panel now has **six sets**: Presence, Continuous listening,
+Turn-taking, Phone tools, Switching profiles and **Sessions** (#437). The single dependency is
+unchanged and now stated for the whole gate: continuous listening requires Presence; Phone tools
+is independent of Presence, and Sessions and Switching profiles stay gated under D39's device-pass
+promotion condition.
+
+**Amended 2026-11-06.** The panel has **four sets**: Presence, Continuous listening, Turn-taking
+and Phone tools. **Sessions and Switching profiles left the gate** on this date — the owner's
+device pass showed the session switcher and the profile switcher work (D39's condition, met for
+both), so both sets were deleted, their panel rows with them, and `/sessions`, the session picker
+and the profile switcher are on for every install. Nothing about either feature changed beyond the
+gate. Profiles also stopped being an editor before it left: the picker lists the host's profiles
+and switches, and never creates or changes one — profiles are configured on the host.
+
 **The release notes.** Presence is **announced** — named, described as a layer you turn on through
 Alpha, and honest about being unfinished. It is not buried, and it is not oversold.
 ## D30 — The soul is a companion, not a gatekeeper
@@ -772,6 +786,10 @@ lesser turn.
 
 Set 2026-11-04, on #421 (Presence's tool use, steps 1 and 2).
 
+**Superseded 2026-11-05 by D38.** The local grammar lane below was removed: the phone no longer
+decides what an utterance means, and every voice turn goes to the mind. The entry is kept as it was
+written, including the reason the fast path seemed right at the time.
+
 **The decision.** Presence gets a **local-action lane** for the handful of things that must be
 instant — **timer, alarm, do-not-disturb, volume** — matched by a deterministic grammar, executed on
 the phone with **no network round trip**, and recorded in a small registry that the voice turn's
@@ -832,6 +850,11 @@ promised at the moment we promised it.
 
 Set 2026-11-04, on #421's third comment and steps 3–4.
 
+**Amended 2026-11-05 by D38.** The user-initiated lane D34 kept separate is gone, so its "why the
+two initiators stay separate" argument no longer describes the code. The MCP tool, its result and
+its grants stand; it is now the only way the phone acts on the owner's words. The rest of this entry
+is kept as written.
+
 **The decision.** The phone runs a small **MCP server on the tailnet** exposing **one** tool,
 `phone`, with an action enum (`timer`, `alarm`, `dnd`, `volume`, `note`, `undo`, `status`). Every call
 returns what actually happened; Tier 2 actions are refused and routed to the gateway's existing
@@ -861,6 +884,14 @@ so the context block and the `status` action cannot disagree.
   a second approval surface inside the MCP server is what #421 rules out. The result says
   `approval-required`; the consequential path is the gateway's own approval surface, and
   `trust: untrusted` puts *every* phone call behind it for an owner who wants that.
+
+**Amended 2026-11-05 (the grants, the card and the real tier names).** The Tier 2 list above is the
+state of this lane, not the release. `message`, `dial` and `launch` became handoffs (D36); D37 built
+the phone-side card, so an MCP call can now raise one; and D35's uniform grants make Ask and Allow
+one behaviour each for every tier. The shipped tier-2 names are `uninstall` and `file_offer` (both
+executed at Allow or after their card), plus the never-built `delete`, `purchase`, `pay` and
+`transfer`; `install`, `share`, `call`, `send` and `email` are not phone actions at all. The rest of
+D34 — one tool, a result per call, the undo and the setup turn — is the code.
 
 **Undo is part of the result, not a second protocol.** Every reversible action names its own undo in
 its result (`{"action":"undo","id":"timer-3"}`) and the undo lives for the action's lifetime: a timer
@@ -901,18 +932,26 @@ from the advertised `enum`.
 one bulk shortcut the design permits is *Allow all instant actions*, and it touches Tier 0 groups
 alone.
 
-**Allow is a Tier 0 word.** Tier 0 is reversible and private, so a grant may make it instant. Tier 1
-changes something the owner can see, and Tier 2 leaves the phone or reads what is private; both stop
-at Ask. The rule is enforced on write *and* read: a stored Allow against a Tier 1 or 2 group comes
-back as Ask, because a grant that cannot be given is not a grant.
+**The three states mean one thing each, for every group.** *Off* refuses. *Ask* raises a card naming
+the action and its arguments, answered by tap or by voice, and nothing happens until the owner does.
+*Allow* runs the action without asking. Every group offers all three, and a stored state is honoured
+as stored — there is no second opinion on read or write. **Allow on a consequential group is a real
+permission**: the row says what it means (a Messages row at Allow says Vox may compose a text and
+open the messaging app without asking), and the default is Off everywhere. A warning is the
+protection; a hidden veto is not.
+
+**The tier describes, it does not prohibit.** Tier 0 is reversible and private and its actions carry
+an undo; Tier 1 changes something the owner can see and is reported in Recent actions; Tier 2 is
+consequential or private to read and has no undo. The tier decides what a card says and whether an
+undo is offered — it does not decide which states are legal.
 
 **Off means invisible; a direct call still gets an answer.** A call that names an Off group's action
 returns `ok:false, reason:"not_granted"` — a described refusal, not a transport error — so the model
-can say what happened instead of inventing a failure. Ask advertises the action and refuses each use
-(`approval-required`) until the approval card lands with the capability itself; the MCP call carries
-no run id, so the phone cannot mint the gateway's card from inside the server, and #421 rules out a
-second approval surface. Ask is therefore a visible refusal today: visible to the model (offered) and
-to the owner (recorded in Recent actions). This is deliberately honest rather than silent.
+can say what happened instead of inventing a failure. Ask advertises the action and answers the first
+call with `approval-required`, the card, its id and expiry; a second call with that id and identical
+arguments executes. The same two-step handshake (`PhoneApproval`) answers every action, so an
+advertisement at Ask is a capability the phone can keep. An action that cannot raise a card would be
+a defect in the action; the built ones all can, and unbuilt Tier 2 names are never advertised.
 
 **The schema follows the grants, at call time.** `PhoneGrantStore` is read on every `tools/call` and
 every `tools/list`; nothing is cached for the life of the session. Revocation therefore takes effect
@@ -950,6 +989,14 @@ its own decision, with its own indicator and hard off switch.
 **Amended 2026-11-05.** D36 split `messages-calls` into `messages` and `calls`, and gave `apps` its
 instant `launch`/`open` half. The registry therefore holds **thirteen** groups, not twelve; the
 group-by-group rule above is unchanged.
+
+**Amended 2026-11-05 (uniform grants).** The original decision made Allow a Tier 0 word, let Tier 1
+at Ask run without asking, and withheld Tier 0 at Ask because it had no card — one word with three
+behaviours. The three states now mean the same thing for every group, every action at Ask goes
+through the one card handshake, and the tier is kept only as the description of consequence and undo.
+The read lane also made `notifications` and `contacts` **instant reads**, not the approval-tier
+capabilities named above; their protection is the call-scoped listener, the summary-then-read split
+and the narrow projection, not a card.
 
 ## D36 — Messages and calls are handoffs, never sends or placed calls
 
@@ -998,7 +1045,7 @@ window or an OEM that says no all fall through to starting the app immediately.
 
 **`uninstall` is not in this lane.** It needs the owner's approval card, and it stays
 `approval-required` until that card exists on this wire. It is named in the apps group's `planned`
-list and is never advertised. `install` is in the same position.
+list and is never advertised.
 
 **Refusals are part of the decision.** A group that is Off is `not_granted`; bad arguments are
 `invalid-arguments`; and a handoff with nothing to receive it is `no_app` — no `ACTION_SENDTO` app,
@@ -1017,6 +1064,20 @@ or for an SMS send, and whether a future lane reads contacts. Both are separate 
 own consent.
 
 [CallWindow]: ../android/app/src/main/java/com/hermesvox/CallWindow.kt
+
+**Amended 2026-11-05 (the lanes after this one).** Parts of the text above are the state of *this*
+lane, not the release. Contacts is now built (the read lane) and returns names and numbers, not
+`unavailable`. `uninstall` is built with D37's card and is no longer in a `planned` list. Apps can be
+removed as well as opened. **Both edges named below were closed later the same day** (the handoff lane, #480). The gate is
+`PhoneEngine.backgroundRefusal` → `PhoneHandoff.canStartActivity`: every handoff asks whether an
+activity of ours is resumed, or in picture-in-picture and visible, *before* it resolves a
+target, ends a call or announces anything, and a no is a refusal rather than a silent success —
+`reason:"background"`, before anything is resolved or performed.
+`dial` now runs its handoff on the utterance's **done** callback, so the announcement is heard
+before the call ends. The dialer opens after that reply, so the result says `dialer:"unknown"` with
+`outcome_uncertain:true` rather than claiming it opened, `status` carries the late
+`opened` / `not_opened` answer, and a dialer that did not open is a refusal. The rest of D36
+stands.
 
 ## D37 — Uninstalling an app is the one phone action with its own approval card
 
@@ -1070,5 +1131,77 @@ answers **two** consent screens: Vox's and Android's. If Vox cannot show a card 
 the action is simply unavailable rather than silently denied later.
 
 **What it does not decide.** Whether the gateway's approval surface also gets an `uninstall` card
-(the phone's card is enough and does not need a run id), whether `install` gets one, and whether a
-later lane lets the owner remember a yes for a session. All are separate decisions.
+(the phone's card is enough and does not need a run id), and whether a later lane lets the owner
+remember a yes for a session. All are separate decisions.
+
+**Amended 2026-11-05 (uniform grants).** `uninstall` is no longer the **only** action that asks the
+owner directly: D35's uniform grants make every action at Ask raise this same card, and
+`file_offer` is the other consequential action that uses it. D37's protocol, canonicalisation,
+lock-screen rule and audit are unchanged; they are the one handshake, not a Tier 2 exception.
+
+## D38 — The phone parses nothing; the mind decides, and Presence may look but never act
+
+Set 2026-11-05, on the Presence-scope correction. **Supersedes D32 and the "two initiators stay
+separate" argument in D34.**
+
+**The decision.** Every voice turn goes to the mind. The phone keeps no local grammar that matches
+the caller's words, and no turn ends on the phone before the mind is asked. When the mind wants the
+phone it calls the existing MCP `phone` tool, with the grant and the card that path already
+enforces. `LocalActionGrammar`, the interception in `runStreamedTurn`, and the local turn-gate
+plumbing that existed only to release a locally-taken turn are deleted. `LocalActions` and its
+registry stay: they are the phone's engine and the memory the sheet and a follow-up read.
+`LocalActions.run` stays as the owner-initiated entry point to that engine; no voice turn calls it.
+
+**Why.** A second initiation path is a second actor. The owner was talking to one of them and not
+the other: "set a timer" matched a phone regex and never reached the mind, whether Presence was on
+or off. The mind could not answer a timer request it never saw, and the owner had no way to tell
+which decision-maker had heard them. One actor is the point of having one agent.
+
+**What it costs, stated.** A timer now costs a gateway round trip, and it needs the **Phone tools**
+set with the timer's capability group granted. With the tool absent or the group Off, the mind
+cannot act on the phone; it says what it cannot do instead of the phone inventing a timer. That is
+the honest price of one actor, and it is accepted.
+
+**Presence's scope.** Presence is the being: it may read what the phone is doing — the registry,
+what is running, the time left, the device facts — because that is what lets it say "your timer has
+about four minutes left". It may not set, cancel or change anything. `PhoneReadout` exposes the
+registry and nothing else, so a mutating capability is absent from its type, not merely discouraged.
+
+**The gate has four sets and one dependency.** Presence is the being; **Phone tools** is the mind
+acting on the phone. Either can be taken without the other, and no dependency is added between
+them. **Continuous listening** belongs with Presence because it is how the being hears: it cannot be
+selected without Presence, `AlphaGate.allows()` refuses a stored preference from an earlier build,
+and turning Presence off leaves it inert with the picker saying why. **Turn-taking** needs
+continuous listening for its acknowledgements but adds no second gate dependency. **Sessions** and
+**Switching profiles** left the gate on 2026-11-06, their passes having been made.
+
+**What it does not decide.** Whether a future foreground model ever gets a safe, separate voice
+action lane (it would be a new decision and would need its own always-on guarantee), and whether the
+gateway's own approval surface changes. Both stay open.
+
+## D39 — Sessions and Profiles leave Alpha after a device pass, not on a build
+
+Set 2026-11-05, alongside D38.
+
+**The decision.** **Sessions** and **Switching profiles** stay behind the Alpha gate for now. They
+leave Alpha once a device pass shows conversation switching and profile switching work as intended.
+That is the promotion condition: it is a check on the phone, not a version number and not a claim
+from the code that the paths exist.
+
+**Why.** Both are host questions answered with the host's own key, and both were lived with only
+lightly. D33 puts the depth of a committed feature in the milestone that commits it; this decision
+records the door out, so the sets are not promoted by drift or by a release note.
+
+**Met — 2026-11-06.** The owner's device pass showed both switchers work.
+
+- **Sessions.** `/sessions` lists what the host has, the picker marks the one in use, a switch asks
+  before it interrupts a live call, and the conversation it starts is fresh. The **Sessions** set
+  was deleted and its panel row with it; `/sessions` is on for every install and nothing else about
+  sessions changed.
+- **Switching profiles.** The picker lists the host's profiles, marks the one in use, and a switch
+  ends a live call and starts a fresh conversation. The **Switching profiles** set was deleted and
+  its panel row with it; the switcher is on for every install. The picker also stopped being an
+  editor first: add and edit were removed, so nothing in Vox writes a profile.
+
+Both were promoted by this decision's own condition, not by a release note. The door this decision
+recorded is closed for both, and the Alpha gate is four sets.

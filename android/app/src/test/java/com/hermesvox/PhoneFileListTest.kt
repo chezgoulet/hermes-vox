@@ -39,6 +39,8 @@ class PhoneFileListTest {
         var window: PhoneEngine.PhonePlatform.FileText = PhoneEngine.PhonePlatform.FileText.Missing
         var seenList: List<Any?>? = null
         var seenWindow: List<Any?>? = null
+        /** The grant the engine handed over, id included: the id is what a tree is keyed by. */
+        var seenFolder: PhoneEngine.PhonePlatform.GrantedFolder? = null
 
         override fun startTimer(id: String, durationMs: Long, atEpochMs: Long): Boolean = true
         override fun startAlarm(id: String, hour: Int, minute: Int, atEpochMs: Long): Boolean = true
@@ -58,14 +60,18 @@ class PhoneFileListTest {
             PhoneEngine.PhonePlatform.DeviceSnapshot(
                 null, null, null, null, null, null, null, null, null, null, null,
             )
-        override fun clip(text: String): Boolean = true
+        override fun clip(text: String): PhoneEngine.PhonePlatform.ClipWrite =
+            PhoneEngine.PhonePlatform.ClipWrite.Done
 
         override fun folders(): List<PhoneEngine.PhonePlatform.GrantedFolder> = folders
 
         override fun fileText(
             folder: PhoneEngine.PhonePlatform.GrantedFolder,
             name: String,
-        ): PhoneEngine.PhonePlatform.FileText = text
+        ): PhoneEngine.PhonePlatform.FileText {
+            seenFolder = folder
+            return text
+        }
 
         override fun fileList(
             folder: PhoneEngine.PhonePlatform.GrantedFolder,
@@ -75,6 +81,7 @@ class PhoneFileListTest {
             offset: Int,
             limit: Int,
         ): PhoneFiles.ListResult {
+            seenFolder = folder
             seenList = listOf(folder.label, path, depth, pattern, offset, limit)
             return listing
         }
@@ -85,6 +92,7 @@ class PhoneFileListTest {
             offset: Long,
             length: Long,
         ): PhoneEngine.PhonePlatform.FileText {
+            seenFolder = folder
             seenWindow = listOf(folder.label, name, offset, length)
             return window
         }
@@ -95,8 +103,9 @@ class PhoneFileListTest {
     private val e0 = 1_700_000_000_000L
     private val entries = ArrayList<PhoneAudit.Entry>()
 
+    /** The named group allowed, everything else Off: these tests are about what a listing returns. */
     private fun only(id: String) = PhoneGrants.Source { g ->
-        if (g.id == id) PhoneGrants.State.ASK else PhoneGrants.State.OFF
+        if (g.id == id) PhoneGrants.State.ALLOW else PhoneGrants.State.OFF
     }
 
     private fun engine(grants: PhoneGrants.Source) = PhoneEngine(
@@ -110,13 +119,24 @@ class PhoneFileListTest {
         grants: PhoneGrants.Source = only("files"),
     ) = engine(grants).dispatch(arguments, t0, e0)
 
-    private val folder = PhoneEngine.PhonePlatform.GrantedFolder("Download")
+    private val folder = PhoneEngine.PhonePlatform.GrantedFolder("primary:Download", "Download")
 
     private fun schemaEnum(grants: PhoneGrants.Source): List<String> {
         val schema = Json.parse(Json.encode(PhoneTool.schema(grants))) as JObj
         val input = schema["inputSchema"] as JObj
         val action = (input["properties"] as JObj)["action"] as JObj
         return (action["enum"] as JArr).items.map { (it as JStr).value }
+    }
+
+    /** The `folder` enum the mind is handed for [labels], read off the real `tools/list` shape. */
+    private fun schemaFolders(labels: List<String>): List<String> {
+        val schema = Json.parse(
+            Json.encode(PhoneTool.schema(only("files"), labels))
+        ) as JObj
+        val input = schema["inputSchema"] as JObj
+        val props = input["properties"] as JObj
+        val property = props["folder"] as JObj
+        return (property["enum"] as? JArr)?.items?.map { (it as JStr).value } ?: emptyList()
     }
 
     /** A real directory tree on disk, plus the reader the SAF edge amounts to: metadata only. */
@@ -279,6 +299,99 @@ class PhoneFileListTest {
         }
     }
 
+    // ---- an odd name must not poison a listing, and a glob must not backtrack (M7) ----
+
+    /**
+     * M7 of the 0.9.1 review. A real file called `notes..txt` or `Report...pdf` is not an escape:
+     * the child's **id** is what [PhoneFiles.contained] checks, and a name only needs refusing when
+     * it could be read as a path. Before this fix one such file aborted the whole listing with
+     * "resolves outside the folder you granted", making the folder unlistable.
+     */
+    @Test
+    fun a_file_named_with_dot_dot_inside_it_is_listed_not_refused() {
+        val t = tree {
+            file("notes..txt", "a")
+            file("Report...pdf", "bb")
+            file("v1..2.zip", "ccc")
+            dir("backup..2026")
+            file("backup..2026/inside.txt", "d")
+        }
+        try {
+            val top = ok(t.list())
+            assertEquals(
+                listOf("backup..2026", "notes..txt", "Report...pdf", "v1..2.zip"),
+                top.entries.map { it.name },
+            )
+            // The odd-named directory can be walked too, and its path is its own name.
+            val deep = ok(t.list(depth = 2))
+            assertTrue(
+                "a directory named with \"..\" is entered, not skipped",
+                deep.entries.any { it.path == "backup..2026/inside.txt" },
+            )
+            assertEquals(
+                "and it can be listed by name",
+                listOf("inside.txt"),
+                ok(t.list(path = "backup..2026")).entries.map { it.name },
+            )
+            // A pattern still filters those names normally, and directories stay visible.
+            assertEquals(
+                listOf("backup..2026", "Report...pdf"),
+                ok(t.list(pattern = "*...pdf")).entries.map { it.name },
+            )
+        } finally {
+            t.root.deleteRecursively()
+        }
+
+        // Only a name that is a path is refused: a separator, a NUL, and dot/dot-dot themselves.
+        for (name in listOf("../secret.txt", "a/b.txt", "a\u0000b", ".", "..")) {
+            assertNotNull("$name must not be an entry name", PhoneFiles.badEntryName(name))
+        }
+        for (name in listOf("notes..txt", "Report...pdf", "v1..2.zip", ".hidden", "a b.txt")) {
+            assertNull("$name is a real name", PhoneFiles.badEntryName(name))
+        }
+        // A provider that literally answers "../secret" is still refused.
+        assertEquals(
+            PhoneFiles.ListResult.Outside,
+            PhoneFiles.list("Download", "", 1, null, 0, 200) { path ->
+                if (path.isEmpty()) {
+                    PhoneFiles.Dir.Found(listOf(PhoneFiles.Entry("../secret.txt", false, 3)))
+                } else {
+                    PhoneFiles.Dir.Missing
+                }
+            },
+        )
+    }
+
+    /**
+     * The glob is a two-pointer scan, not a regex. `*a` repeated is the classic exponential case
+     * for `.*`-translation; here the whole match is bounded by the name's length, so a pathological
+     * 200-character pattern against a 250-character name finishes at once, on the main thread.
+     */
+    @Test
+    fun a_pathological_glob_finishes_quickly_and_is_still_correct() {
+        val pattern = "*a".repeat(100) + "b" // 201 chars, under MAX_PATTERN_CHARS, no match
+        val name = "a".repeat(250)
+        assertNull(PhoneFiles.badPattern(pattern))
+
+        val startedAt = System.nanoTime()
+        assertFalse("no b in the name, so no match", PhoneFiles.matches(pattern, name))
+        val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+        assertTrue(
+            "a 201-char pattern against a 250-char name must be linear, took ${elapsedMs}ms",
+            elapsedMs < 2_000,
+        )
+
+        // The same pattern with something to match is still a match, and `?` is exactly one char.
+        assertTrue(PhoneFiles.matches("*a*a*a*b", "aaaaab"))
+        assertTrue(PhoneFiles.matches("a?c", "abc"))
+        assertFalse("? is one character, not a run", PhoneFiles.matches("a?c", "abbc"))
+        assertTrue("a trailing * may match nothing", PhoneFiles.matches("a*", "a"))
+        assertTrue("consecutive * collapse", PhoneFiles.matches("a**b", "ab"))
+        assertTrue("a case-folded literal matches", PhoneFiles.matches("Résumé?.PDF", "résumé1.pdf"))
+        assertTrue("everything else is literal", PhoneFiles.matches("a.b", "a.b"))
+        assertFalse("a dot is not a wildcard", PhoneFiles.matches("a.b", "axb"))
+    }
+
     @Test
     fun a_folder_with_more_entries_than_a_page_is_paged_and_every_entry_is_seen_once() {
         val t = tree {
@@ -318,6 +431,54 @@ class PhoneFileListTest {
         } finally {
             t.root.deleteRecursively()
         }
+    }
+
+    @Test
+    fun a_depth_five_page_asks_the_platform_only_for_the_directories_it_crosses() {
+        // Every level has four directories and four files, so a full depth-5 walk is 1+4+16+64+256
+        // child queries. A page of ten must not pay that: it stops as soon as it has the page plus
+        // the one row that proves there is more.
+        var calls = 0
+        val reader = PhoneFiles.Reader { _ ->
+            calls++
+            PhoneFiles.Dir.Found(
+                listOf(
+                    PhoneFiles.Entry("d0", true, null),
+                    PhoneFiles.Entry("d1", true, null),
+                    PhoneFiles.Entry("d2", true, null),
+                    PhoneFiles.Entry("d3", true, null),
+                    PhoneFiles.Entry("f0.txt", false, 1),
+                    PhoneFiles.Entry("f1.txt", false, 1),
+                    PhoneFiles.Entry("f2.txt", false, 1),
+                    PhoneFiles.Entry("f3.txt", false, 1),
+                )
+            )
+        }
+
+        val page = ok(PhoneFiles.list("Download", "", 5, null, 0, 10, reader))
+        assertEquals(10, page.count)
+        assertTrue("the eleventh row proves there is more", page.hasMore)
+        assertEquals(10, page.nextOffset)
+        assertEquals(
+            "the page is the start of the depth-first order, not a whole-tree slice",
+            listOf(
+                "d0", "d0/d0", "d0/d0/d0", "d0/d0/d0/d0", "d0/d0/d0/d0/d0",
+                "d0/d0/d0/d0/d1", "d0/d0/d0/d0/d2", "d0/d0/d0/d0/d3",
+                "d0/d0/d0/d0/f0.txt", "d0/d0/d0/d0/f1.txt",
+            ),
+            page.entries.map { it.path },
+        )
+        assertTrue(
+            "a first page must cost the directories it crosses, not the tree: $calls queries",
+            calls <= 5,
+        )
+
+        // A later page walks only up to its own last needed row, never the rest of the tree.
+        calls = 0
+        val later = ok(PhoneFiles.list("Download", "", 5, null, 20, 10, reader))
+        assertEquals(10, later.count)
+        assertTrue(later.hasMore)
+        assertTrue("page 3 still stops early: $calls queries", calls <= 10)
     }
 
     @Test
@@ -466,6 +627,65 @@ class PhoneFileListTest {
         assertTrue("the refusal says how to grant one", r.detail!!.contains("Phone tools"))
     }
 
+    // ---- the grant is the folder, not the word (B1) ----
+
+    /**
+     * B1 of the 0.9.1 review. Android 11+ will not grant the `Download` root, so the owner picks a
+     * subfolder (`Download/Work`). The grant is keyed by its **own tree id**, advertised under its
+     * **own label**, and — because there is exactly one — the default when `folder` is omitted.
+     * Before this fix the schema offered only `Downloads`/`Documents`, so the granted `Work` could
+     * never be named and every call was `no_folder`.
+     */
+    @Test
+    fun a_granted_subfolder_is_advertised_by_its_label_and_read_by_its_tree_id() {
+        val work = PhoneEngine.PhonePlatform.GrantedFolder("primary:Download/Work", "Work")
+        fake.folders = listOf(work)
+        fake.text = PhoneEngine.PhonePlatform.FileText.Found("notes.txt", 5, "hello")
+
+        assertEquals(
+            "the folder enum is the owner's grants, once each, in grant order",
+            listOf("Work", "Notes"),
+            schemaFolders(listOf("Work", "work", " Notes ", "")),
+        )
+
+        // One grant: there is nothing to choose, so `folder` may be omitted.
+        val r = call(mapOf("action" to "file_read", "name" to "notes.txt"))
+        assertTrue(r.json(), r.ok)
+        assertEquals("hello", r.facts["text"])
+        assertEquals("the result names the folder the owner picked", "Work", r.facts["folder"])
+        assertEquals("and the grant carries its tree id", work, fake.seenFolder)
+
+        // Naming it works too, in the call's own case.
+        val named = call(mapOf("action" to "file_read", "name" to "notes.txt", "folder" to "work"))
+        assertTrue(named.json(), named.ok)
+        assertEquals(work, fake.seenFolder)
+
+        val listed = call(mapOf("action" to "file_list", "folder" to "Work"))
+        assertFalse("the listing itself is the platform's answer, not the folder's", listed.ok)
+        assertEquals(work, fake.seenFolder)
+    }
+
+    @Test
+    fun several_grants_refuse_a_call_with_no_folder_and_name_the_choices() {
+        fake.folders = listOf(
+            PhoneEngine.PhonePlatform.GrantedFolder("primary:Download/Work", "Work"),
+            PhoneEngine.PhonePlatform.GrantedFolder("primary:Documents/Notes", "Notes"),
+        )
+        val r = call(mapOf("action" to "file_read", "name" to "notes.txt"))
+        assertFalse(r.ok)
+        assertEquals("guessing a folder is not an answer", PhoneReason.INVALID, r.reason)
+        assertTrue("the choices are named: ${r.detail}", r.detail!!.contains("Work"))
+        assertTrue("both of them: ${r.detail}", r.detail!!.contains("Notes"))
+        assertNull("nothing was read", fake.seenFolder)
+
+        val notGranted = call(
+            mapOf("action" to "file_read", "name" to "notes.txt", "folder" to "Download"),
+        )
+        assertEquals("a word that is not a grant is still no_folder", PhoneReason.NO_FOLDER, notGranted.reason)
+        assertTrue(notGranted.detail!!.contains("Work"))
+        assertNull("and it never falls back to a folder it was not asked for", fake.seenFolder)
+    }
+
     @Test
     fun a_provider_failure_is_unavailable_and_never_a_partial_page() {
         fake.folders = listOf(folder)
@@ -559,15 +779,15 @@ class PhoneFileListTest {
         assertEquals(PhoneFiles.DEFAULT_LIST_LIMIT, call.limit)
         assertEquals(0, call.offset)
         assertNull(call.pattern)
-        assertNull("the default folder is resolved by the engine", call.folder)
+        assertNull("omitting folder means the only grant, resolved by the engine", call.folder)
 
         val top = PhoneTool.parse(
-            mapOf("action" to "file_list", "folder" to "Documents", "path" to "a/b", "depth" to 5,
+            mapOf("action" to "file_list", "folder" to "Work", "path" to "a/b", "depth" to 5,
                 "pattern" to "*.pdf", "offset" to 40, "limit" to 1000),
             only("files"),
         ) as PhoneTool.Parsed.Run
         val bounded = top.call as PhoneTool.Call.FileList
-        assertEquals("Documents", bounded.folder)
+        assertEquals("the folder is the label the owner's grant produced", "Work", bounded.folder)
         assertEquals("a/b", bounded.path)
         assertEquals(5, bounded.depth)
         assertEquals("*.pdf", bounded.pattern)
@@ -627,6 +847,70 @@ class PhoneFileListTest {
     }
 
     // ---- file_read windows ----
+
+    /**
+     * M11 of the 0.9.1 review. The window is a slice of `[start, start + want)` **snapped inward**:
+     * it never begins before `start` and never ends after `start + want`, so an agent stitching by
+     * the offsets it asked for gets every character exactly once. These assertions are on the
+     * arithmetic itself — [PhoneFiles.window] with the real slack buffer — not on a slice the test
+     * cut by hand, because the old test cut the slice the old way and could not see the bug.
+     */
+    @Test
+    fun a_window_never_reaches_outside_the_length_it_asked_for() {
+        val bytes = "abcdefghij".toByteArray()
+        // The caller read three bytes of slack on each side, exactly as readWindow does.
+        val from = 0L
+        val got = PhoneFiles.window(bytes, from, start = 3, want = 4)!!
+        assertEquals("the four bytes asked for, not the three of slack on either side", "defg", got.text)
+        assertEquals("the text begins at the requested offset", 3L, got.offset)
+        assertEquals("and covers no more than the requested length", 4, got.bytes)
+
+        assertNull(
+            "a NUL is binary in a window too",
+            PhoneFiles.window(byteArrayOf('a'.code.toByte(), 0, 'b'.code.toByte()), 0, 0, 3),
+        )
+    }
+
+    @Test
+    fun a_window_snaps_to_character_boundaries_instead_of_splitting_one() {
+        // "héllo wörld": h C3 A9 l l o ␠ w C3 B6 r l d — cuts below land inside a character.
+        val text = "héllo wörld"
+        val bytes = text.toByteArray()
+
+        val exact = PhoneFiles.window(bytes, 0, start = 1, want = 2)!!
+        assertEquals("a cut on both sides of a two-byte character returns it", "é", exact.text)
+        assertEquals(1L, exact.offset)
+        assertEquals(2, exact.bytes)
+
+        // A start inside the é cannot be honoured outward: the first boundary at or after it is
+        // after the whole character, so the é is left out rather than repeated.
+        val midStart = PhoneFiles.window(bytes, 0, start = 2, want = 5)!!
+        assertEquals("the character the cut fell inside is not returned", "llo ", midStart.text)
+        assertEquals("the window begins after the requested offset, never before", 3L, midStart.offset)
+        assertTrue("and never before it", midStart.offset >= 2L)
+
+        // An end inside the ö leaves the whole character out rather than keeping its first byte.
+        val cutEnd = PhoneFiles.window(bytes, 0, start = 6, want = 3)!!
+        assertEquals("a character cut at its end is not half-returned", " w", cutEnd.text)
+        assertTrue(
+            "the window ends at or before the requested end",
+            cutEnd.offset + cutEnd.bytes <= 6L + 3L,
+        )
+
+        // The same file, read in windows the size the caller asked for, stitches back to itself
+        // with nothing duplicated at a seam and nothing dropped.
+        val stitched = StringBuilder()
+        var cursor = 0L
+        while (cursor < bytes.size) {
+            // Production reads three bytes of slack on each side; the full buffer here is that
+            // window with the slack already in hand.
+            val w = PhoneFiles.window(bytes, from = 0, start = cursor, want = 4)!!
+            assertTrue("a window that yields nothing would never advance", w.bytes > 0)
+            stitched.append(w.text)
+            cursor = w.offset + w.bytes
+        }
+        assertEquals("every character exactly once", text, stitched.toString())
+    }
 
     @Test
     fun a_window_read_returns_the_slice_and_the_total_the_truth_needs() {
@@ -703,24 +987,69 @@ class PhoneFileListTest {
         }
     }
 
+    // ---- a window has an upper bound (H2) ----
+
+    /**
+     * H2 of the 0.9.1 review. `length` was only checked `>= 1`, so one call could read a whole
+     * file into the answer while the contract promises at most 65 536 bytes per answer. The schema
+     * states the bound, and the parser refuses one byte more with the way to read the rest.
+     */
     @Test
-    fun a_window_snaps_to_character_boundaries_instead_of_splitting_one() {
-        val bytes = "héllo".toByteArray()
-        val fromStart = PhoneFiles.windowText(bytes.copyOfRange(1, bytes.size), wholeFile = false)!!
-        assertEquals("éllo", fromStart.text)
-
-        val midCharacter = PhoneFiles.windowText(bytes.copyOfRange(2, bytes.size), wholeFile = false)!!
-        assertEquals("the bytes before the window cannot be invented", "llo", midCharacter.text)
-        assertEquals(1, midCharacter.skipped)
-
-        val cutShort = PhoneFiles.windowText(bytes.copyOfRange(0, 2), wholeFile = false)!!
-        assertEquals("an incomplete trailing character is trimmed, not replaced", "h", cutShort.text)
-        assertEquals(1, cutShort.bytes)
-
-        assertNull(
-            "a NUL is binary in a window too",
-            PhoneFiles.windowText(byteArrayOf('a'.code.toByte(), 0, 'b'.code.toByte()), false),
+    fun a_window_length_above_the_cap_is_refused_with_the_way_to_read_the_rest() {
+        val schema = Json.parse(Json.encode(PhoneTool.schema(PhoneGrants.ALL_OFF))) as JObj
+        val props = (schema["inputSchema"] as JObj)["properties"] as JObj
+        val length = props["length"] as JObj
+        assertEquals(
+            "the schema publishes the same maximum the parser enforces",
+            PhoneFiles.MAX_READ_BYTES,
+            (length["maximum"] as com.hermesvox.core.JNum).raw.toLong(),
         )
+
+        for (over in listOf(PhoneFiles.MAX_READ_BYTES + 1, 9_000_000_000_000_000_000L)) {
+            val refused = PhoneTool.parse(
+                mapOf("action" to "file_read", "name" to "big.log", "offset" to 0, "length" to over),
+                only("files"),
+            )
+            val result = (refused as PhoneTool.Parsed.Refuse).result
+            assertEquals(PhoneReason.INVALID, result.reason)
+            assertTrue(
+                "the message says to read the rest with a later offset: ${result.detail}",
+                result.detail!!.contains("later offset"),
+            )
+        }
+
+        // Exactly the cap is the whole answer one call may return, and it is not refused.
+        val atCap = PhoneTool.parse(
+            mapOf(
+                "action" to "file_read", "name" to "big.log",
+                "offset" to 0, "length" to PhoneFiles.MAX_READ_BYTES,
+            ),
+            only("files"),
+        )
+        assertEquals(PhoneFiles.MAX_READ_BYTES, ((atCap as PhoneTool.Parsed.Run).call as PhoneTool.Call.FileRead).length)
+    }
+
+    /**
+     * The size probe must not read a file to its end on the main thread. When the provider hides
+     * `COLUMN_SIZE`, counting is bounded: a stream far larger than the bound is abandoned, and the
+     * caller is told the size is not knowable rather than being made to wait for a whole 500 MB log.
+     */
+    @Test
+    fun counting_a_size_stops_at_the_bound_instead_of_reading_the_whole_file() {
+        var pulled = 0L
+        val huge = PhoneFileAccess.countedSize(cap = 1_000) {
+            pulled += 100
+            if (pulled > 100_000_000) -1 else 100
+        }
+        assertNull("past the bound the size is not knowable", huge)
+        assertTrue("the stream was abandoned near the bound, not read to its end: $pulled", pulled <= 1_100)
+
+        var bytes = 0L
+        val small = PhoneFileAccess.countedSize(cap = 1_000) {
+            bytes += 100
+            if (bytes > 500) -1 else 100
+        }
+        assertEquals("a file inside the bound is counted exactly", 500L, small)
     }
 
     @Test

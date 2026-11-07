@@ -25,19 +25,31 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
- * LocalActions — the Android side of the phone's own actions, for both initiators (#421 steps 2–4).
+ * What Presence may read from the phone: the registry, and nothing that changes it.
  *
- * There are two ways an action starts, and they keep different guarantees (D32, #421):
+ * The interface is the rule. A mutating capability — a timer, an alarm, Do Not Disturb, volume, a
+ * clipboard write, a message — is deliberately absent, so the presence path cannot reach one by
+ * accident. The being may say "your timer has about four minutes left"; the mind is what acts.
+ */
+interface PhoneReadout {
+    /** Active actions, newest first, compact — what B1's `local_actions:` line carries. */
+    fun registry(nowElapsed: Long, nowEpoch: Long): List<String>
+}
+
+/**
+ * LocalActions — the Android side of the phone's own actions (#421 steps 3–4).
  *
- *  * **user-initiated** — [LocalActionGrammar] matches the caller's words and [run] executes here,
- *    with **no network round trip**. The caller hears one short line ([LocalActionSpeech]) and the
- *    turn never reaches the mind.
- *  * **mind-initiated** — the agent calls the MCP `phone` tool ([PhoneMcpServer]); [phone] executes
- *    the same call through the same engine, and **returns a result** the mind reasons about.
+ * **The mind initiates.** The agent calls the MCP `phone` tool ([PhoneMcpServer]); [phone]
+ * executes the call through [PhoneEngine] and **returns a result** the mind reasons about. The
+ * owner's own words are not parsed on the phone: every voice turn goes to the mind, which decides
+ * whether to call this tool (D38). [run] remains the owner-initiated entry point to the same
+ * engine, and the registry remains the one memory the `status` action, the sheet's Undo and the
+ * presence context read.
  *
- * Both go through [PhoneEngine], which owns the ids, the registry and the undo table. That is the
- * single-source-of-truth rule from #421: the presence context the mind reads and the `status` the
- * mind asks for are the same memory, so the phone can never contradict itself.
+ * [PhoneEngine] owns the ids, the registry and the undo table. That is the single-source-of-truth
+ * rule from #421: the presence context the mind reads and the `status` the mind asks for are the
+ * same memory, so the phone can never contradict itself. [PhoneReadout] is the only half Presence
+ * is given, so the being may say what is running and may not change it.
  *
  * **What each action costs, precisely** — because the honest answer decides what ships:
  *
@@ -51,23 +63,58 @@ import java.util.concurrent.TimeUnit
  * | media transport | `AudioManager.dispatchMediaKeyEvent` | **none.** No permission and no notification-listener access: the key goes to whatever session the platform considers active, exactly as the phone's own media buttons do. The result says the key was dispatched, never that playback changed — the phone cannot see that. |
  * | now playing | `AudioManager.isMusicActive`; `MediaSessionManager.getActiveSessions` with the listener | **none** for "is audio playing". A package and a title come from the active media session, which needs **notification-listener special access** — a grant the owner gives on Android's own screen, offered in the sheet. With it the result is `known:true` and the session's own package/title; without it `known:false` and a sentence saying so. It never invents a title. |
  * | device state | the sticky `ACTION_BATTERY_CHANGED` broadcast, `PowerManager.isInteractive`, `ConnectivityManager`, `StatFs`, the media stream, the device zone | **none.** No permission is added: battery, screen, transport, storage, volume and time are all readable with what the manifest already declares. Do Not Disturb is the one field that can be absent (its special access), and it reports `null` rather than "off". |
- * | clipboard | `ClipboardManager.setPrimaryClip` / `getPrimaryClip` | **none**, but Android decides what is readable: on 10+ an app that is not in front gets no clipboard at all, and a write from a backgrounded app is dropped silently. `clip` asks [AppFocus] before writing and answers `unavailable` rather than claiming a write that did not happen; `clip_read` asks for the clip and reports the platform's own refusal — backgrounded, or an empty clip — rather than returning stale or empty text as though it were the clipboard. |
+ * | clipboard | `ClipboardManager.setPrimaryClip` / `getPrimaryClip` | **none.** Android restricts clipboard *reads*: on 10+ an app that is not focused gets no clipboard at all, while a write needs no focus and is permitted from the background or PiP. So `clip` always attempts the write and answers `unavailable` only when the platform refuses it, with the platform's reason; `clip_read` asks for the clip and reports the platform's own answer — no clip without focus (said as the likely cause, not a claim), no text, or an empty clipboard — rather than returning stale or empty text as though it were the clipboard. |
  * | message | `ACTION_SENDTO` with `smsto:` and `sms_body` | **none.** Vox composes a draft and the owner's messaging app sends it: no `SEND_SMS`, no SMS manager API, and no default-SMS role. The result says `handed_off:true`, never "sent". |
  * | dial | `ACTION_DIAL` with `tel:` | **none.** The dialer opens with the number and the owner presses call: no `CALL_PHONE` and no emergency special case, because Vox never dials. With a live Vox call, the being says one line, the call ends through the same teardown the hang-up uses, and then the dialer opens — the conversation itself lives on. |
  * | launch / open | `PackageManager` launchable resolution; `ACTION_VIEW` for a URI | **none.** Only activities with a launcher entry are launchable, and the launch goes through [CallWindow] so a live call enters PiP first. If the window cannot shrink, the app still opens. |
  *
- * The **grammar path** is still Tier 0 only: timers, alarms, do-not-disturb and volume, matched
- * locally with no round trip. `message`, `dial` and the app handoffs are **mind-initiated** only —
- * they exist on the MCP wire, where the result is the reply, and never run from the caller's words.
+ * Every action is **mind-initiated** on the MCP wire, where the result is the reply. A caller's
+ * words are never matched against a local grammar: a timer the owner asks for is the mind's call,
+ * with the grant and the card that path enforces (D38).
  */
-class LocalActions(context: Context) {
+class LocalActions(context: Context) : PhoneReadout {
 
     /** What happened, and the one line to say about it — always true. */
     data class Outcome(val ok: Boolean, val line: String)
 
+    /**
+     * What the owner's own lane can ask [run] to execute. These are typed actions, not a parser:
+     * the turn path no longer maps an utterance onto one (D38).
+     */
+    sealed class LocalAction {
+        abstract val kind: String
+
+        data class Timer(val durationMs: Long) : LocalAction() {
+            override val kind = "timer"
+        }
+
+        data class Alarm(val hour: Int, val minute: Int) : LocalAction() {
+            override val kind = "alarm"
+        }
+
+        data class Dnd(val on: Boolean) : LocalAction() {
+            override val kind = "dnd"
+        }
+
+        data class VolumeStep(val direction: Int) : LocalAction() {
+            override val kind = "volume"
+        }
+
+        data class SetVolume(val percent: Int) : LocalAction() {
+            override val kind = "volume"
+        }
+    }
+
     private val app: Context = context.applicationContext ?: context
     private val main = Handler(Looper.getMainLooper())
     private val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    /**
+     * The engine's own thread. One action at a time is the guarantee, not an accident: the
+     * single-thread executor is what keeps two calls from interleaving now that the work is no
+     * longer serialized by the main looper. See [PhoneDispatch].
+     */
+    private val dispatch = PhoneDispatch(CALL_TIMEOUT_MS)
 
     /**
      * The one registry, shared by the user path, the MCP path and the presence context.
@@ -83,6 +130,7 @@ class LocalActions(context: Context) {
         { result, args, at -> PhoneAuditStore.record(app, PhoneAudit.entry(at, args, result)) },
         approvalSurface = PhoneApprovals,
         auditRow = { entry -> PhoneAuditStore.record(app, entry) },
+        unlocked = PhoneApproval.Unlocked { PhoneApprovals.deviceUnlocked() },
     )
 
     /** How a scheduled action may be cancelled, per id. */
@@ -105,8 +153,15 @@ class LocalActions(context: Context) {
         // Notes outlive the call that made them; the undo for each is re-registered on load.
         engine.restoreNotes(Notes.decode(prefs.getString(KEY_NOTES, null)), SystemClock.elapsedRealtime())
         // The owner's Undo tap in the Phone tools sheet reaches this engine while the call lives.
+        // OWNER is explicit: the owner may reverse anything the phone still holds, including an
+        // entry the mind made. That door is deliberately unrestricted (H4).
         PhoneUndo.attach { id ->
-            engine.undo(id, SystemClock.elapsedRealtime(), System.currentTimeMillis())
+            engine.undo(
+                id,
+                SystemClock.elapsedRealtime(),
+                System.currentTimeMillis(),
+                PhoneEngine.Origin.OWNER,
+            )
         }
         // The uninstall card: the surface presents, this engine decides. One answerer, one desk.
         PhoneApprovals.install(app)
@@ -119,16 +174,21 @@ class LocalActions(context: Context) {
     }
 
     /**
-     * Take the action now (user-initiated path). [nowElapsed]/[nowEpoch] are injectable so the
-     * registry maths is testable off-device.
+     * Take an action on the owner's behalf, for the owner-initiated entry point to this engine.
+     * [nowElapsed]/[nowEpoch] are injectable so the registry maths is testable off-device.
+     *
+     * This is not a turn path (D38): the caller's words are never parsed into a [LocalAction], and
+     * no voice turn reaches this method.
      */
     fun run(
-        intent: LocalActionGrammar.Intent,
+        intent: LocalAction,
         nowElapsed: Long = SystemClock.elapsedRealtime(),
         nowEpoch: Long = System.currentTimeMillis(),
     ): Outcome = try {
         val call = call(intent)
-        val result = engine.execute(call, nowElapsed, nowEpoch)
+        // The owner's own words: every entry this registers is tagged OWNER, and the mind's
+        // `status`/`undo` will not serve it (H4).
+        val result = engine.execute(call, nowElapsed, nowEpoch, PhoneEngine.Origin.OWNER)
         Outcome(result.ok, speech(intent, result))
     } catch (t: Throwable) {
         VoxLog.w("event=local-action failed kind=${intent.kind} reason=${t.javaClass.simpleName}")
@@ -139,33 +199,42 @@ class LocalActions(context: Context) {
      * Take the action for the mind (MCP path), and **return what happened as JSON**. A result with
      * `ok:false` names the reason; nothing here ever claims an action the phone did not take.
      *
-     * Called from the MCP server's thread, so the work is posted to the main thread (the alarm,
-     * audio and notification APIs are happiest there) and the caller waits with a bound. A phone
-     * that cannot answer in time says exactly that rather than inventing a result.
+     * Called from the MCP server's request thread. The dispatch runs on [PhoneDispatch]'s own
+     * single thread, so the UI thread is never doing the walk, the provider read or the file
+     * staging, and two actions still cannot interleave. Only the platform calls that Android
+     * requires on the UI thread (`startActivity`, PiP) are posted there from that thread.
+     *
+     * The caller waits with a bound, but a bound is not a cancellation: [PhoneDispatch.await]
+     * leaves the work running. A timeout therefore answers [PhoneResult.uncertain] — the action
+     * may still complete, and `status` is how the mind learns what really happened. It never says
+     * "nothing was performed".
+     *
+     * An in-process caller that is already on the UI thread runs inline: posting and waiting from
+     * the thread this design keeps free would deadlock. No production path does this — the MCP
+     * server always calls from its request thread.
      */
     fun phone(arguments: Map<String, Any?>): String {
         if (Looper.myLooper() == Looper.getMainLooper()) return phoneHere(arguments)
-        val latch = CountDownLatch(1)
-        var out: String? = null
-        main.post {
-            out = try {
-                phoneHere(arguments)
-            } catch (t: Throwable) {
-                VoxLog.w("event=phone-mcp failed reason=${t.javaClass.simpleName}")
-                PhoneResult.refused(actionOf(arguments), PhoneReason.UNAVAILABLE, "the phone failed to run that action").json()
+        return try {
+            when (val outcome = dispatch.call { phoneHere(arguments) }) {
+                is PhoneDispatch.Outcome.Returned -> outcome.json
+                PhoneDispatch.Outcome.TimedOut -> uncertain(arguments, TIMEOUT_DETAIL)
             }
-            latch.countDown()
+        } catch (t: MainThreadTimeout) {
+            VoxLog.w("event=phone-mcp ui-thread-timeout action=${actionOf(arguments)}")
+            uncertain(arguments, UI_TIMEOUT_DETAIL)
+        } catch (t: Throwable) {
+            VoxLog.w("event=phone-mcp failed reason=${t.javaClass.simpleName}")
+            uncertain(arguments, FAILED_DETAIL)
         }
-        if (!latch.await(CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
-            VoxLog.w("event=phone-mcp timeout action=${actionOf(arguments)}")
-            return refusal(arguments, "the phone did not answer in time")
-        }
-        return out ?: refusal(arguments, "the phone did not answer")
     }
 
-    /** A refusal the phone minted itself (a timeout, a crashed handler), recorded like any other. */
-    private fun refusal(arguments: Map<String, Any?>, detail: String): String {
-        val result = PhoneResult.refused(actionOf(arguments), PhoneReason.UNAVAILABLE, detail)
+    /**
+     * The honest answer when work was already dispatched: it may still complete, so point the
+     * mind at `status` instead of claiming an outcome this phone cannot see.
+     */
+    private fun uncertain(arguments: Map<String, Any?>, detail: String): String {
+        val result = PhoneResult.uncertain(actionOf(arguments), detail)
         PhoneAuditStore.record(app, PhoneAudit.entry(System.currentTimeMillis(), arguments, result))
         return result.json()
     }
@@ -189,10 +258,8 @@ class LocalActions(context: Context) {
      * entries are dropped here, so the registry cannot report a timer that already rang. It is the
      * same registry the `phone` tool's `status` explains in full.
      */
-    fun registry(
-        nowElapsed: Long = SystemClock.elapsedRealtime(),
-        nowEpoch: Long = System.currentTimeMillis(),
-    ): List<String> = engine.registry(nowElapsed, nowEpoch)
+    override fun registry(nowElapsed: Long, nowEpoch: Long): List<String> =
+        engine.registry(nowElapsed, nowEpoch)
 
     // ---- the uninstall card ----
 
@@ -210,40 +277,88 @@ class LocalActions(context: Context) {
 
     // ---- the user path's words ----
 
-    private fun call(intent: LocalActionGrammar.Intent): PhoneTool.Call = when (intent) {
-        is LocalActionGrammar.Intent.Timer -> PhoneTool.Call.Timer(intent.durationMs)
-        is LocalActionGrammar.Intent.Alarm -> PhoneTool.Call.Alarm(intent.hour, intent.minute)
-        is LocalActionGrammar.Intent.Dnd -> PhoneTool.Call.Dnd(intent.on)
-        is LocalActionGrammar.Intent.VolumeStep -> PhoneTool.Call.Volume(null, intent.direction)
-        is LocalActionGrammar.Intent.SetVolume -> PhoneTool.Call.Volume(intent.percent, 0)
+    private fun call(intent: LocalAction): PhoneTool.Call = when (intent) {
+        is LocalAction.Timer -> PhoneTool.Call.Timer(intent.durationMs)
+        is LocalAction.Alarm -> PhoneTool.Call.Alarm(intent.hour, intent.minute)
+        is LocalAction.Dnd -> PhoneTool.Call.Dnd(intent.on)
+        is LocalAction.VolumeStep -> PhoneTool.Call.Volume(null, intent.direction)
+        is LocalAction.SetVolume -> PhoneTool.Call.Volume(intent.percent, 0)
     }
 
     /**
      * The one line the caller hears. It is derived from the result, so a refusal can never be spoken
      * as a success: the ok branch is only reachable when [PhoneEngine] actually performed the action.
      */
-    private fun speech(intent: LocalActionGrammar.Intent, result: PhoneResult): String {
+    private fun speech(intent: LocalAction, result: PhoneResult): String {
         if (!result.ok) {
             return when {
-                intent is LocalActionGrammar.Intent.Dnd && result.reason == PhoneReason.PERMISSION ->
+                intent is LocalAction.Dnd && result.reason == PhoneReason.PERMISSION ->
                     LocalActionSpeech.dndDenied()
-                intent is LocalActionGrammar.Intent.VolumeStep || intent is LocalActionGrammar.Intent.SetVolume ->
+                intent is LocalAction.VolumeStep || intent is LocalAction.SetVolume ->
                     LocalActionSpeech.volumeDenied()
                 else -> LocalActionSpeech.failed(intent.kind)
             }
         }
         return when (intent) {
-            is LocalActionGrammar.Intent.Timer -> LocalActionSpeech.timerSet(intent.durationMs)
-            is LocalActionGrammar.Intent.Alarm -> LocalActionSpeech.alarmSet(intent.hour, intent.minute)
-            is LocalActionGrammar.Intent.Dnd -> LocalActionSpeech.dnd(intent.on)
-            is LocalActionGrammar.Intent.VolumeStep, is LocalActionGrammar.Intent.SetVolume ->
+            is LocalAction.Timer -> LocalActionSpeech.timerSet(intent.durationMs)
+            is LocalAction.Alarm -> LocalActionSpeech.alarmSet(intent.hour, intent.minute)
+            is LocalAction.Dnd -> LocalActionSpeech.dnd(intent.on)
+            is LocalAction.VolumeStep, is LocalAction.SetVolume ->
                 LocalActionSpeech.volume((result.facts["level"] as? Int) ?: 0)
         }
     }
 
     // ---- the platform ----
 
+    /**
+     * A platform call that had to run on the UI thread did not answer within its bound. The
+     * posted work may still run, so this is an **uncertain** outcome, not proof nothing happened.
+     */
+    private class MainThreadTimeout(val operation: String) :
+        RuntimeException("the UI thread did not answer for $operation")
+
     private inner class Platform : PhoneEngine.PhonePlatform {
+
+        private val appsHost = AppsAccess.Android(app)
+
+        override fun launchableApps(): List<AppsAccess.App>? = appsHost.launchableApps()
+        override fun usageAccess(): Boolean = appsHost.usageAccess()
+        override fun foregroundApp(): AppsAccess.App? = appsHost.foregroundApp()
+        override fun recentApps(limit: Int): List<AppsAccess.App> = appsHost.recentApps(limit)
+
+        /**
+         * Run the small set of calls Android requires on the UI thread there, from the engine's
+         * thread, and bounded — never indefinitely.
+         *
+         * Most platform work (SAF, providers, file staging, alarms, audio) is deliberately
+         * **not** posted: that was the ANR. Only `startActivity`, the PiP window and the voice
+         * handoff cross to main. If the UI thread does not answer inside [MAIN_TIMEOUT_MS] the
+         * caller stops waiting and the phone says the outcome is uncertain, because the posted
+         * action can still run.
+         */
+        private fun <T> onMain(operation: String, block: () -> T): T {
+            if (Looper.myLooper() == Looper.getMainLooper()) return block()
+            val latch = CountDownLatch(1)
+            var result: T? = null
+            var failure: Throwable? = null
+            val posted = main.post {
+                try {
+                    result = block()
+                } catch (t: Throwable) {
+                    failure = t
+                } finally {
+                    latch.countDown()
+                }
+            }
+            if (!posted) throw MainThreadTimeout(operation)
+            if (!latch.await(MAIN_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                VoxLog.w("event=local-action ui-thread-timeout operation=$operation")
+                throw MainThreadTimeout(operation)
+            }
+            failure?.let { throw it }
+            @Suppress("UNCHECKED_CAST")
+            return result as T
+        }
 
         override fun startTimer(id: String, durationMs: Long, atEpochMs: Long): Boolean =
             schedule(
@@ -376,12 +491,15 @@ class LocalActions(context: Context) {
         override fun deleteNote(id: String): Boolean = true
 
         /**
-         * The folders the owner granted with the system picker, by their own display names. The
-         * tree URI stays in [PhoneFileAccess]; the engine only needs the label to choose one, so
-         * the path never travels through a tool result or a log line.
+         * The folders the owner granted with the system picker, by their own display names and
+         * **tree ids**. The tree URI stays in [PhoneFileAccess]; the engine needs the id to name
+         * the grant and the label to let a call choose one, so the path never travels through a
+         * tool result or a log line.
          */
         override fun folders(): List<PhoneEngine.PhonePlatform.GrantedFolder> =
-            PhoneFileAccess.trees(app).map { PhoneEngine.PhonePlatform.GrantedFolder(it.label) }
+            PhoneFileAccess.trees(app).map {
+                PhoneEngine.PhonePlatform.GrantedFolder(id = it.id, label = it.label)
+            }
 
         override fun fileText(
             folder: PhoneEngine.PhonePlatform.GrantedFolder,
@@ -419,6 +537,16 @@ class LocalActions(context: Context) {
             return PhoneFileAccess.list(app, tree, path, depth, pattern, offset, limit)
         }
 
+        override fun fileInfo(
+            folder: PhoneEngine.PhonePlatform.GrantedFolder,
+            name: String,
+        ): PhoneEngine.PhonePlatform.FileInfo {
+            val tree = treeFor(folder) ?: return PhoneEngine.PhonePlatform.FileInfo.Unavailable(
+                "the folder granted to your agent is no longer readable · grant it again in Phone tools",
+            )
+            return PhoneFileAccess.info(app, tree, name)
+        }
+
         override fun fileOffer(
             folder: PhoneEngine.PhonePlatform.GrantedFolder,
             name: String,
@@ -429,11 +557,9 @@ class LocalActions(context: Context) {
             return PhoneFileAccess.offer(app, tree, name)
         }
 
-        /** The one folder whose label matches, by the same normalisation the engine used. */
+        /** The one tree whose **id** is the grant: a label may repeat, a tree id cannot. */
         private fun treeFor(folder: PhoneEngine.PhonePlatform.GrantedFolder): PhoneFileAccess.Tree? =
-            PhoneFileAccess.trees(app).firstOrNull {
-                PhoneFiles.normalizeFolder(it.label) == PhoneFiles.normalizeFolder(folder.label)
-            }
+            PhoneFileAccess.trees(app).firstOrNull { it.id == folder.id }
 
         /** Android's own missing-permission string, or null when both calendar halves are held. */
         override fun calendarPermission(): String? = PhoneCalendarAccess.permission(app)
@@ -572,33 +698,21 @@ class LocalActions(context: Context) {
         }
 
         /**
-         * Write the text, and nothing else. The in-front check is done first because Android 10+
-         * drops a background write without saying so; reporting `ok` after a silent drop would be
-         * the one thing this tool must never do. The label is the app's name, never the caller's
-         * text at the OS layer either.
+         * Write the text, and nothing else. The write is attempted from wherever the call is:
+         * Android's restriction is on clipboard reads, not writes, so background and PiP are not
+         * reasons to refuse before asking. The label is the app's name, never the caller's text at
+         * the OS layer either.
          */
-        override fun clip(text: String): Boolean {
-            if (!AppFocus.inFront) return false
-            return try {
-                val cm = app.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                    ?: return false
-                cm.setPrimaryClip(ClipData.newPlainText(CLIP_LABEL, text))
-                true
-            } catch (t: Throwable) {
-                VoxLog.d("event=local-action clip-denied reason=${t.javaClass.simpleName}")
-                false
+        override fun clip(text: String): PhoneEngine.PhonePlatform.ClipWrite = ClipboardRules.write {
+            val cm = app.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                ?: throw IllegalStateException("this phone has no clipboard service")
+            cm.setPrimaryClip(ClipData.newPlainText(CLIP_LABEL, text))
+        }.also { result ->
+            if (result is PhoneEngine.PhonePlatform.ClipWrite.Refused) {
+                VoxLog.d("event=local-action clip-denied detail=${result.detail}")
             }
         }
 
-        /**
-         * Read the clipboard **when Android allows it**. The platform, not this app, decides: an
-         * app it does not consider in front gets no clipboard (Android 10+), so the read is
-         * refused with that reason rather than returning an empty clip as if it were the answer.
-         * An empty clipboard and a non-text item are refused too: "nothing" is not clipboard text.
-         *
-         * Nothing else in the app reads the clipboard; this is the one read path, behind the
-         * owner's `clipboard` grant.
-         */
         // ---- handoffs: messages, calls, apps ----
 
         /** The exact runtime permission `contact` needs, or null when the owner has granted it. */
@@ -638,25 +752,37 @@ class LocalActions(context: Context) {
 
         /** `ACTION_DIAL` with the number filled in. The owner presses call; this never dials. */
         override fun dial(number: String): Boolean = try {
-            app.startActivity(
-                Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", number, null))
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
+            onMain("dial") {
+                app.startActivity(
+                    Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", number, null))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
             true
+        } catch (t: MainThreadTimeout) {
+            throw t
         } catch (t: Throwable) {
             VoxLog.w("event=local-action dial-failed reason=${t.javaClass.simpleName}")
             false
         }
 
         /** Is Vox's own call live in the attached window right now? */
-        override fun callLive(): Boolean = PhoneHandoff.callLive()
+        override fun callLive(): Boolean = onMain("callLive") { PhoneHandoff.callLive() }
+
+        /**
+         * The one background-activity-launch gate. The window answers it: a resumed activity,
+         * or one in picture-in-picture and visible. Checked by the engine before a handoff
+         * resolves, ends or announces anything (B2).
+         */
+        override fun canStartActivity(): Boolean =
+            onMain("canStartActivity") { PhoneHandoff.canStartActivity() }
 
         /** Speak the handoff line through the being; the call ends when it is audible. */
         override fun announce(line: String, after: () -> Unit) =
-            PhoneHandoff.announceDial(line, after)
+            onMain("announce") { PhoneHandoff.announceDial(line, after) }
 
         /** The same teardown the on-screen hang-up runs, never a second one. */
-        override fun endCall() = PhoneHandoff.endCall()
+        override fun endCall() = onMain("endCall") { PhoneHandoff.endCall() }
 
         /**
          * Resolve [app] among **launchable** activities only: an exact package match first, then
@@ -685,13 +811,17 @@ class LocalActions(context: Context) {
         }
 
         override fun startApp(target: PhoneEngine.PhonePlatform.AppTarget): Boolean = try {
-            app.startActivity(
-                Intent(Intent.ACTION_MAIN)
-                    .addCategory(Intent.CATEGORY_LAUNCHER)
-                    .setClassName(target.packageName, target.className)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
+            onMain("launch") {
+                app.startActivity(
+                    Intent(Intent.ACTION_MAIN)
+                        .addCategory(Intent.CATEGORY_LAUNCHER)
+                        .setClassName(target.packageName, target.className)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
             true
+        } catch (t: MainThreadTimeout) {
+            throw t
         } catch (t: Throwable) {
             VoxLog.w("event=local-action launch-failed reason=${t.javaClass.simpleName}")
             false
@@ -700,30 +830,43 @@ class LocalActions(context: Context) {
         override fun resolveUri(
             uri: String,
             packageName: String?,
-        ): PhoneEngine.PhonePlatform.AppTarget? = try {
+        ): PhoneEngine.PhonePlatform.UriTarget = try {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uri))
             packageName?.let { intent.setPackage(it) }
-            app.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)?.let {
-                PhoneEngine.PhonePlatform.AppTarget(
-                    it.activityInfo.packageName,
-                    it.activityInfo.name,
+            val resolved = app.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+            when {
+                resolved == null -> PhoneEngine.PhonePlatform.UriTarget.None
+                // The platform's own chooser answers when several apps claim the link and none
+                // is the default. It is not an app, and starting its class would report
+                // `package:"android"` as though it were (M6).
+                resolved.activityInfo.packageName == "android" ->
+                    PhoneEngine.PhonePlatform.UriTarget.Ambiguous
+                else -> PhoneEngine.PhonePlatform.UriTarget.App(
+                    PhoneEngine.PhonePlatform.AppTarget(
+                        resolved.activityInfo.packageName,
+                        resolved.activityInfo.name,
+                    )
                 )
             }
         } catch (t: Throwable) {
             VoxLog.d("event=local-action open-resolve-failed reason=${t.javaClass.simpleName}")
-            null
+            PhoneEngine.PhonePlatform.UriTarget.None
         }
 
         override fun startUri(
             target: PhoneEngine.PhonePlatform.AppTarget,
             uri: String,
         ): Boolean = try {
-            app.startActivity(
-                Intent(Intent.ACTION_VIEW, Uri.parse(uri))
-                    .setClassName(target.packageName, target.className)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
+            onMain("open") {
+                app.startActivity(
+                    Intent(Intent.ACTION_VIEW, Uri.parse(uri))
+                        .setClassName(target.packageName, target.className)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
             true
+        } catch (t: MainThreadTimeout) {
+            throw t
         } catch (t: Throwable) {
             VoxLog.w("event=local-action open-failed reason=${t.javaClass.simpleName}")
             false
@@ -745,15 +888,20 @@ class LocalActions(context: Context) {
 
         /**
          * Open Android's own confirmation (`ACTION_DELETE`). The owner answers *that* screen; this
-         * phone cannot see the answer, so the result says "confirming", not "removed". A background
-         * activity launch the platform refuses becomes `unavailable`, never a silent success.
+         * phone cannot see the answer, so the result says "confirming", not "removed".
+         *
+         * Android 10+ blocks a background activity start without throwing, so [PhoneEngine]
+         * refuses this before it is reached unless an activity of ours is visible. A notification
+         * approval therefore opens Vox first and answers from the activity ([PhoneApprovals]).
          */
         override fun uninstall(packageName: String): PhoneEngine.PhonePlatform.Uninstall = try {
             val intent = Intent(Intent.ACTION_DELETE, Uri.parse("package:$packageName"))
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             app.packageManager.getApplicationInfo(packageName, 0)
-            app.startActivity(intent)
+            onMain("uninstall") { app.startActivity(intent) }
             PhoneEngine.PhonePlatform.Uninstall.Confirming(packageName)
+        } catch (t: MainThreadTimeout) {
+            throw t
         } catch (t: Throwable) {
             val missing = t is PackageManager.NameNotFoundException
             VoxLog.w(
@@ -766,7 +914,14 @@ class LocalActions(context: Context) {
             )
         }
 
-        override fun window(): CallWindow.Host? = PhoneHandoff.window()
+        override fun window(): CallWindow.Host? = PhoneHandoff.window()?.let { host ->
+            object : CallWindow.Host {
+                override fun callLive(): Boolean = onMain("pip callLive") { host.callLive() }
+                override fun enterPip(): Boolean = onMain("pip enter") { host.enterPip() }
+                override fun post(delayMs: Long, action: () -> Unit) =
+                    onMain("pip post") { host.post(delayMs, action) }
+            }
+        }
 
         /**
          * Resolve an intent, then start it. The result names the package Android resolved, so the
@@ -779,9 +934,11 @@ class LocalActions(context: Context) {
         ): PhoneEngine.PhonePlatform.Handoff = try {
             val resolved = app.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
                 ?: return PhoneEngine.PhonePlatform.Handoff.NoApp
-            app.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            onMain("handoff") { app.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             VoxLog.d("event=local-action handoff action=$action package=${resolved.activityInfo.packageName}")
             PhoneEngine.PhonePlatform.Handoff.Done(resolved.activityInfo.packageName)
+        } catch (t: MainThreadTimeout) {
+            throw t
         } catch (e: ActivityNotFoundException) {
             PhoneEngine.PhonePlatform.Handoff.NoApp
         } catch (t: Throwable) {
@@ -791,36 +948,32 @@ class LocalActions(context: Context) {
             )
         }
 
+        /**
+         * Read the clipboard **when Android allows it**. The platform, not this app, decides: an
+         * app it does not consider focused gets no clipboard (Android 10+), so the read is asked
+         * for and refused with the platform's outcome rather than pre-empted. When the platform
+         * returns nothing while Vox is not focused, the sentence names focus as the likely cause
+         * without claiming to know it. An empty clipboard and a non-text item are refused too:
+         * "nothing" is not clipboard text.
+         *
+         * Nothing else in the app reads the clipboard; this is the one read path, behind the
+         * owner's `clipboard` grant.
+         */
         override fun readClip(): PhoneEngine.PhonePlatform.ClipRead {
-            if (!AppFocus.inFront) {
-                return PhoneEngine.PhonePlatform.ClipRead.Unavailable(
-                    "Android does not let an app that is not in front read the clipboard; the " +
-                        "phone was backgrounded, so nothing was read",
+            val cm = app.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                ?: return PhoneEngine.PhonePlatform.ClipRead.Unavailable(
+                    "this phone has no clipboard service to read",
                 )
-            }
-            return try {
-                val cm = app.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                    ?: return PhoneEngine.PhonePlatform.ClipRead.Unavailable(
-                        "this phone has no clipboard service to read",
-                    )
-                val clip = cm.primaryClip
-                    ?: return PhoneEngine.PhonePlatform.ClipRead.Empty
-                if (clip.itemCount == 0) return PhoneEngine.PhonePlatform.ClipRead.Empty
+            return ClipboardRules.read(AppFocus.inFront) {
+                val clip = cm.primaryClip ?: return@read ClipboardRules.Reading.NoClip
+                if (clip.itemCount == 0) return@read ClipboardRules.Reading.NoClip
                 val text = clip.getItemAt(0).text?.toString()
-                if (text.isNullOrEmpty()) {
-                    PhoneEngine.PhonePlatform.ClipRead.Unavailable(
-                        "the clipboard holds no text (it may be an image or another app's " +
-                            "private content), so there was nothing to return",
-                    )
-                } else {
-                    PhoneEngine.PhonePlatform.ClipRead.Text(text)
+                if (text.isNullOrEmpty()) ClipboardRules.Reading.NoText
+                else ClipboardRules.Reading.Text(text)
+            }.also { result ->
+                if (result is PhoneEngine.PhonePlatform.ClipRead.Unavailable) {
+                    VoxLog.d("event=local-action clip-read-denied detail=${result.detail}")
                 }
-            } catch (t: Throwable) {
-                VoxLog.d("event=local-action clip-read-denied reason=${t.javaClass.simpleName}")
-                PhoneEngine.PhonePlatform.ClipRead.Unavailable(
-                    "Android refused the clipboard read (${t.javaClass.simpleName}); nothing " +
-                        "was read",
-                )
             }
         }
     }
@@ -876,11 +1029,54 @@ class LocalActions(context: Context) {
         private const val KEY_NOTES = "phone_notes"
         private const val CANCELLED_MEMORY = 64
 
+        @Volatile private var sharedInstance: LocalActions? = null
+        private val SHARED_LOCK = Any()
+
+        /**
+         * The process's one registry. The call path ([VoiceController]) and the one-button setup's
+         * listener window both hand MCP calls here: two engines would let the phone contradict
+         * itself about what is running, which is the single-source-of-truth rule from #421.
+         */
+        fun shared(context: Context): LocalActions {
+            sharedInstance?.let { return it }
+            return synchronized(SHARED_LOCK) {
+                sharedInstance ?: LocalActions(context.applicationContext ?: context)
+                    .also { sharedInstance = it }
+            }
+        }
+
         /** The clipboard entry's label. The app's name, never the caller's text. */
         private const val CLIP_LABEL = "Hermes Vox"
 
-        /** How long the MCP caller waits for the main thread. Well under any tool timeout. */
+        /** How long the MCP caller waits for the engine thread. Well under any tool timeout. */
         const val CALL_TIMEOUT_MS = 4_000L
+
+        /**
+         * How long the engine thread waits for the UI thread for the few calls that must run
+         * there. Below [CALL_TIMEOUT_MS] so a busy UI thread becomes an honest uncertain answer,
+         * not a stuck engine queue.
+         */
+        const val MAIN_TIMEOUT_MS = 2_000L
+
+        /**
+         * The timeout refusal. It says the action **may still complete** and names `status`,
+         * because the engine thread keeps running the work after the caller stops waiting (H5).
+         * It never says nothing was performed.
+         */
+        const val TIMEOUT_DETAIL =
+            "the phone did not answer in time; the action may still complete on the phone — " +
+                "call `status` to see what happened"
+
+        /** The UI thread — not the engine — was the one that did not answer. Same truth. */
+        const val UI_TIMEOUT_DETAIL =
+            "the phone's UI thread did not answer in time; the action may still complete — " +
+                "call `status` to see what happened"
+
+        /** The engine failed after dispatch; it may have done part of the work. */
+        const val FAILED_DETAIL =
+            "the phone failed while running that action; it may have partly completed — " +
+                "call `status` to see what happened"
+
 
         /** At most this many entries ride B1's `local_actions:` line. */
         const val MAX_REGISTRY = PresenceContext.MAX_ACTIONS

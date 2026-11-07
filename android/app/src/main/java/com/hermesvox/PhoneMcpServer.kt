@@ -95,6 +95,12 @@ class PhoneMcpServer private constructor(
      * advertised `enum` has to lose an action the moment the owner revokes its group.
      */
     private val grants: PhoneGrants.Source,
+    /**
+     * The labels of the folders the owner granted, read by `tools/list` on every call. The
+     * `folder` enum is this list — the grants are made in a system picker while the phone is
+     * running, so a captured list would advertise a folder that is gone (or omit one just given).
+     */
+    private val folderLabels: () -> List<String> = { emptyList() },
 ) : AutoCloseable {
 
     /** The port the OS gave us (a fixed one in the app: the gateway's config names it). */
@@ -236,7 +242,9 @@ class PhoneMcpServer private constructor(
                 initializeResult(requested)
             }
             "ping" -> "{}"
-            "tools/list" -> Json.encode(linkedMapOf("tools" to listOf(PhoneTool.schema(grants))))
+            "tools/list" -> Json.encode(
+                linkedMapOf("tools" to listOf(PhoneTool.schema(grants, folderLabels())))
+            )
             "tools/call" -> when (val reply = callTool(params)) {
                 is ToolReply.Fail -> return 200 to rpcError(id, reply.code, reply.message)
                 is ToolReply.Ok -> reply.result
@@ -321,7 +329,9 @@ class PhoneMcpServer private constructor(
             "instructions" to
                 "This is the phone the conversation is happening on. Use the `phone` tool to act on " +
                 "it; every call returns what actually happened. Only the actions the owner has " +
-                "granted are offered; a refusal names its reason and means nothing was performed.",
+                "granted are offered; a refusal names its reason and means nothing was performed, " +
+                "unless it carries `outcome_uncertain:true` — then the action may still complete " +
+                "and `status` says what did.",
         )
     )
 
@@ -455,6 +465,7 @@ class PhoneMcpServer private constructor(
             port: Int = PORT,
             log: (String) -> Unit = {},
             grants: PhoneGrants.Source = PhoneGrants.ALL_OFF,
+            folderLabels: () -> List<String> = { emptyList() },
         ): PhoneMcpServer = start(
             bind = bind,
             tokenProvider = { token },
@@ -462,6 +473,7 @@ class PhoneMcpServer private constructor(
             port = port,
             log = log,
             grants = grants,
+            folderLabels = folderLabels,
         )
 
         /**
@@ -480,13 +492,17 @@ class PhoneMcpServer private constructor(
             onInitialize: (Long) -> Unit = {},
             grants: PhoneGrants.Source = PhoneGrants.ALL_OFF,
             keyProvider: () -> String = { "" },
+            folderLabels: () -> List<String> = { emptyList() },
         ): PhoneMcpServer {
             require(!bind.isAnyLocalAddress) { "refusing to bind 0.0.0.0 / :: — pick the tailnet address" }
             require(tokenProvider().isNotEmpty()) { "a bearer token is required" }
             val socket = ServerSocket()
             socket.reuseAddress = true
             socket.bind(InetSocketAddress(bind, port), 8)
-            return PhoneMcpServer(socket, tokenProvider, keyProvider, handler, log, onRequest, onInitialize, grants)
+            return PhoneMcpServer(
+                socket, tokenProvider, keyProvider, handler, log, onRequest, onInitialize, grants,
+                folderLabels,
+            )
         }
 
         /** Converts a JSON object into the plain map the tool layer reads. */

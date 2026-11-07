@@ -30,10 +30,11 @@ import com.hermesvox.core.Json
  * handoff's recipient is stored because the owner needs to see who the draft was for. [summarise]
  * is the one function a future action must go through.
  *
- * **The two read groups are narrower than [summarise].** A notifications summary stores
+ * **The three read groups are narrower than [summarise].** A notifications summary stores
  * `notification_count`; a single read stores the `app` and `notification_count=1`, never the
- * title, body or id it returned. A contact lookup stores `count`, never the query name, a display
- * name or a number. Those fields are the owner's data, not a fact this list may keep.
+ * title, body or id it returned. An `apps` listing stores `app_count`, never a package or label.
+ * A contact lookup stores `count`, never the query name, a display name or a number. Those fields
+ * are the owner's data, not a fact this list may keep.
  *
  * Pure JVM. [PhoneAuditStore] is the Android side that persists it; this file is what
  * [PhoneAuditTest] pins.
@@ -66,7 +67,8 @@ object PhoneAudit {
     fun summarise(args: Map<String, Any?>): Map<String, String> {
         val out = LinkedHashMap<String, String>()
         for ((key, value) in args) {
-            if (key == "action" || value == null) continue
+            // `action` is its own column, and `approval` is the handshake's guard, not an argument.
+            if (key == "action" || key == "approval" || value == null) continue
             val rendered = when {
                 key == "text" -> "${(value as? String)?.length ?: 0} chars"
                 // An event's title is the owner's words, so the audit keeps its length, not it.
@@ -89,6 +91,8 @@ object PhoneAudit {
             // listener's ids, so they are not a fact this list may keep.
             result.action == "notifications" -> notificationCountRow(result)
             result.action == "notification_read" -> notificationReadRow(result)
+            // An app listing is a count of launchable entries, never the packages or labels.
+            result.action == "apps" -> appCountRow(result)
             // A contact lookup is the owner's address book, so the row is its count alone: never
             // the name that was asked for and never a number or display name it found.
             result.action == "contact" -> contactRow(result)
@@ -121,12 +125,20 @@ object PhoneAudit {
         return out
     }
 
+    /** The app listing's row: how many launchable apps, never their packages or labels. */
+    private fun appCountRow(result: PhoneResult): Map<String, String> {
+        val out = LinkedHashMap<String, String>()
+        if (result.ok) {
+            (result.facts["total"] as? Number)?.let { out["app_count"] = "${it.toLong()}" }
+        }
+        return out
+    }
+
     /**
      * The read row: the app and `notification_count` of one. **Never the id** — an id the owner
      * cannot see is not a fact to keep — and never the title or body it returned.
      */
-    private fun notificationReadRow(result: PhoneResult): Map<String, String> {
-        val out = LinkedHashMap<String, String>()
+    private fun notificationReadRow(result: PhoneResult): Map<String, String> {        val out = LinkedHashMap<String, String>()
         if (!result.ok) return out
         (result.facts["app"] as? String)?.takeIf { it.isNotBlank() }?.let { out["app"] = clip(it) }
         out["notification_count"] = "1"
@@ -147,12 +159,13 @@ object PhoneAudit {
     }
 
     /**
-     * The request and decision rows for an `uninstall` card. [outcome] is `approval-requested`,
+     * The request and decision rows for one approval card. [outcome] is `approval-requested`,
      * `approved`, `denied` or `expired`; [via] is `tap`, `voice`, `silence` or `agent`.
      *
-     * The row names the package and the app's label, and — on a decision — how it was answered.
-     * It never stores the canonical arguments or the hash: those are the protocol's guard, not
-     * something the owner needs to read.
+     * The row names the safe subject the card was raised for and — on a decision — how it was
+     * answered. A card's phrase may carry an event's title or a recipient; this list keeps the
+     * short subject and the safe detail only, never the canonical arguments or the hash: those are
+     * the protocol's guard, not something the owner needs to read.
      */
     fun approvalEntry(
         atEpochMs: Long,
@@ -161,12 +174,24 @@ object PhoneAudit {
         via: String,
     ): Entry {
         val arguments = LinkedHashMap<String, String>()
-        arguments["package"] = clip(card.packageName)
-        arguments["label"] = clip(card.label)
+        when (card.action) {
+            PhoneApproval.FILE_ACTION -> {
+                arguments["name"] = clip(card.label)
+                if (card.detail.isNotEmpty()) arguments["detail"] = clip(card.detail)
+            }
+            PhoneApproval.ACTION -> {
+                arguments["package"] = clip(card.subject)
+                arguments["label"] = clip(card.label)
+            }
+            else -> {
+                arguments["what"] = clip(card.label)
+                if (card.detail.isNotEmpty()) arguments["detail"] = clip(card.detail)
+            }
+        }
         if (outcome != "approval-requested" && via.isNotEmpty()) arguments["via"] = clip(via)
         return Entry(
             atEpochMs = atEpochMs,
-            action = PhoneApproval.ACTION,
+            action = card.action,
             arguments = arguments,
             // A decision is not an execution; the execution row is the one that says `done`.
             ok = false,

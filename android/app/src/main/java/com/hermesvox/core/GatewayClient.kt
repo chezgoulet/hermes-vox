@@ -4,11 +4,13 @@ package com.hermesvox.core
  * The gateway's model/health endpoints the on-device catalog CANNOT provide:
  * /api/model/options (the provider/model catalog the /models chooser reads) and
  * /v1/health (the status/version card). Same base URL + bearer as the responses
- * client; these are gateway reads, not entity turns, so they carry no session
- * scope and issue only GET.
+ * client; reads carry no session scope.
  *
  * There is deliberately no DELETE here (or anywhere else): the app reads the
- * host; it never mutates it. [NoDestructiveRequestsTest] makes that structural.
+ * host; it never mutates it. The phone setup sends a turn and lets the agent edit
+ * its own configuration — the app has no configuration route, no restart route
+ * and no job trigger. [NoDestructiveRequestsTest] makes the no-DELETE rule
+ * structural.
  */
 internal class GatewayClient(private val baseURL: String, private val apiKey: String) {
 
@@ -131,6 +133,9 @@ internal class GatewayClient(private val baseURL: String, private val apiKey: St
 
     companion object {
         const val TIMEOUT_MS = 20_000
+
+        /** A health probe while a gateway is restarting: short, because absence is the answer. */
+        const val PROBE_TIMEOUT_MS = 2_500
 
         /** A stop is a courtesy to the gateway, not a turn: never hold cleanup for long. */
         const val STOP_TIMEOUT_MS = 5_000

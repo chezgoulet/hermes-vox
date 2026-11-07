@@ -18,9 +18,16 @@ already real (`timers-alarms`, `dnd-volume`, `notes`).
 **Added by the read lane:** `contacts` (`contact`) and `notifications` (`notifications`,
 `notification_read`). Both are instant and both offer Allow; the notification listener is
 call-scoped, and its summary-then-read split is the privacy design, not an implementation detail.
-**Added by the approval lane:** `apps`' `uninstall` — the one Tier 2 action with a card on this
-phone, raised by [_PhoneApproval_](../android/app/src/main/java/com/hermesvox/PhoneApproval.kt).
-**Declared, not built:** `apps`' `install`.
+**Added by the approval lane:** `apps`' `uninstall` and `files`' `file_offer` — the two
+consequential actions, raised by
+[_PhoneApproval_](../android/app/src/main/java/com/hermesvox/PhoneApproval.kt). The card's
+notification is private and cannot be approved while the phone is locked. Since the uniform-grants
+change, this is the same card **every** action at Ask goes through, not a Tier 2 exception.
+**Added by the apps-and-dismiss lane:** `apps`' `apps` listing and `notifications`'
+`notification_dismiss`.
+**Gone from the surface:** `apps`' `install`. An ordinary app cannot install a package — Android
+shows its own installer confirmation and never says whether the owner accepted — so it is not a
+declared capability, not advertised, and a direct call is `unknown-action`.
 
 ---
 
@@ -33,31 +40,38 @@ built from [PhoneGrants](../android/app/src/main/java/com/hermesvox/PhoneGrants.
 | grant | the schema | a call that names it |
 |---|---|---|
 | **Off** (the default for every group) | the group's actions are **absent** from the `enum` | `ok:false, reason:"not_granted"`, and the detail names the group the owner must grant |
-| **Ask**, Tier 0 | offered | `ok:false, reason:"approval-required"`; the owner's approval card owns it and nothing is performed |
-| **Ask**, Tier 2 `uninstall` | offered | the two-step card handshake below: a request raises the card, then the same call plus `approval` executes |
-| **Ask**, any other Tier 2 | offered | `ok:false, reason:"approval-required"`; no card exists for it and nothing is performed |
-| **Ask**, Tier 1 (reported) | offered | executed, audited, and reported — turning a reported group on *is* the grant |
-| **Allow** | offered | executed, audited, and reported |
+| **Ask** | offered for every tier | `ok:false, reason:"approval-required"` with a card naming the action and its arguments; the same call plus `approval:"<id>"` and identical arguments executes after the owner answers |
+| **Allow** | offered for every tier | executed without a card, audited, and reported |
 
-**Allow exists for Tier 0 only.** A stored Allow on a Tier 1 or Tier 2 group is read back as Ask: a
-grant that cannot be given is not a grant. **Ask is not one behaviour:** a Tier 0 group at Ask waits
-for the owner's card, and a Tier 2 group at Ask waits for a card on every use; a Tier 1 group at Ask
-runs, because the owner has already turned it on and sees what it did. The apps group is Tier 0
-because `launch`/`open` are, but its `uninstall` action keeps its own Tier 2 rule: a grant to open
-apps is not a grant to remove one. `undo` and `status` belong to no group and are always offered,
-because a phone whose grants are all Off must still be able to say so.
+**The three words mean one thing each, whatever the tier.** A stored state is honoured as stored;
+nothing is normalised on read or write. Allow on a consequential action is a **real permission** —
+the Apps row at Allow can remove an app, and the row says so in a loud line. The protection is the
+warning and the Off default, not a hidden veto. **Ask is one behaviour:** every action raises the
+same card, answered by tap or by voice, and the id is bound to the exact action and arguments that
+were approved. `undo` and `status` belong to no group and are always offered, because a phone whose
+grants are all Off must still be able to say so.
 
 **A refusal is a result, not a transport error.** `isError` stays `false`; the JSON carries `ok`,
-`action`, `tier`, `reason` and `detail`. `ok:true` is only ever written after the platform said it
-performed the action, and a refusal never carries an `id`, a success fact or an `undo`.
+`action`, `tier`, `reason` and `detail`. `ok:true` is only ever written after the platform accepted
+the call — and for a handoff, that means the intent was handed over, never that another app reached
+the front. A refusal never carries an `id`, a success fact or an `undo`.
+
+**A timeout is not a refusal of the work.** The phone runs one action at a time on its own thread,
+not on the thread that draws, and a caller's bound stops only its own waiting. When that bound
+expires the result is `ok:false`, `reason:"unavailable"` and **`outcome_uncertain:true`**: the action
+may still complete on the phone, so the mind must call `status` to learn what happened and must not
+tell the caller nothing was performed. The one exception is `outcome_uncertain:true`; every other
+refusal means the work was not dispatched.
 
 ### The tiers
 
-| tier | name | the promise | states |
-|---|---|---|---|
-| **0** | instant | executes now, private, and reversible *where reversal is real* | Off / Ask / **Allow** |
-| **1** | reported | acts now when granted, is reported to the mind on the next turn, and is undoable | Off / Ask |
-| **2** | approval | **never executes without the owner's card.** `uninstall` has one on this phone; the rest still answer `approval-required` | Off / Ask |
+| tier | name | the description (what a card says, whether undo exists) |
+|---|---|---|
+| **0** | instant | executes now, private, and reversible *where reversal is real* — an undo is offered |
+| **1** | reported | executes now, is reported to the mind on the next turn, and is undoable where the row says |
+| **2** | consequential | executes now at Allow or after its card at Ask; no undo. `uninstall` and `file_offer` are built; the other names are never advertised |
+
+The tier no longer limits which states are offered: every row has Off, Ask and Allow.
 
 ### Why these hand off
 
@@ -69,31 +83,46 @@ filled in — never `CALL_PHONE` — and because Vox never dials, no emergency-n
 needed or wanted. Dialling **ends Vox's own call at the handoff**, after one spoken line, because the
 dialer is about to take the audio route; it does **not** end the conversation, which lives on the
 gateway and is resumed on the next call. The same reasoning keeps `apps` split: `launch`/`open` are
-instant, while `uninstall` is irreversible and has no app to hand it to — so it is the one action
-with an approval card of its own (below).
+instant, while `uninstall` is irreversible and has no app to hand it to. `file_offer` is the other
+consequential one: it cannot be handed off either, because the agent is the recipient and the
+export is the act. Those two are the tier's consequential examples; their card is the same card
+every action at Ask raises (below).
+
+**Both handoff edges are closed.** A handoff starts another app from wherever the MCP call
+arrives. On Android 10+ the platform can refuse a **background activity start** without throwing,
+so `startActivity` returning is not proof another app reached the front. Every handoff therefore
+asks first whether an activity of ours is resumed, or in picture-in-picture and visible; when it is
+not, the call is refused `background` *before* a target is resolved, a call is ended or a line is
+announced, and the detail says the phone is not in the foreground and nothing was attempted. And
+`dial` ends Vox's own call to free the audio route, which is also the MCP listener's lifetime: the
+dial happens **after** the reply, so the result says `dialer:"unknown"` with `outcome_uncertain:true`
+rather than claiming a dialer opened, and `status` carries the dialer's own answer once the teardown
+has run. A dialer that did not open is a refusal, never a success.
 
 ### The reason vocabulary
 
 | `reason` | meaning |
 |---|---|
 | `not_granted` | the action's group is Off; the action is not offered and was not performed |
-| `approval-required` | the group is Ask, or the action is Tier 2; the owner's approval owns it and nothing was done. For `uninstall` it carries `approval_id`, `expires_at` and `summary` |
-| `approval_denied` | the owner answered the `uninstall` card with no; nothing was removed and the id is burnt |
-| `approval_expired` | the card was not answered within two minutes (silence is no); nothing was removed |
-| `approval_mismatch` | the id was approved for one app and the call names another; nothing was removed |
-| `approval_unknown` | no such approval id, or it has already been used; nothing was removed |
-| `approval_busy` | three cards were already waiting, so no fourth was raised; nothing was removed |
+| `approval-required` | the group is Ask: nothing was done, and a card with `approval_id`, `expires_at` and `summary` is waiting for the owner. Any action can answer it |
+| `approval_denied` | the owner answered the card with no; nothing was performed, and the id is burnt |
+| `approval_expired` | the card was not answered within two minutes (silence is no); nothing was performed |
+| `approval_mismatch` | the id was approved for one action and one set of arguments, and the call names different ones; nothing was performed |
+| `approval_unknown` | no such approval id, or it has already been used; nothing was performed |
+| `approval_locked` | the card was answered while the phone was locked. The yes was refused, the id is burnt, and nothing was performed. Unlock the phone and ask again |
+| `approval_busy` | three cards were already waiting, so no fourth was raised; nothing was performed |
 | `permission` | the phone does not hold a permission or special access the action needs |
+| `background` | the phone is not in the foreground, so the activity start a handoff needs would be blocked. Nothing was resolved, opened, sent or ended — the action was not attempted. Ask again while Vox is on screen |
 | `no_folder` | no folder has been granted with the system picker, so there is nothing to read inside |
 | `bad_path` | the name is a path, contains `..`, or resolves outside the folder the owner granted |
 | `bad_uri` | `open` was given a URI it will not hand to a viewer: `intent:`, `file:`, or no scheme at all. Nothing was resolved and no intent was built |
 | `not_text` | the file's bytes are not text; `file_read` returns text only |
 | `too_big` | a whole-file `file_read` is above the 64 KiB default; ask again with `offset`/`length` to read it in windows |
-| `unavailable` | the action was recognised and the platform refused, failed, or would not say |
+| `unavailable` | the action was recognised and the platform refused, failed, or would not say. A caller-timeout, and a `dial` whose teardown has not run yet, carry `outcome_uncertain:true`: the action may still complete, so call `status` |
 | `invalid-arguments` | the arguments do not describe a runnable action (bounds and shapes are below) |
 | `expired` | no undo is registered for that id any more |
 | `no_app` | nothing on the phone answers the intent: no `ACTION_SENDTO` app, no dialer, no launchable activity, or no app for the URI |
-| `unknown-id` | `notification_read` was given an id that no summary of this call has shown, or the notification has left the phone since |
+| `unknown-id` | `notification_read` or `notification_dismiss` was given an id that no summary of this call has shown, or the notification has left the phone since (a dismissal by `app` that matches nothing answers the same way) |
 | `unknown-action` | not a phone action; the detail lists what is offered right now |
 
 Every action in the tables below can also return `not_granted`, `approval-required` and
@@ -117,17 +146,18 @@ success (an `undo` object is added only when the row's undo column says it is re
 | `skip` | media | `direction` `next` (default) or `previous` | `direction`, `dispatched` | **no** — there is no "unskip" the phone can perform | the same call with `KEYCODE_MEDIA_NEXT` / `KEYCODE_MEDIA_PREVIOUS` | `invalid-arguments`, `unavailable` |
 | `now_playing` | media | — | `known`, `playing`, `package`, `title`, and `note` when `known` is false | **no** — reporting only | `playing` is `AudioManager.isMusicActive`. `package`/`title` need a `MediaSessionManager` session list, which needs **notification-listener special access**; the sheet offers that grant and opens Android's screen. With it they are the session's own values and `known` is `true`; without it they are `null` and `known` is `false` | none of its own: it always answers, with `known:false` and `null` where it cannot see |
 | `state` | device-state | — | `battery_percent`, `charging_source`, `charging_status`, `screen_on`, `network`, `tailnet_present`, `free_storage_bytes`, `media_volume`, `dnd`, `timezone`, `utc_offset_minutes`, `time` — each `null` when the platform will not say | **no** — read-only | battery and charging: the sticky `ACTION_BATTERY_CHANGED` intent; screen: `PowerManager.isInteractive`; network: `ACCESS_NETWORK_STATE`; tailnet: interface enumeration (`100.64.0.0/10`); storage: `StatFs` on the data directory; volume: media stream; `dnd`: the same special access `dnd` needs, else `null`; time: the device's own zone and offset. **No new permission** | none of its own: it always answers, and an unreadable field is `null` |
-| `clip` | clipboard | `text` string, 1 – 2 000 characters | `chars` — the length only | **no** — a clipboard write cannot be reversed; the phone does not keep what it replaced | `ClipboardManager.setPrimaryClip`. **No permission**, but Android refuses a write from an app that is not in the foreground, which arrives as `unavailable` | `unavailable` |
+| `clip` | clipboard | `text` string, 1 – 2 000 characters | `chars` — the length only | **no** — a clipboard write cannot be reversed; the phone does not keep what it replaced | `ClipboardManager.setPrimaryClip`. **No permission, and no focus**: Android restricts clipboard *reads*, not writes, so a background or picture-in-picture call writes like any other. The platform may still refuse (a device policy or an app-op), and that refusal is `unavailable` with the platform's own reason | `unavailable` |
 | `clip_read` | clipboard | — | `text`, `chars` | **no** — reading changes nothing | `ClipboardManager.getPrimaryClip`. **No permission**, but **the platform decides**: since Android 10 an app that is not in front gets no clipboard, and an empty clip is no answer. Both are `unavailable` with the platform's own reason; the phone never returns empty text as though it were the clipboard | `unavailable` |
 | `notifications` | notifications | — | `sensitive: true`, `count`, `apps` — each `app`, `count`, `latest_at` (epoch millis), and opaque `ids` | **no** — reading changes nothing | **Notification-listener special access**, shared with `now_playing`; the system grant is global, but the app's **use** of it is call-scoped: the board attaches when a call starts, detaches when it ends, and drops every record and id. **Vox's own notifications are excluded** (an app reading itself through the listener is a loop). Many notifications → many app rows, but **no title and no text** | `unavailable` (no live call), `permission` (listener access not granted) |
 | `notification_read` | notifications | `id` — one of the ids a `notifications` summary returned | `sensitive: true`, `app`, `posted_at` (epoch millis), `title`, `text` | **no** — reading changes nothing | The same call-scoped listener. This is the deliberate **second step**: one notification, named by an id a summary already showed, never a browse or a vacuum. An id that arrived after the summary is `unknown-id` until a fresh summary shows it | `unavailable`, `permission`, `unknown-id` |
-| `message` | messages | `to` — a phone number, or a contact name when Contacts is on; `text` 1 – 1 000 characters | `to`, `chars`, `handed_off: true` | **no** — Vox composes; the owner's app sends, and a sent text cannot be recalled | `ACTION_SENDTO` with an `smsto:` URI and `sms_body`. **No permission, no `SEND_SMS`, no default-SMS role.** The result says the draft was handed off, never that it was sent | `no_app`; `not_granted` naming **Contacts** when `to` is a name and that group is Off; `permission` when Contacts is on but `READ_CONTACTS` is not held |
-| `dial` | calls | `to` — a number, or a contact name when Contacts is on | `to` | **no** — opening the dialer changes nothing; the owner's call is theirs | `ACTION_DIAL` with a `tel:` URI. **No `CALL_PHONE`, no emergency special case**, because Vox never dials: the owner presses call. With a live Vox call, the being says *dialling — ending our call*, the call is ended through the same teardown the hang-up uses, and then the dialer opens | `no_app`; `not_granted` naming **Contacts** for a name without that group |
-| `launch` | apps | `app` — a package, or the label the launcher shows | `package`, `component` | **no** — bringing an app to the front is not a reversal | `PackageManager` resolution among **launchable** activities only (`ACTION_MAIN` / `CATEGORY_LAUNCHER`), then that activity is started. **No permission.** While a Vox call is live, PiP is entered first so the being stays visible; if it cannot float, the launch still happens | `no_app` |
-| `open` | apps | `uri` with a scheme; optional `package` to restrict the target | `package`, `component` | **no** — opening a link changes nothing on the phone | `ACTION_VIEW` with the URI (and `setPackage` when named), resolved before it is started. **No permission.** The same PiP-first rule as `launch` while a call is live. `intent:` (explicit component, arbitrary extras and flags), `file:` (a path on disk) and a string with **no scheme** are refused `bad_uri` before the intent exists — nothing is guessed into `https://`; `content:` and `http(s):` pass through | `invalid-arguments`, `bad_uri`, `no_app` |
+| `message` | messages | `to` — a phone number, or a contact name when Contacts is on; `text` 1 – 1 000 characters | `to`, `chars`, `handed_off: true` | **no** — Vox composes; the owner's app sends, and a sent text cannot be recalled | `ACTION_SENDTO` with an `smsto:` URI and `sms_body`. **No permission, no `SEND_SMS`, no default-SMS role.** The result says the draft was handed off, never that it was sent. Checked against the foreground first: off screen the call is `background` and the draft was not opened | `no_app`; `background`; `not_granted` naming **Contacts** when `to` is a name and that group is Off; `permission` when Contacts is on but `READ_CONTACTS` is not held |
+| `dial` | calls | `to` — a number, or a contact name when Contacts is on | `to`, `dialer` — `opened` when the platform took the intent, `not_opened` on a refusal (which names its reason), `unknown` with `outcome_uncertain: true` when the dialer has not opened yet | **no** — opening the dialer changes nothing; the owner's call is theirs | `ACTION_DIAL` with a `tel:` URI. **No `CALL_PHONE`, no emergency special case**, because Vox never dials: the owner presses call. With a live Vox call, the being says *dialling — ending our call*, the call is ended through the same teardown the hang-up uses, and then the dialer opens. The dial therefore happens **after** this reply: the result says `dialer: "unknown"` rather than claiming it opened, and `status` reports the dialer's own answer once it arrives — a call that ended and a dialer that did not open is a refusal, never a success. Off screen the call is a `background` refusal before anything is resolved or ended | `no_app`; `unavailable` (a dialer that resolved but would not start, or a call that ended and the dialer did not open); `background`; `not_granted` naming **Contacts** for a name without that group |
+| `launch` | apps | `app` — a package, or the label the launcher shows | `package`, `component` | **no** — bringing an app to the front is not a reversal | `PackageManager` resolution among **launchable** activities only (`ACTION_MAIN` / `CATEGORY_LAUNCHER`), then that activity is started. **No permission.** While a Vox call is live, PiP is entered first so the being stays visible; if it cannot float, the intent is started immediately. **Guarded:** every handoff asks first whether an activity of ours is resumed, or in picture-in-picture and visible. Where Android would refuse a background start the call is refused `background` before any target is resolved, and says Vox has to be on screen — never a success for a launch that did not happen | `no_app`, `background` |
+| `open` | apps | `uri` with a scheme; optional `package` to restrict the target | `package`, `component` | **no** — opening a link changes nothing on the phone | `ACTION_VIEW` with the URI (and `setPackage` when named), resolved before it is started. **No permission.** The same PiP-first rule as `launch` while a call is live, with the same launch guard. `intent:` (explicit component, arbitrary extras and flags), `file:` (a path on disk) and a string with **no scheme** are refused `bad_uri` before the intent exists — nothing is guessed into `https://`; `content:` and `http(s):` pass through | `invalid-arguments`, `bad_uri`, `no_app`, `background` |
+| `apps` | apps | — | `apps` — each `package` and `label`; `total`, `truncated`; with usage access `can_see_running: true`, `foreground` and `recent`; without it `can_see_running: false`, `running_detail`, `usage_settings` | **no** — reading the launchable list changes nothing | the launcher query `ACTION_MAIN` / `CATEGORY_LAUNCHER` from the manifest's `<queries>` (no `QUERY_ALL_PACKAGES`). What is **running** needs **usage access** (`PACKAGE_USAGE_STATS`), a special access the owner grants on Android's own screen; without it the result says it cannot see what is running and never returns an empty list as "nothing is running" | none of its own: it always answers the installed half; the running half is absent and explained |
 | `contact` | contacts | `name` — a full or partial name, case-insensitive, 1 – 200 characters | `count`, `matches` — each `display_name` and `numbers`, each number `{label, number}` | **no** — reading changes nothing | `READ_CONTACTS`, a runtime permission asked when Contacts is turned on; **[ContactsContract](https://developer.android.com/reference/android/provider/ContactsContract) only**. The projection is a display name and the numbers with their labels; **no note, address, photo or email** is read. Up to 20 matches; no match is `ok:true, count:0` | `permission` (naming `android.permission.READ_CONTACTS`), `unavailable` |
 | `undo` | — (always offered) | `id` | `undone`, `state` (`cancelled` / `restored`) | — | nothing: it reverses through the same platform calls the action used | `expired`, `unavailable` |
-| `status` | — (always offered) | — | `offered`, `tiers`, `grants`, `running`, `notes`, `registry`, `dnd`, `volume` | **no** — reporting only | nothing | — |
+| `status` | — (always offered) | — | `offered`, `tiers`, `grants`, `running`, `notes`, `registry`, `dial` (the last handoff's `to`, `dialer` — `opened` / `not_opened` — and `at`), `dnd`, `volume` | **no** — reporting only | nothing | — |
 
 `undo` and `status` are not a capability: `undo` only reverses something the owner already allowed,
 and `status` only reports. They are therefore always advertised, even with every group Off.
@@ -192,14 +222,22 @@ shares the `direction` property with `volume`, so the schema lists `up`, `down`,
 `state` is read-only and changes nothing. It reads no file, lists nothing, and reports no serial
 number, IMEI, phone number or account.
 
-### The clipboard: a write, and a read only when Android allows it
+### The clipboard: a write anywhere, a read only while focused
 
-`clip` puts `text` on the clipboard and reports only its length (`chars`).
+Android 10 restricts clipboard **reads**, not writes: only the focused app (or the default IME) may
+read a clip, while `setPrimaryClip` is permitted from the background. The two actions follow that
+asymmetry instead of guarding both.
+
+`clip` puts `text` on the clipboard and reports only its length (`chars`). It writes wherever the
+call is — foreground, background, or picture-in-picture (where the activity is paused but the call
+is live) — and the write is attempted rather than predicted. If the platform refuses it, the result
+is `ok:false, reason:"unavailable"` with the platform's own reason.
 
 `clip_read` returns the clipboard's `text` and `chars` — when the platform allows the read. The
-boundary is Android's, not ours: since Android 10 an app that is not in the foreground cannot read
-the clipboard, and an empty clipboard is no answer either. Both cases are
-`ok:false, reason:"unavailable"` with the platform's own explanation; the tool never returns stale
+boundary is Android's, not ours: an app that is not focused cannot read the clipboard, and an empty
+clipboard is no answer either. Both cases are `ok:false, reason:"unavailable"`; when the platform
+returned no clip while Vox was not focused, the sentence names the lack of focus as the **likely**
+cause rather than claiming to know why the platform answered nothing. The tool never returns stale
 or empty content dressed up as what the clipboard holds. The owner granted the `clipboard` group, so
 the read is offered with the write, and the OS decides whether this call may use it.
 
@@ -292,18 +330,28 @@ a name, and the audit keeps only the lookup's `count` — never the query, a dis
 
 ## Tier 1 — reported
 
-Executes when the owner has put the group at **Ask** — turning a reported group on is the grant —
-and is reported to the mind on the next turn through the presence context and in the audit;
-undoable where the row says so.
+Executes at **Allow**, or after its card at **Ask**, and is reported to the mind on the next turn
+through the presence context and in the audit; undoable where the row says so.
 
 | action | group | arguments | result fields | undo | what it needs from the OS | refusals |
 |---|---|---|---|---|---|---|
 | `note` | notes | `text` string, 1 – 500 characters | `id`, `text`, `reported_next_turn`, `undoable` | **yes** — deletes it; lives 24 hours, because the note outlives the turn | none: private app storage | `unavailable` |
-| `file_list` | files | optional `folder` `Downloads` (the default) or `Documents`; optional `path`, a **relative** subdirectory (`""` = the folder itself); optional `depth` integer 1–5 (default 1); optional `pattern`, a case-insensitive glob on the file name (`*.pdf`); `offset` integer ≥ 0 (default 0) and `limit` integer 1–1000 (default 200) | `folder`, `path`, `depth`, `count`, `has_more`, `next_offset`, `entries` — each entry `name`, `path` (relative), `kind` (`file`/`dir`), `bytes` (null for a directory), `modified` (local ISO-8601, null when the provider will not say), `mime` (files, when offered) | **no** — listing reads directory metadata and changes nothing | **Storage Access Framework is the deliberate default**, and only inside the same granted tree as `file_read`: the child query is `DocumentsContract` metadata, never a file's contents, one directory at a time, and no storage permission is declared for it | `no_folder`, `bad_path`, `unavailable` |
-| `file_read` | files | `name` string (the file's name, not a path), optional `folder` `Downloads` (the default) or `Documents`, optional `offset` (bytes, ≥ 0) and `length` (bytes, ≥ 1; default 65 536) | whole file: `name`, `folder`, `bytes`, `chars`, `text`. A window: the same plus `offset`, `length` and `truncated` — with `bytes` the file's **total** size | **no** — reading changes nothing, and a read cannot be undone because it did not change anything | **Storage Access Framework is the deliberate default.** The owner grants one folder through `ACTION_OPEN_DOCUMENT_TREE`, the grant is persisted, and the sheet names the folder it got. No storage permission is declared for it. A future "all files" opt-in would use Android's own all-files access screen (`MANAGE_EXTERNAL_STORAGE`), with its own warning and its own grant — the owner's decision to make, not a capability withheld on their behalf. Text only: a whole read is capped (below), a window is not | `no_folder`, `bad_path`, `not_text`, `too_big` (whole-file only), `unavailable` |
-| `file_offer` | files | the same `name` and `folder` | `name`, `folder`, `mime`, `bytes`, `sha256`, `url`, `expires_at` | **no** — offering changes nothing on the phone | the same granted folder, then the existing file bridge ([FileOffer](../android/app/src/main/java/com/hermesvox/FileOffer.kt) / [FileStage](../android/app/src/main/java/com/hermesvox/FileStage.kt)) over the tailnet. The result is a capability URL, not a base64 blob | `no_folder`, `bad_path`, `too_big`, `unavailable` |
+| `file_list` | files | optional `folder`, one of the **granted** folder labels (omitted only when exactly one folder is granted); optional `path`, a **relative** subdirectory (`""` = the folder itself); optional `depth` integer 1–5 (default 1); optional `pattern`, a case-insensitive glob on the file name (`*.pdf`); `offset` integer ≥ 0 (default 0) and `limit` integer 1–1000 (default 200) | `folder`, `path`, `depth`, `count`, `has_more`, `next_offset`, `entries` — each entry `name`, `path` (relative), `kind` (`file`/`dir`), `bytes` (null for a directory), `modified` (local ISO-8601, null when the provider will not say), `mime` (files, when offered) | **no** — listing reads directory metadata and changes nothing | **Storage Access Framework is the deliberate default**, and only inside the same granted tree as `file_read`: the child query is `DocumentsContract` metadata, never a file's contents, one directory at a time, and no storage permission is declared for it | `no_folder`, `bad_path`, `invalid-arguments` (several grants, no `folder`), `unavailable` |
+| `file_read` | files | `name` string (the file's name, not a path), optional `folder`, one of the **granted** folder labels (omitted only when exactly one folder is granted), optional `offset` (bytes, ≥ 0) and `length` (bytes, 1 – 65 536; default 65 536) | whole file: `name`, `folder`, `bytes`, `chars`, `text`. A window: the same plus `offset`, `length` and `truncated` — with `bytes` the file's **total** size | **no** — reading changes nothing, and a read cannot be undone because it did not change anything | **Storage Access Framework is the deliberate default.** The owner grants one folder through `ACTION_OPEN_DOCUMENT_TREE`, the grant is persisted, and the sheet names the folder it got. No storage permission is declared for it. A future "all files" opt-in would use Android's own all-files access screen (`MANAGE_EXTERNAL_STORAGE`), with its own warning and its own grant — the owner's decision to make, not a capability withheld on their behalf. Text only: one answer is capped at 65 536 bytes (below) — a whole read over it is `too_big`, and a window of that size is how the rest is read | `no_folder`, `bad_path`, `not_text`, `too_big` (whole-file only), `invalid-arguments`, `unavailable` |
+| `file_offer` | files | the same `name` and `folder`; `approval` only on the second call | `name`, `folder`, `mime`, `bytes`, `sha256`, `url`, `expires_at` | **no** — offering changes nothing on the phone, but it exports the owner's file to the agent, so it is **Tier 2**: at Ask every offer needs the card, and at Allow the grant is the permission | the same granted folder, then the existing file bridge ([FileOffer](../android/app/src/main/java/com/hermesvox/FileOffer.kt) / [FileStage](../android/app/src/main/java/com/hermesvox/FileStage.kt)) over the tailnet. The result is a capability URL, not a base64 blob. The folder grant makes the export possible, not intended | `no_folder`, `bad_path`, `too_big`, `unavailable`, `approval-required`, `approval_denied`, `approval_expired`, `approval_mismatch`, `approval_unknown`, `approval_locked`, `approval_busy` |
 | `agenda` | calendar | — | `count`, `events` — each `start`, `end`, `title`, `calendar`, `description`, `location`, `attendees` (names only), and `null` where the provider will not say | **no** — reading changes nothing | `READ_CALENDAR`, a runtime permission asked when the group is turned on; [CalendarContract](https://developer.android.com/reference/android/provider/CalendarContract) only | `permission`, `unavailable` |
 | `event_create` | calendar | `title` string ≤ 200 characters, `start` local ISO-8601 `YYYY-MM-DDTHH:MM` (seconds optional), `duration_min` integer ≥ 1, optional `calendar` name | `id`, `title`, `start`, `end`, `duration_min`, `start_ms`, `end_ms`, `calendar`, `undoable` | **yes** — deletes the event it created; lives until the event starts, or ten minutes, whichever is longer | `WRITE_CALENDAR` (and `READ_CALENDAR`, to find a writable calendar), runtime permissions asked when the group is turned on; `CalendarContract` only | `permission`, `unavailable`, `invalid-arguments` |
+| `notification_dismiss` | notifications | exactly one of `id` (≤ 80 characters, from a `notifications` summary of this call) or `app` (≤ 200 characters, launcher label or package, case-insensitive) | `app`, `count`, `undoable: false`, `note` — not undoable: a dismissed notification cannot be restored — plus `failed` when the platform left some of the app's notifications in place | **no** — Android cannot restore a cancelled notification | the same call-scoped listener; only the bound service can call `cancelNotification(key)`, and its absence is `unavailable`. Never returns a title, a body or a listener id | `unavailable` (no live call / no bound listener), `unknown-id` (id never summarised, app has no notification, or Vox's own), `invalid-arguments` |
+
+**The folder is the grant, by its own name.** The `folder` enum is the labels the owner actually
+granted, built per `tools/list` from the persisted grants; there is no built-in `Downloads`/
+`Documents` pair behind it. Android 11+ refuses to grant the `Download` root itself (and the storage
+root), so the picker opens on `Download` and the owner picks a **subfolder** — the label that picker
+returns (`Work`) is the word the schema offers. Each grant is keyed by its **tree id**
+(`primary:Download/Work`), so a `Work` under Download and a `Work` under Documents are two grants.
+One grant is the default and `folder` may be omitted; with several granted, a call without `folder`
+is `invalid-arguments` naming the choices, because reading one of them would be a different folder
+than the caller asked for.
 
 **Files, precisely.** A file's name is a **name, not a path**: `..`, an absolute path, a separator and
 a URI are refused `bad_path` before the platform is asked, and a document that resolves outside the
@@ -312,7 +360,10 @@ subdirectory inside the same tree, segment-checked before the provider is asked 
 the document id it answers with. On the primary shared volume the document id also names a real path,
 so a symlink that leaves the tree is canonicalised and refused; for a provider with no filesystem path
 (a cloud tree) the document-id check is the whole check, which is stated here rather than pretended
-otherwise.
+otherwise. A **child name** the provider reports is held to the weaker rule, because the id is what
+carries the reach: only a name with `/` or a NUL, or the names `.`/`..` themselves, stops a listing —
+so a real file called `notes..txt` or `Report...pdf` is listed, not turned into `bad_path` for the
+whole folder.
 
 **Listing is inside the granted tree, depth-limited and paged — not a broad scan.** `file_list` walks
 the folder the owner granted, and only that folder: no second tree, no `MANAGE_EXTERNAL_STORAGE`, and
@@ -327,15 +378,17 @@ subdirectory is `unavailable`; a path, a name or a symlink that leaves the tree 
 **Listing never opens a file**: it reads names, kinds, sizes, modified times and MIME types through
 the provider's child query, and `PhoneFileListTest` pins that at source level.
 
-**The 64 KiB figure is a window size, not a refusal to read.** `file_read` returns at most
-65 536 bytes of text in one answer. Above that, a whole-file read says `too_big` and names the way in
-— `offset` and `length` — and a windowed read returns that slice with `truncated: true`, the `offset`
-it actually started at, and the file's total `bytes`, so the mind can keep asking until it has what
-it needs. `truncated` is false only when the returned text is the entire file. A window is cut at byte
-offsets, so it snaps to UTF-8 character boundaries: up to three leading continuation bytes are skipped
-and an incomplete trailing sequence is trimmed, and the result reports where the text really starts
-rather than pretending the cut was clean. `file_offer` has no such cap because it does not put the
-bytes in the result: it keeps the bridge's own 100 MB.
+**The 64 KiB figure is the size of one answer.** `file_read` returns at most 65 536 bytes of text in
+one answer: `length`'s schema `maximum` is 65 536 and the parser refuses more with "read the rest with
+a later offset", so no single call reads a whole large file. Above the cap, a whole-file read says
+`too_big` and names the way in — `offset` and `length` — and a windowed read returns that slice with
+`truncated: true`, the `offset` it actually started at, and the file's total `bytes`, so the mind can
+keep asking until it has what it needs. `truncated` is false only when the returned text is the entire
+file. A window is cut at byte offsets, so it snaps to UTF-8 character boundaries **inward**: it begins
+at the first boundary at or after `offset` and ends at the last at or before `offset + length`, and
+reports where the text really starts. Stitching windows by the offsets asked for therefore never
+duplicates a character at a seam. `file_offer` has no such cap because it does not put the bytes in
+the result: it keeps the bridge's own 100 MB.
 
 **Calendar, precisely.** `agenda` reads today's events in the phone's own zone and returns what the
 calendar holds: start, end, title, calendar name, description, location, and attendee **names**.
@@ -360,28 +413,45 @@ id. Neither group stores its payload in the audit.
 
 ---
 
-## Tier 2 — approval
+## Tier 2 — consequential
 
-Tier 2 is for what cannot be undone and cannot be handed to another app. The phone **never
-executes** one on the first call. `uninstall` is the one action that now has a card on this phone;
-the rest still answer `approval-required` and name the surface that owns them.
+Tier 2 is for what cannot be undone and cannot be handed to another app. `uninstall` and
+`file_offer` are built and use the same card as every action at Ask; the unbuilt names
+(`delete`, `purchase`, `pay`, `transfer`) are never advertised, because a card cannot be
+raised for something the phone cannot do.
 
-### `uninstall`: two steps, on the same tool
+`file_offer` is here because offering a file **exports** it: the bytes leave the granted folder,
+travel over the tailnet, land in the conversation and stay. The folder grant makes that export
+possible, not intended, so Ask means a card on every use, and Allow means the owner has granted the
+export outright.
+
+### Every action at Ask: two steps, on the same tool
 
 An MCP call carries no run id, so the approval cannot park a host run the way the gateway's
-`approval.request` does. The protocol is a handshake on the same action:
+`approval.request` does. The protocol is a handshake on the same action, for **every** action at
+Ask — `uninstall` and `file_offer` are only the consequential examples:
 
-1. **Request.** Call `uninstall` with `package` and **no** `approval`. The phone reads the app's
-   label, raises the card, and returns:
+1. **Request.** Call the action with its arguments and **no** `approval`. Nothing is performed. The
+   phone raises the card and returns:
 
    ```json
    {"ok":false,"action":"uninstall","tier":2,"reason":"approval-required",
-    "detail":"the owner must approve removing Firefox; …",
+    "detail":"the owner must approve uninstall Firefox; …",
     "approval_id":"ap-7","expires_at":1767225600000,"summary":"uninstall Firefox"}
    ```
 
-   Nothing is removed. `summary` names the action and the app's label; `expires_at` is epoch millis,
-   two minutes after the card was raised.
+   ```json
+   {"ok":false,"action":"file_offer","tier":2,"reason":"approval-required",
+    "detail":"the owner must approve offer report.pdf (PDF, 240 KB); …",
+    "approval_id":"ap-8","expires_at":1767225600000,
+    "summary":"offer report.pdf (PDF, 240 KB)"}
+   ```
+
+   A Tier 0 action looks the same, with its own words: `summary` is `set a timer for 5 minutes`, and
+   the same call plus `approval:"ap-9"` after the owner answers arms it. `summary` names the app and
+   its label, the file and its type and size, or the action and its arguments; `expires_at` is epoch
+   millis, two minutes after the card was raised. A file above the 100 MB the bridge will serve, a
+   missing file and a name outside the grant are refused **before** a card is raised.
 
 2. **Execute.** Call **the same action with the same canonical arguments** plus
    `approval:"ap-7"`. It runs only when the id is unexpired, unburnt, and the action and its
@@ -391,29 +461,38 @@ An MCP call carries no run id, so the approval cannot park a host run the way th
    {"action":"uninstall","package":"org.mozilla.firefox","approval":"ap-7"}
    ```
 
+   ```json
+   {"action":"file_offer","name":"report.pdf","folder":"Downloads","approval":"ap-8"}
+   ```
+
    The call executes only after the owner has approved. If the card is still up it returns
    `approval-required` again with the same id; it does not burn the id. If the owner denied it the
-   answer is `approval_denied`; after two minutes `approval_expired`; a different package is
-   `approval_mismatch`; a reused or unknown id is `approval_unknown`.
+   answer is `approval_denied`; after two minutes `approval_expired`; different arguments are
+   `approval_mismatch`; a reused or unknown id is `approval_unknown`; an answer given while the
+   phone was locked is `approval_locked`.
 
-**Every refusal burns the id.** A denied, expired or mismatched id reports its reason once, then a
-second use is `approval_unknown`. **One card at a time**, three may wait behind it; the fourth
-request is `approval_busy` and raises nothing. A card that is dismissed without an answer is a deny;
-silence at expiry is a deny too.
+**Every refusal burns the id.** A denied, expired, locked or mismatched id reports its reason once,
+then a second use is `approval_unknown`. **One card at a time**, three may wait behind it; the
+fourth request is `approval_busy` and raises nothing. A card that is dismissed without an answer is
+a deny; silence at expiry is a deny too.
 
 ### The canonicalisation, and why it cannot be confused
 
 The card is bound to the text `action` + `\n` + every argument except `approval`, sorted by key,
 with string values trimmed and internal whitespace collapsed. That text is stored beside its
 SHA-256 digest, and the execution call must match **both**. Key order and whitespace therefore do
-not matter; a different package cannot hash the same by accident, and even a digest collision would
-still have to match the stored text. The package is also validated as a dotted package name before
-any card is raised, so a path or a URI never becomes one.
+not matter; a different package, file name or folder cannot hash the same by accident, and even a
+digest collision would still have to match the stored text. The package is validated as a dotted
+package name, and the file name by the same path rules as `file_read`/`file_list`, before any card
+is raised.
 
 ### The card
 
-One line, in the owner's language: **“Your agent wants to remove Firefox. Approve?”** The app's
-label comes from the platform; the tool's name never appears. Two ways to answer:
+One line, in the owner's language. For an app: **“Your agent wants to remove Firefox. Approve?”**
+For a file: **“Your agent wants to read `report.pdf` (PDF, 240 KB). Approve?”** The name and type
+come from the platform and the size is the file's own; the tool's name never appears. The size is
+on the card because handing over a 40 MB file is a different act from handing over a note. Two ways
+to answer:
 
 - **Tap** **APPROVE** or **DENY** on the card.
 - **Voice**, using `core/Approval.kt`'s allowlists — the same yes/no vocabulary as the gateway's
@@ -424,6 +503,21 @@ The card is **spoken when a call is live**. When Vox has no screen, a full-scree
 started from the background, so the card is a **heads-up notification with Approve and Deny
 actions** that opens Vox when tapped. If neither surface can be shown, the request fails
 `unavailable`, saying the owner could not be asked — never a silent timeout dressed as a denial.
+
+### The lock screen is not an approval surface
+
+The notification is built **`VISIBILITY_PRIVATE`**, so the lock screen does not show the file's name
+or the app being removed. Its buttons can still be tapped while locked, so the answer path checks
+the keyguard **before** recording a yes. A locked phone refuses with `approval_locked`, burns the
+id, and posts a private “unlock and ask again” notice that names nothing; the owner sees **Locked**
+in the in-app card and the agent gets the reason. Denying is always allowed, because a no cannot
+authorise anything.
+
+A pending card may outlive a screen-off, but it can never be approved from the lock screen: the
+only yes is given on an unlocked device, and the id's two-minute expiry still governs. If the phone
+is locked when the agent makes its second call, the card is still pending and the answer is
+`approval-required` until the owner unlocks and answers; if it was answered while locked, the id is
+already burnt and the answer is `approval_locked`.
 
 ### Why Android's own confirmation still runs
 
@@ -436,14 +530,15 @@ owner's answer on Android's own screen.
 
 | action | group | arguments | result | undo | what it needs from the OS | refusals |
 |---|---|---|---|---|---|---|
-| `uninstall` | apps | `package` string (a dotted package name); `approval` only on the second call | `package`, `label`, `platform_confirmation`, `note` | **no** — an uninstall cannot be undone | the app's label from `PackageManager`, then `ACTION_DELETE` and Android's own confirmation | `approval-required`, `approval_denied`, `approval_expired`, `approval_mismatch`, `approval_unknown`, `approval_busy`, `unavailable` |
-| `install` | apps | `app` string | `app`, `installed` | **no** | the package installer's own confirmation, which the owner answers | `approval-required` |
+| `uninstall` | apps | `package` string (a dotted package name); `approval` only on the second call | `package`, `label`, `platform_confirmation`, `note` | **no** — an uninstall cannot be undone | the app's label from `PackageManager`, then `ACTION_DELETE` and Android's own confirmation | `approval-required`, `approval_denied`, `approval_expired`, `approval_mismatch`, `approval_unknown`, `approval_locked`, `approval_busy`, `background`, `unavailable` |
+| `file_offer` | files | `name` and `folder`; `approval` only on the second call | `name`, `folder`, `mime`, `bytes`, `sha256`, `url`, `expires_at` | **no** — the export cannot be recalled | the file's own name, type and size from the granted tree, then the file bridge over the tailnet | `no_folder`, `bad_path`, `too_big`, `unavailable`, `approval-required`, `approval_denied`, `approval_expired`, `approval_mismatch`, `approval_unknown`, `approval_locked`, `approval_busy` |
 
-**Declared, not built:** `apps`' `install`. `PhoneGrants` names `install` in the apps group's
-`planned` list, and `PhoneTiers` still names it, so a direct call is refused as
-`approval-required`; it is never advertised, because a promise in an `enum` is a capability the
-phone must be able to keep. `call`, `send` and `email` are gone with the old `messages-calls`
-group: calls are `dial`, messages are `message`, and there is no other path.
+**`install` is gone from the surface.** An ordinary app cannot install a package: Android always
+shows the system's own installer confirmation and the app never learns whether the owner accepted,
+so a result could not honestly say "installed". It is no longer in any group's `actions` or
+`planned` list, is never advertised, and a direct call is `unknown-action` — not a governance
+refusal for a capability nobody built. `call`, `send` and `email` are gone with the old
+`messages-calls` group: calls are `dial`, messages are `message`, and there is no other path.
 
 **Why the reads are not Tier 2.** `notifications` and `contact` change nothing and can be undone by
 doing nothing, so they are instant and offer Allow. Their privacy is designed into their scope
@@ -451,17 +546,22 @@ instead of being deferred to a card: the listener is only open during a call, a 
 content, content needs a second call for one id, contacts return numbers only, and neither group
 writes its payload to the audit. The owner still sees the grant and every use.
 
-### Required of the approval lane
+### What the approval card enforces
 
-These two are **requirements the approval card must satisfy when it lands**, not descriptions of
-anything built today. Read them as acceptance criteria for that lane.
+These are the behaviours the shipped card implements, not requirements for a later lane.
 
-1. **`file_offer` joins the approval tier.** Handing a file to the agent exports it: the folder
-   grant makes that export possible, not intended. It moves out of the reported tier and asks for
-   the card on every use, one card per file, showing the file's name, type and size.
+1. **`file_offer` is in the approval tier.** Handing a file to the agent exports it: the folder
+   grant makes that export possible, not intended. It is Tier 2; at Ask it asks for the card on
+   every use, one card per file, and the card shows the file's name, type and size. At Allow the
+   grant is the permission and no card is raised. Its first call writes no bytes to the bridge;
+   the second call, with the matching id and the same name and folder, does.
+   `file_read`, `file_list` and `file_offer`'s own `no_folder`, `bad_path`, `too_big` and
+   `unavailable` refusals are unchanged.
 2. **The card is not actionable on a locked phone.** Its notification is `VISIBILITY_PRIVATE`, so
-   the lock screen does not show what is being approved, and approving requires the device to be
-   unlocked. A locked phone cannot approve, and no fallback may let it.
+   the lock screen does not show what is being approved, and the answer path checks the keyguard
+   before recording a yes. A locked phone refuses with `approval_locked`, burns the id, and shows
+   the owner a private “unlock and ask again” notice. A pending card can outlive a screen-off, but
+   it cannot be approved from the lock screen, and its expiry still runs.
 
 ---
 
@@ -475,12 +575,12 @@ anything built today. Read them as acceptance criteria for that lane.
 | `media` | 0 | `play`, `pause`, `skip`, `now_playing` | **built in lane 1** |
 | `device-state` | 0 | `state` | **built in lane 1** |
 | `clipboard` | 0 | `clip`, `clip_read` | **built in lane 1** |
-| `files` | 1 | `file_list`, `file_read`, `file_offer` | **built in lane 2; listing added by the listing lane** |
+| `files` | 1 | `file_list`, `file_read`, `file_offer` | **built in lane 2; listing added by the listing lane; `file_offer` is Tier 2 and is carded at Ask like every action** |
 | `calendar` | 1 | `agenda`, `event_create` | **built in lane 2** |
-| `notifications` | 0 | `notifications`, `notification_read` | **built by the read lane; listener call-scoped** |
+| `notifications` | 0 | `notifications`, `notification_read`, `notification_dismiss` | **built by the read lane; listener call-scoped; dismissal is Tier 1 and not undoable** |
 | `messages` | 0 | `message` | **built by the handoff lane** |
 | `calls` | 0 | `dial` | **built by the handoff lane** |
-| `apps` | 0 | `launch`, `open`, `uninstall` — `install` planned | **built; `uninstall` is Tier 2 and card-gated** |
+| `apps` | 0 | `apps`, `launch`, `open`, `uninstall` | **built; `apps` is a read, `uninstall` is Tier 2, so its card describes a removal and an Allow covers it** |
 | `contacts` | 0 | `contact` | **built by the read lane; numbers only** |
 
 ---
@@ -492,7 +592,7 @@ anything built today. Read them as acceptance criteria for that lane.
 | `timer` / `alarm` | cancels it | until it rings | the action is the arming; cancelling is its exact reverse |
 | `dnd` / `volume` | restores the previous filter / level | until the next change of the same setting, or 10 minutes | a second change makes the older "previous" untrue |
 | `note` | deletes it | 24 hours | the note outlives the turn that made it |
-| `file_list` / `file_read` / `file_offer` | — | — | listing, reading a file or handing it to the agent changes nothing on the phone, so there is nothing to reverse. A read cannot be undone, and the doc says so rather than inventing one |
+| `file_list` / `file_read` / `file_offer` | — | — | listing and reading change nothing on the phone; offering changes nothing there either, but it exports the file and an export cannot be recalled. A read cannot be undone, and the doc says so rather than inventing one |
 | `agenda` | — | — | reporting changed nothing |
 | `event_create` | deletes the event it created | until the event starts, or ten minutes, whichever is longer | deleting the one event the phone inserted is its exact reverse; it never touches another event |
 | `play` / `pause` / `skip` | — | — | **`play` after `pause` is not an undo.** It is another key press into whatever the session is doing now; the phone has no "previous playback state" it could honestly restore, and it cannot see playback at all without a listener |
@@ -527,10 +627,11 @@ relative path and the count — `Downloads, 12 entries` — and **never a name i
 names in a folder are the owner's. Nothing in this surface logs a secret, a clipboard payload, a
 file's contents or a calendar's contents — a `file_read` row carries the name and folder it asked
 for, never the text it got back, and an event row carries the title's length, never the title. An
-`uninstall` card writes **three** rows: the request, the decision (`approved`, `denied` or
-`expired`, and whether by tap or voice), and the execution. Each names the package and the app's
-label, and the decision row carries `via=tap|voice|silence`; the canonical arguments and the hash
-are never stored, because they are the guard, not something the owner needs to read.
+An `uninstall` or `file_offer` card writes **three** rows: the request, the decision (`approved`,
+`denied`, `locked` or `expired`, and whether by tap or voice), and the execution. An app row names
+the package and the label; a file row names the file and its type/size, never its contents. The
+decision row carries `via=tap|voice|silence`; the canonical arguments and the hash are never
+stored, because they are the guard, not something the owner needs to read.
 
 **The two read groups are narrower still.** A `notifications` row is `notification_count` alone; a
 `notification_read` row is `app` and `notification_count=1`. Neither keeps a title, a body, or an
@@ -545,8 +646,10 @@ summarising function is the place a future action has to pass through.
 1. **Every group Off (fresh install).** `tools/list` offers `undo` and `status` only; `play`,
    `state` and `clip` are all `ok:false, reason:"not_granted"` and the detail names Media, Device
    state and Clipboard.
-2. **Media = Ask.** `play` is in the `enum`; a call returns `approval-required` and the music keeps
-   playing or keeps stopping — nothing is sent.
+2. **Media = Ask.** `play` is in the `enum`; a call returns `approval-required` with an
+   `approval_id`, a card names `play`, and the music keeps playing or keeps stopping — nothing is
+   sent. Answer the card by voice ("yes"): the same `play` call plus `approval:"<id>"` sends the key.
+   A second call with different arguments is `approval_mismatch`.
 3. **Media = Allow, audio paused.** `play` → `ok:true, dispatched:true`, and the player resumes.
    `pause` → the player stops. `skip` with no `direction` → the next track; with
    `direction:"previous"` → the previous one. Each result carries `undoable:false` and **no** `undo`
@@ -571,15 +674,19 @@ summarising function is the place a future action has to pass through.
    `chars` only, Recent actions shows `text=NN chars`, and the clipboard's previous contents are not
    anywhere in the app. A following `clip_read` in the foreground returns that same text and its
    `chars`.
-9. **`clip` and `clip_read` from a backgrounded phone** (a call that lost focus). `clip` is
-   `ok:false, reason:"unavailable"`, and nothing was written. `clip_read` is `ok:false,
-   reason:"unavailable"` with Android's own explanation that a foreground app is required — and no
-   `text` field, so no empty or stale clip is mistaken for the clipboard. With the clipboard empty
-   in the foreground, `clip_read` also refuses, saying the clipboard is empty.
+9. **`clip` and `clip_read` from a backgrounded phone or from picture-in-picture** (a call whose
+   activity is paused). `clip` is `ok:true` with `chars`, and the text is on the clipboard: Android
+   permits a write without focus. `clip_read` is `ok:false, reason:"unavailable"` with the
+   platform's answer, and the sentence names the lack of focus as the **likely** cause rather than
+   claiming to know why the platform returned nothing. There is no `text` field, so no empty or
+   stale clip is mistaken for the clipboard. With the clipboard empty in the foreground, `clip_read`
+   also refuses, saying the clipboard is empty.
 10. **Files with no folder granted.** The sheet says *No folder granted*; `file_list`, `file_read`
     and `file_offer` are `ok:false, reason:"no_folder"` and say to pick a folder in Phone tools →
-    Files. Turning Files on opens the system folder picker, and after picking, the sheet names the
-    folder it got (`Granted · Download`). No storage permission prompt ever appears.
+    Files. Turning Files on opens the system folder picker **on `Download`** and says plainly that a
+    subfolder must be picked, because Android 11+ will not grant `Download` itself — after picking
+    `Download/Work`, the sheet names the folder it got (`Granted · Work`) and the schema's `folder`
+    enum is that one label. No storage permission prompt ever appears.
 11. **Files with a folder granted.** `file_list` on a folder with subdirectories answers `folder`,
     `path:""`, `depth:1`, `count`, `has_more:false` and one entry per child: directories first
     (`kind:"dir"`, `bytes:null`), then files alphabetically with their sizes, `modified` when the
@@ -591,8 +698,11 @@ summarising function is the place a future action has to pass through.
     `too_big` with nothing cut short, and the result names `offset`/`length`, while
     `offset:0, length:4096` returns the first 4 KiB with `truncated:true` and `bytes:70000`. A PNG
     is `not_text`; `name:"../secret.txt"`, `path:"../Documents"` and an absolute path are `bad_path`
-    and never read. `file_offer` returns a `url`/`sha256` that the agent can fetch, with no bytes in
-    the result.
+    and never read. A `file_offer` of a 240 KB PDF is `approval-required` with
+    `summary:"offer report.pdf (PDF, 240 KB)"` and the card *Your agent wants to read report.pdf
+    (PDF, 240 KB). Approve?*; nothing is staged. After **APPROVE**, the same `file_offer` with the
+    id returns a `url`/`sha256` that the agent can fetch, with no bytes in the result. A different
+    file with that id is `approval_mismatch` and nothing is served.
 12. **Calendar without permission.** The sheet says *Not granted* and names
     `android.permission.READ_CALENDAR`; `agenda` and `event_create` both refuse `permission`, and
     nothing is created. Turning Calendar on asks for both permissions and the sheet shows the
@@ -615,12 +725,17 @@ summarising function is the place a future action has to pass through.
 17. **Calls = Allow, then `dial` while a Vox call is live.** The being says *dialling — ending our
     call*; the Vox call ends through the same teardown the hang-up uses; the dialer opens with the
     number filled in and nothing is placed. The conversation is still on the gateway when the next
-    call resumes it. `dial` with no dialer is `no_app`, and no call is ended for nothing.
+    call resumes it. The reply says `dialer:"unknown"` and carries `outcome_uncertain:true` because
+    the dialer has not opened yet; `status` then reports `dial:{to, dialer:"opened"|"not_opened",
+    at}`. A call that ended and a dialer that did not open is a refusal. `dial` with no dialer is
+    `no_app`, and no call is ended for nothing.
 18. **Apps = Allow, then `launch` while a call is live.** The window shrinks to PiP first, then the
-    app opens; the being is still visible and Stop still works. If PiP cannot be entered, the app
-    opens anyway. `launch` of a package with no launcher entry is `no_app`. `open` of
-    `https://example.com` lands in the browser and reports its `package` and `component`; a bare
-    address is `bad_uri`.
+    app opens; the being is still visible and Stop still works. If PiP cannot be entered, the
+    intent is started immediately. With Vox in the background the call is refused `background` and
+    the detail says the phone is not in the foreground and nothing was attempted — never a success
+    for a start Android silently blocked. `launch` of a package with no launcher entry is `no_app`.
+    `open` of `https://example.com` lands in the browser and reports its `package` and `component`;
+    a bare address is `bad_uri`.
 19. **`uninstall` requests, approves, executes.** With Apps on, `uninstall` of Firefox is
     `ok:false, reason:"approval-required"` with `approval_id`, `expires_at` and
     `summary:"uninstall Firefox"`, and the card says *Your agent wants to remove Firefox.
@@ -631,33 +746,42 @@ summarising function is the place a future action has to pass through.
     next call is `approval_expired`, and the audit shows request → expired. With Vox in the
     background the same card is a heads-up notification with Approve/Deny actions; with Vox in
     front it is the in-app card.
-20. **Contacts without permission.** Set Contacts to Allow but deny the runtime dialog. The sheet's
+20. **The card on a locked phone.** Lock the phone, then ask for an `uninstall` or a `file_offer`
+    from the agent. The heads-up arrives, but its lock-screen content is hidden
+    (`VISIBILITY_PRIVATE`): no file name and no app label. Tap **APPROVE** without unlocking: the
+    card does not approve, the app is not removed and the file is not served; the phone shows a
+    private *Locked — nothing was approved. Unlock your phone, then ask again.* notice, the audit
+    says `locked`, and the agent's next call with that id is `approval_locked`. Unlock the phone and
+    the same request raises a fresh card that can be approved normally. Screen-off alone does not
+    extend the id: after two minutes it is `approval_expired`.
+21. **Contacts without permission.** Set Contacts to Allow but deny the runtime dialog. The sheet's
     *Contacts permission* row says **Not granted** and names
     `android.permission.READ_CONTACTS`; `contact` refuses `permission` with that exact string and
     reads nothing. Grant it in the sheet and the row says **Granted**.
-21. **A partial contact name.** `contact` with `name:"mo"` returns up to 20 people whose display
+22. **A partial contact name.** `contact` with `name:"mo"` returns up to 20 people whose display
     name contains it, case-insensitively, each with numbers and labels (`mobile`, `home`, `work`)
     and **no** note, address, photo or email. `name:"zzzz"` is `ok:true, count:0`, not an error.
     Recent actions shows `count` alone — not the name and not a number. `message`/`dial` to
     `"Mom"` now opens the owner's app with the first number of the first match.
-22. **Notifications while a call is live.** Notifications = Allow, then `notifications`. The result
+23. **Notifications while a call is live.** Notifications = Allow, then `notifications`. The result
     is `sensitive:true` with `count` and one row per app (`app`, `count`, `latest_at`, opaque
     `ids`) and **no `title` and no `text` anywhere**. The counts match what is on the phone, minus
     Vox's own call/download notifications. If there are twelve notifications, the answer reads
     *"12 notifications: Messages 6, Mail 3, Slack 3"* — and nothing else.
-23. **The second step, on purpose.** `notification_read` with an id from that summary returns that
+24. **The second step, on purpose.** `notification_read` with an id from that summary returns that
     one notification's `app`, `posted_at`, `title` and `text`, with `sensitive:true`. An id that no
     summary showed — including one that arrived after the summary — is `unknown-id`; a fresh
     summary makes it readable. Recent actions shows `app` and `notification_count=1`, never the id,
     title or body.
-24. **Hang up, then ask.** With no live call, both `notifications` and `notification_read` are
+25. **Hang up, then ask.** With no live call, both `notifications` and `notification_read` are
     `ok:false, reason:"unavailable"` and the detail says the listener is only open during a call.
     Start a new call: the board is empty (the previous call's records and ids were dropped), and an
     old id is `unknown-id`.
-25. **The listener's grant is not the listener's lifetime.** The sheet's *Notification access* row
+26. **The listener's grant is not the listener's lifetime.** The sheet's *Notification access* row
     may say **Granted** while the phone is idle, and the actions still refuse `unavailable`; that is
     the design, not a bug. Turning Notifications on offers Android's notification-access screen and
     the row shows whether it landed.
-26. **The remaining declared capability stays refused.** `install` is **absent** from the `enum`
-    and a direct call returns `approval-required`; `file_list` and `file_read` do the same while
-    Files is Off, and no lane may make them advertise before the phone can keep the promise.
+27. **`install` is not a capability.** It is **absent** from the `enum`, has no group and no tier,
+    and a direct call returns `unknown-action` (not `approval-required` for a name nobody built);
+    `file_list` and `file_read` do the same while Files is Off, and no lane may make them advertise
+    before the phone can keep the promise.

@@ -3,17 +3,15 @@ package com.hermesvox
 /**
  * PhoneEngine — the state and the rules behind [PhoneTool], with the platform behind an interface.
  *
- * Everything the phone does to itself passes through here: the **user-initiated** path
- * (`LocalActionGrammar` → [LocalActions.run]) and the **mind-initiated** path (MCP `tools/call`).
- * One registry, one set of ids, one undo table — because the presence context block and the
- * `phone` tool must never disagree about what is running. #421's duplicate-authority risk is a
- * divergence between two memories of the same fact; this class is the only memory.
+ * Everything the phone does to itself passes through here: the **mind-initiated** path (MCP
+ * `tools/call`) and the owner-initiated lane [LocalActions.run] serves. One registry, one set of
+ * ids, one undo table — because the presence context block and the `phone` tool must never
+ * disagree about what is running. #421's duplicate-authority risk is a divergence between two
+ * memories of the same fact; this class is the only memory.
  *
- * The two paths keep different guarantees, as D32 says:
- *
- *  * user-initiated: no round trip, and the confirmation is spoken from the result;
- *  * mind-initiated: the result is the reply. A tool call that fails returns `ok: false` with a
- *    reason, and the mind is expected to say so rather than to claim the action.
+ * Since D38 the phone parses no utterance. The mind decides what the owner meant and calls the
+ * `phone` tool; the result is the reply. A tool call that fails returns `ok: false` with a reason,
+ * and the mind is expected to say so rather than to claim the action.
  *
  * Ids and undo lifetimes:
  *
@@ -23,6 +21,15 @@ package com.hermesvox
  *    previous) or for [CHANGE_UNDO_MS].
  *  * `note-N`: the undo deletes the note, for [NOTE_UNDO_MS]. A note is Tier 1 and is reported to the
  *    mind on the next turn, so its undo has to outlive the turn that made it.
+ *
+ * ## Who initiated it (H4)
+ *
+ * Every entry in the registry carries its [Origin] — the owner's own voice on the phone, or the
+ * mind over MCP. The two paths share one registry, so without the tag an owner's 6 am alarm and a
+ * note the mind wrote would be the same kind of record, and `status`/`undo` on the MCP wire would
+ * serve both. The mind's door only opens for a **mind** entry whose group is not Off; the owner's
+ * door (the sheet's Undo tap, [LocalActions.run]) is not restricted, because those are the owner's
+ * own actions.
  *
  * Pure JVM; [LocalActions] is the Android platform. Every clock is passed in, so the expiry rules
  * are proven in [PhoneEngineTest] without waiting.
@@ -43,13 +50,15 @@ class PhoneEngine(
      */
     private val audit: (PhoneResult, Map<String, Any?>, Long) -> Unit = { _, _, _ -> },
     /**
-     * Where the `uninstall` card is raised (the in-app card, else a heads-up notification). A
-     * surface that cannot show anything makes the request refuse `unavailable` rather than
-     * letting a two-minute silence look like a denial.
+     * Where an approval card is raised (the in-app card, else a heads-up notification). A surface
+     * that cannot show anything makes the request refuse `unavailable` rather than letting a
+     * two-minute silence look like a denial.
      */
     private val approvalSurface: PhoneApproval.Surface = PhoneApproval.Surface.NONE,
     /** The approval lifecycle rows: request, decision (approved/denied/expired, and by tap/voice). */
     private val auditRow: (PhoneAudit.Entry) -> Unit = {},
+    /** The keyguard read: a yes answered on a locked phone is refused, never recorded. */
+    private val unlocked: PhoneApproval.Unlocked = PhoneApproval.Unlocked.ALWAYS,
 ) {
 
     /** The one approval desk. Its state outlives a call; the platform only shows the card. */
@@ -61,10 +70,11 @@ class PhoneEngine(
             } catch (_: Throwable) {
             }
         },
+        unlocked = unlocked,
     )
 
     /** What the engine needs from the phone. One implementation on device; a fake in tests. */
-    interface PhonePlatform : DialHandoff.Host {
+    interface PhonePlatform : DialHandoff.Host, AppsAccess.Host {
         /** A media transport key. Resolved to a platform key code by the implementation. */
         enum class MediaKey { PLAY, PAUSE, NEXT, PREVIOUS }
 
@@ -119,16 +129,27 @@ class PhoneEngine(
         fun deviceState(): DeviceSnapshot
 
         /**
-         * Put [text] on the clipboard. False when the phone would not take it — an app that is not
-         * in front (Android 10+ drops such a write silently, so this is checked before writing)
-         * or a clipboard that threw.
+         * Put [text] on the clipboard. The write is attempted wherever the call is — Android's
+         * restriction is on clipboard **reads**, not writes, so background and PiP are not reasons
+         * to refuse before asking. [ClipWrite.Refused] carries the platform's own reason when it
+         * will not take the text.
          */
-        fun clip(text: String): Boolean
+        fun clip(text: String): ClipWrite
+
+        /** What happened to a clipboard write: accepted, or refused with the platform's reason. */
+        sealed class ClipWrite {
+            /** The platform took the text. */
+            data object Done : ClipWrite()
+
+            /** The platform would not take the text; [detail] is its reason, never a guess. */
+            data class Refused(val detail: String) : ClipWrite()
+        }
 
         /**
          * What the clipboard holds, **as far as the platform will let this app see it**. Android
-         * does not answer for an app it does not consider in front, so [ClipRead.Unavailable]
-         * carries the platform's own reason rather than a stale or empty stand-in.
+         * does not answer for an app that is not focused, so [ClipRead.Unavailable] carries the
+         * platform's own outcome rather than a stale or empty stand-in; when the answer is "no
+         * clip" while Vox is not focused, the detail says focus is the **likely** cause.
          */
         sealed class ClipRead {
             /** The clipboard's text, exactly as the platform handed it over. */
@@ -180,8 +201,13 @@ class PhoneEngine(
 
         // ---- files (#429 lane 2) ----
 
-        /** One folder the owner granted with the system picker. [label] is the folder's own name. */
-        data class GrantedFolder(val label: String)
+        /** One folder the owner granted with the system picker. */
+        data class GrantedFolder(
+            /** The tree's own document id (`primary:Download/Work`) — the grant's identity. */
+            val id: String,
+            /** The folder's own name, the word a call may say. */
+            val label: String,
+        )
 
         /** The outcome of looking one name up inside one granted folder. */
         sealed class FileText {
@@ -190,9 +216,11 @@ class PhoneEngine(
 
             /**
              * A window of a file: [text] begins at byte [offset] of a file whose whole size is
-             * [totalBytes], and covers [windowBytes] bytes. [text] may start a byte or two after
-             * [offset] when the caller's cut fell inside a character, and the engine reports the
-             * offset it actually used rather than the one that was asked for.
+             * [totalBytes], and covers [windowBytes] bytes — exactly `[offset, offset + windowBytes)`
+             * of the file. [offset] is never before the requested start and the window never ends
+             * after the requested start plus length, so windows stitched by the offsets asked for
+             * never repeat a character; the engine reports the offset it actually used rather than
+             * the one that was asked for, because a cut inside a character cannot be honoured.
              */
             data class Window(
                 val name: String,
@@ -216,6 +244,27 @@ class PhoneEngine(
 
             /** The provider failed or would not answer. */
             data class Failed(val detail: String) : FileText()
+        }
+
+        /**
+         * What the phone can say about one file before it is offered: the name, the type and the
+         * size the card must show. Looking is a read; offering is the export.
+         */
+        sealed class FileInfo {
+            data class Ready(
+                val name: String,
+                val mime: String?,
+                /** Null when the provider will not report a size. */
+                val bytes: Long?,
+            ) : FileInfo()
+
+            data object Missing : FileInfo()
+            data object Outside : FileInfo()
+
+            /** Above the bridge's [FileOffer.MAX_BYTES]; nothing can be offered. */
+            data class TooBig(val bytes: Long?) : FileInfo()
+
+            data class Unavailable(val detail: String) : FileInfo()
         }
 
         /** The outcome of handing one file to the existing file bridge. */
@@ -277,6 +326,9 @@ class PhoneEngine(
             offset: Int,
             limit: Int,
         ): PhoneFiles.ListResult = PhoneFiles.ListResult.MissingPath
+
+        /** Look up one named file's name, type and size without reading or exporting it. */
+        fun fileInfo(folder: GrantedFolder, name: String): FileInfo = FileInfo.Missing
 
         /** Stage one named file inside [folder] and serve it through the file bridge. */
         fun fileOffer(folder: GrantedFolder, name: String): FileHandoff = FileHandoff.Missing
@@ -397,6 +449,13 @@ class PhoneEngine(
          */
         fun sendMessage(to: String, text: String): Handoff = Handoff.NoApp
 
+        /**
+         * May this phone start an activity right now? Android 10+ refuses a background activity
+         * start **without throwing**, so "no exception" is not proof it happened. True when an
+         * activity of ours is resumed, or in picture-in-picture and visible.
+         */
+        fun canStartActivity(): Boolean = true
+
         /** Resolve an `ACTION_DIAL` target before anything is ended. False is `no_app`. */
         override fun canDial(): Boolean = true
 
@@ -409,13 +468,23 @@ class PhoneEngine(
         /** Start the launchable activity [target] resolved to. */
         fun startApp(target: AppTarget): Boolean = false
 
+        /**
+         * What claims [uri]. [None] is "nothing answers"; [Ambiguous] is Android's own chooser —
+         * several apps claim the link and none is the default, so there is no single app to name.
+         */
+        sealed class UriTarget {
+            data class App(val target: AppTarget) : UriTarget()
+            data object Ambiguous : UriTarget()
+            data object None : UriTarget()
+        }
+
         /** Resolve a URI among the apps that claim it, optionally restricted to [packageName]. */
-        fun resolveUri(uri: String, packageName: String?): AppTarget? = null
+        fun resolveUri(uri: String, packageName: String?): UriTarget = UriTarget.None
 
         /** Start `ACTION_VIEW` for [uri] in the resolved [target]. */
         fun startUri(target: AppTarget, uri: String): Boolean = false
 
-        // ---- apps: uninstall (the one card-gated action) ----
+        // ---- apps: uninstall (the consequential action) ----
 
         /** The label the launcher shows for [packageName], or null when no such app is installed. */
         fun appLabel(packageName: String): String? = null
@@ -458,12 +527,16 @@ class PhoneEngine(
         val durationMs: Long,
         val hour: Int,
         val minute: Int,
+        /** Who asked for it: the owner's voice, or the mind over MCP. */
+        val origin: Origin,
     )
 
     private data class Undo(
         val id: String,
         val kind: String,
         val expiresAtElapsed: Long,
+        /** Who may reverse it. The owner's door is unrestricted; the mind's is not. */
+        val origin: Origin,
         /** True when the platform really reversed it. */
         val perform: () -> Boolean,
     )
@@ -477,7 +550,45 @@ class PhoneEngine(
     private var dndApplied: Boolean? = null
     private var volumeApplied: Int? = null
 
-    data class Note(val id: String, val text: String, val atEpochMs: Long)
+    /**
+     * The last dial handoff's own answer, for the mind's `status`: `to`, `dialer` (opened /
+     * not_opened) and when. A dial that has not completed yet leaves it null — the result of that
+     * call already says `unknown`, and a stale entry must not answer for a new handoff.
+     *
+     * Plain assignment under [dialGeneration], never the engine lock: the late dial runs on the
+     * window's thread while the engine thread may be waiting on that thread, so taking the lock
+     * here would close a cycle.
+     */
+    @Volatile private var lastDial: Map<String, Any?>? = null
+
+    /** Which dial handoff owns [lastDial]. Only the newest may write it. */
+    @Volatile private var dialGeneration = 0L
+
+    /**
+     * Who initiated an entry in the registry.
+     *
+     * The owner path ([LocalActions.run], and the sheet's Undo tap) and the mind path (MCP
+     * `tools/call`) share one registry, so the tag is what keeps the mind out of the owner's own
+     * actions — and what makes "the owner's note" and "the mind's note" different records.
+     */
+    enum class Origin(val id: String) {
+        OWNER("owner"),
+        MIND("mind"),
+        ;
+
+        companion object {
+            /** The stored form; null when it is not an origin. */
+            fun of(raw: String?): Origin? = values().firstOrNull { it.id == raw?.trim()?.lowercase() }
+        }
+    }
+
+    data class Note(
+        val id: String,
+        val text: String,
+        val atEpochMs: Long,
+        /** The door the note came through; see [Origin]. */
+        val origin: Origin,
+    )
 
     // ---- the one entry point the MCP server uses ----
 
@@ -490,34 +601,317 @@ class PhoneEngine(
         approvals.tick(nowEpoch)
         val result = when (val parsed = PhoneTool.parse(arguments, grants)) {
             is PhoneTool.Parsed.Refuse -> parsed.result
-            is PhoneTool.Parsed.Run -> execute(parsed.call, nowElapsed, nowEpoch)
+            // Everything on this wire is the mind's, and every entry it registers says so.
+            is PhoneTool.Parsed.Run -> {
+                val ask = askGroup(parsed.call)
+                if (ask == null) {
+                    execute(parsed.call, nowElapsed, nowEpoch, Origin.MIND)
+                } else {
+                    handshake(parsed.call, ask, arguments, nowElapsed, nowEpoch)
+                }
+            }
         }
         // The audit records refusals as well as successes, because "my agent says it tried" is a
         // claim the owner has to be able to check. A failure to record must not fail the call.
         // The initial approval request is the one exception: the desk already wrote its request row,
         // and the "Recent actions" list must show request → decision → execution, not a duplicate.
-        val requestRowAlreadyWritten = result.action == PhoneApproval.ACTION &&
-            !result.ok &&
+        val requestRowAlreadyWritten = !result.ok &&
             result.reason == PhoneReason.APPROVAL &&
             result.facts["approval_id"] != null
         if (!requestRowAlreadyWritten) {
             try {
-                audit(result, arguments, nowEpoch)
+                audit(
+                    result,
+                    if (result.action == PhoneNotifications.ACTION_DISMISS) {
+                        PhoneNotifications.auditArguments(result)
+                    } else {
+                        arguments
+                    },
+                    nowEpoch,
+                )
             } catch (_: Throwable) {
             }
         }
         return result
     }
 
-    /** Execute one validated call. */
-    fun execute(call: PhoneTool.Call, nowElapsed: Long, nowEpoch: Long): PhoneResult = synchronized(lock) {
+    /**
+     * The group whose **Ask** the call must answer, or null when it may run now.
+     *
+     * One state, one meaning: a call in a group at Ask always raises a card, whatever the group's
+     * tier. There is one composition rule — a message or dial addressed to a contact **name** reads
+     * the address book, so it also answers the Contacts group's Ask even when its own group is
+     * Allow. Off never reaches here; [PhoneTool.parse] refuses it.
+     */
+    private fun askGroup(call: PhoneTool.Call): PhoneGrants.Group? {
+        val group = PhoneGrants.groupOf(call.action) ?: return null
+        if (PhoneGrants.stateOf(grants, group) == PhoneGrants.State.ASK) return group
+        val readsContacts = (call is PhoneTool.Call.Message && call.contact) ||
+            (call is PhoneTool.Call.Dial && call.contact)
+        if (!readsContacts) return null
+        val contacts = PhoneGrants.GROUPS.first { it.id == "contacts" }
+        return contacts.takeIf { PhoneGrants.stateOf(grants, it) == PhoneGrants.State.ASK }
+    }
+
+    /**
+     * The one two-step handshake, for every action at Ask.
+     *
+     * Without an `approval` id it raises a card naming the action and its arguments and returns
+     * `approval-required` with the id and its expiry. With an id it asks the desk whether that id
+     * was approved, unexpired and bound to **these exact arguments**, and only then executes. The
+     * desk burns the id on every refusal, so a repeat is never a second permission.
+     */
+    private fun handshake(
+        call: PhoneTool.Call,
+        group: PhoneGrants.Group,
+        arguments: Map<String, Any?>,
+        nowElapsed: Long,
+        nowEpoch: Long,
+    ): PhoneResult {
+        val id = when (val raw = arguments["approval"]) {
+            null -> null
+            is String -> raw.trim().takeIf { it.isNotEmpty() }
+            else -> return PhoneResult.refused(
+                call.action,
+                PhoneReason.INVALID,
+                "approval must be the id a previous result returned",
+                tier = PhoneGrants.tierOf(call.action),
+            )
+        } ?: return raise(call, group, arguments, nowEpoch)
+
+        if (id.length > PhoneTool.MAX_APPROVAL_ID_CHARS) {
+            return PhoneResult.refused(
+                call.action,
+                PhoneReason.INVALID,
+                "approval is longer than ${PhoneTool.MAX_APPROVAL_ID_CHARS} characters",
+                tier = PhoneGrants.tierOf(call.action),
+            )
+        }
+        val canonical = canonicalArgs(call, arguments)
+        return when (val grant = approvals.authorize(id, call.action, canonical, nowEpoch)) {
+            is PhoneApproval.Grant.Allowed ->
+                execute(call, nowElapsed, nowEpoch, Origin.MIND)
+            is PhoneApproval.Grant.Pending -> PhoneResult.refused(
+                call.action,
+                PhoneReason.APPROVAL,
+                "the owner has not answered the card for ${grant.card.summary} yet; nothing was " +
+                    "performed",
+                tier = PhoneGrants.tierOf(call.action),
+                facts = linkedMapOf<String, Any?>(
+                    "approval_id" to grant.card.id,
+                    "expires_at" to grant.card.expiresAtMs,
+                    "summary" to grant.card.summary,
+                ),
+            )
+            is PhoneApproval.Grant.Refused -> {
+                log("event=phone-mcp action=${call.action} ok=false reason=${grant.reason}")
+                PhoneResult.refused(
+                    call.action,
+                    grant.reason,
+                    grant.detail,
+                    tier = PhoneGrants.tierOf(call.action),
+                )
+            }
+        }
+    }
+
+    /**
+     * The request half: read what the card needs to say, then raise it. Nothing is performed.
+     *
+     * `uninstall` and `file_offer` look at the phone first (the app's label, the file's type and
+     * size) so the card names what will actually happen, and a missing or oversized target is
+     * refused before a card is raised rather than after a yes.
+     */
+    private fun raise(
+        call: PhoneTool.Call,
+        group: PhoneGrants.Group,
+        arguments: Map<String, Any?>,
+        nowEpoch: Long,
+    ): PhoneResult {
+        val subject: String
+        var described: PhoneApproval.Description
+        when (call) {
+            is PhoneTool.Call.FileOffer -> {
+                val folder = when (val pick = folderFor("file_offer", call.folder)) {
+                    is FolderPick.Found -> pick.folder
+                    is FolderPick.Refused -> return pick.result
+                }
+                val info = when (val found = platform.fileInfo(folder, call.name)) {
+                    PhonePlatform.FileInfo.Missing -> {
+                        log("event=phone-mcp action=file_offer ok=false reason=unavailable")
+                        return PhoneResult.refused(
+                            "file_offer", PhoneReason.UNAVAILABLE,
+                            "no file named \"${call.name}\" is in ${folder.label}; nothing was offered",
+                        )
+                    }
+                    PhonePlatform.FileInfo.Outside -> {
+                        log("event=phone-mcp action=file_offer ok=false reason=bad_path")
+                        return PhoneResult.refused(
+                            "file_offer", PhoneReason.BAD_PATH,
+                            "that name resolves outside the folder you granted; nothing was offered",
+                        )
+                    }
+                    is PhonePlatform.FileInfo.TooBig -> {
+                        log("event=phone-mcp action=file_offer ok=false reason=too_big")
+                        return PhoneResult.refused(
+                            "file_offer", PhoneReason.TOO_BIG,
+                            "that file is above the 100 MB the file bridge will serve; nothing was offered",
+                        )
+                    }
+                    is PhonePlatform.FileInfo.Unavailable -> {
+                        log("event=phone-mcp action=file_offer ok=false reason=unavailable")
+                        return PhoneResult.refused("file_offer", PhoneReason.UNAVAILABLE, found.detail)
+                    }
+                    is PhonePlatform.FileInfo.Ready -> found
+                }
+                val detail = PhoneApproval.fileDetail(info.name, info.mime, info.bytes)
+                subject = call.name
+                described = PhoneApproval.Description(
+                    label = info.name,
+                    detail = detail,
+                    phrase = "read ${info.name} ($detail)",
+                    summaryText = "offer ${info.name} ($detail)",
+                )
+            }
+            is PhoneTool.Call.Uninstall -> {
+                val label = platform.appLabel(call.packageName) ?: run {
+                    log("event:phone-mcp action=uninstall ok=false reason=unavailable")
+                    return PhoneResult.refused(
+                        "uninstall",
+                        PhoneReason.UNAVAILABLE,
+                        "no installed app has the package \"${call.packageName}\"; nothing was removed",
+                    )
+                }
+                subject = call.packageName
+                described = PhoneApproval.Description(
+                    label = label,
+                    detail = "",
+                    phrase = "remove $label",
+                    summaryText = "uninstall $label",
+                )
+            }
+            else -> {
+                described = PhoneApproval.describe(call)
+                // A name is an address-book read whatever action asked for it; the card must say
+                // so, because the lookup is the part the Contacts group governs.
+                if (group.id == "contacts") {
+                    val who = when (call) {
+                        is PhoneTool.Call.Dial -> call.to
+                        is PhoneTool.Call.Message -> call.to
+                        else -> described.label
+                    }
+                    val then = when (call) {
+                        is PhoneTool.Call.Dial -> ", then open the dialer"
+                        is PhoneTool.Call.Message ->
+                            ", then write a text (${call.text.length} characters)"
+                        else -> ""
+                    }
+                    described = described.copy(
+                        label = "contact lookup",
+                        detail = "",
+                        phrase = "look up \"$who\" in your contacts$then",
+                    )
+                }
+                subject = described.label
+            }
+        }
+
+        val canonicalArgs = canonicalArgs(call, arguments)
+        val canonical = PhoneApproval.canonical(call.action, canonicalArgs)
+        val digest = PhoneApproval.digest(canonical)
+        return when (
+            val request = approvals.request(
+                call.action,
+                subject,
+                described.label,
+                described.detail,
+                canonical,
+                digest,
+                nowEpoch,
+                described.phrase,
+                described.summaryText,
+            )
+        ) {
+            is PhoneApproval.Request.Raised -> {
+                val card = request.card
+                log("event=phone-mcp action=${call.action} ok=false reason=approval-required id=${card.id}")
+                PhoneResult.refused(
+                    call.action,
+                    PhoneReason.APPROVAL,
+                    "the owner must approve ${card.summary}; the card is up for " +
+                        "${PhoneApproval.TIMEOUT_MS / 1000} seconds. Call ${call.action} again " +
+                        "with the same arguments and approval=\"${card.id}\" after they answer.",
+                    tier = PhoneGrants.tierOf(call.action),
+                    facts = linkedMapOf<String, Any?>(
+                        "approval_id" to card.id,
+                        "expires_at" to card.expiresAtMs,
+                        "summary" to card.summary,
+                    ),
+                )
+            }
+            PhoneApproval.Request.Busy -> {
+                log("event=phone-mcp action=${call.action} ok=false reason=approval_busy")
+                PhoneResult.refused(
+                    call.action,
+                    PhoneApproval.Reason.BUSY,
+                    "three approval cards are already waiting on the phone; nothing was raised " +
+                        "and nothing was performed",
+                    tier = PhoneGrants.tierOf(call.action),
+                )
+            }
+            is PhoneApproval.Request.Unavailable -> {
+                log("event=phone-mcp action=${call.action} ok=false reason=unavailable")
+                PhoneResult.refused(
+                    call.action,
+                    PhoneReason.UNAVAILABLE,
+                    request.detail,
+                    tier = PhoneGrants.tierOf(call.action),
+                )
+            }
+        }
+    }
+
+    /**
+     * The exact arguments a card is bound to. Almost every action binds to the call's own
+     * arguments; the two that resolve a name at the phone normalise it, so `folder` omitted and
+     * `folder: "Download"` are the same request and a different file is not.
+     */
+    private fun canonicalArgs(
+        call: PhoneTool.Call,
+        arguments: Map<String, Any?>,
+    ): Map<String, Any?> = when (call) {
+        is PhoneTool.Call.FileOffer -> {
+            // The binding names the grant itself: the folder the call resolved to, which is what
+            // the card said and what the executor will use.
+            val resolved = when (val pick = folderFor("file_offer", call.folder)) {
+                is FolderPick.Found -> pick.folder.label
+                is FolderPick.Refused -> call.folder?.trim().orEmpty()
+            }
+            arguments + ("folder" to resolved)
+        }
+        else -> arguments
+    }
+
+    /**
+     * Execute one validated call, tagging every registry entry with [origin].
+     *
+     * [origin] is required: the caller has to say whose action this is, because the tag is what
+     * `status` and `undo` filter on. [dispatch] passes [Origin.MIND]; the owner's voice passes
+     * [Origin.OWNER].
+     */
+    fun execute(
+        call: PhoneTool.Call,
+        nowElapsed: Long,
+        nowEpoch: Long,
+        origin: Origin,
+    ): PhoneResult = synchronized(lock) {
         prune(nowElapsed, nowEpoch)
         when (call) {
-            is PhoneTool.Call.Timer -> setTimer(call.durationMs, nowElapsed, nowEpoch)
-            is PhoneTool.Call.Alarm -> setAlarm(call.hour, call.minute, nowEpoch)
-            is PhoneTool.Call.Dnd -> setDnd(call.on, nowElapsed)
-            is PhoneTool.Call.Volume -> setVolume(call.level, call.direction, nowElapsed)
-            is PhoneTool.Call.Note -> saveNote(call.text, nowElapsed, nowEpoch)
+            is PhoneTool.Call.Timer -> setTimer(call.durationMs, nowElapsed, nowEpoch, origin)
+            is PhoneTool.Call.Alarm -> setAlarm(call.hour, call.minute, nowEpoch, origin)
+            is PhoneTool.Call.Dnd -> setDnd(call.on, nowElapsed, origin)
+            is PhoneTool.Call.Volume -> setVolume(call.level, call.direction, nowElapsed, origin)
+            is PhoneTool.Call.Note -> saveNote(call.text, nowElapsed, nowEpoch, origin)
             is PhoneTool.Call.PlayPause -> pressMedia(call.pause)
             is PhoneTool.Call.Skip -> skip(call.previous)
             PhoneTool.Call.NowPlaying -> nowPlaying()
@@ -526,18 +920,23 @@ class PhoneEngine(
             PhoneTool.Call.ClipRead -> readClip()
             is PhoneTool.Call.FileList -> listFiles(call)
             is PhoneTool.Call.FileRead -> readFile(call)
-            is PhoneTool.Call.FileOffer -> offerFile(call)
+            is PhoneTool.Call.FileOffer -> when (val pick = folderFor("file_offer", call.folder)) {
+                is FolderPick.Found -> executeFileOffer(call.name, pick.folder)
+                is FolderPick.Refused -> pick.result
+            }
             PhoneTool.Call.Agenda -> agenda()
-            is PhoneTool.Call.EventCreate -> createEvent(call, nowElapsed, nowEpoch)
+            is PhoneTool.Call.EventCreate -> createEvent(call, nowElapsed, nowEpoch, origin)
             PhoneTool.Call.Notifications -> notifications()
             is PhoneTool.Call.NotificationRead -> notificationRead(call.id)
+            is PhoneTool.Call.NotificationDismiss -> notificationDismiss(call)
+            PhoneTool.Call.Apps -> AppsAccess.result(platform)
             is PhoneTool.Call.Contact -> contacts(call)
             is PhoneTool.Call.Message -> message(call)
-            is PhoneTool.Call.Dial -> dial(call)
+            is PhoneTool.Call.Dial -> dial(call, nowEpoch)
             is PhoneTool.Call.Launch -> launch(call)
             is PhoneTool.Call.Open -> open(call)
-            is PhoneTool.Call.Uninstall -> uninstall(call, nowEpoch)
-            is PhoneTool.Call.Undo -> undo(call.id, nowElapsed, nowEpoch)
+            is PhoneTool.Call.Uninstall -> executeUninstall(call.packageName)
+            is PhoneTool.Call.Undo -> undo(call.id, nowElapsed, nowEpoch, origin)
             PhoneTool.Call.Status -> status(nowElapsed, nowEpoch)
         }
     }
@@ -554,11 +953,17 @@ class PhoneEngine(
      * Notes outlive the call that made them, so they are re-read from disk when the app starts.
      * Ids are restored as they were (an undo in a previous process may still name one), and the id
      * counter is moved past them so a new note cannot collide with an old one.
+     *
+     * Each restored undo keeps the door the note came through. A note the mind wrote whose Notes
+     * grant is **Off** now is re-registered for the owner only: the mind's door is shut, so the
+     * undo table never offers the mind a note its grant does not cover (H4). The note itself is
+     * untouched — the owner can still reverse it.
      */
     fun restoreNotes(saved: List<Note>, nowElapsed: Long) = synchronized(lock) {
         for (n in saved) {
             notes[n.id] = n
-            register(n.id, "note", nowElapsed + NOTE_UNDO_MS) { platform.deleteNote(n.id) }
+            val door = if (n.origin == Origin.MIND && !mindDoorOpen("note")) Origin.OWNER else n.origin
+            register(n.id, "note", nowElapsed + NOTE_UNDO_MS, door) { platform.deleteNote(n.id) }
             val suffix = n.id.removePrefix("note-").toIntOrNull() ?: 0
             if (suffix > nextId) nextId = suffix
         }
@@ -566,7 +971,7 @@ class PhoneEngine(
 
     // ---- tier 0 ----
 
-    private fun setTimer(durationMs: Long, nowElapsed: Long, nowEpoch: Long): PhoneResult {
+    private fun setTimer(durationMs: Long, nowElapsed: Long, nowEpoch: Long, origin: Origin): PhoneResult {
         val id = "timer-${++nextId}"
         val atElapsed = nowElapsed + durationMs
         val atEpoch = nowEpoch + durationMs
@@ -574,8 +979,8 @@ class PhoneEngine(
             log("event=phone-mcp action=timer ok=false reason=unavailable")
             return PhoneResult.refused("timer", PhoneReason.UNAVAILABLE, "the phone refused to arm the countdown")
         }
-        timers[id] = Armed(id, "timer", atElapsed, 0, durationMs, 0, 0)
-        register(id, "timer", atElapsed) { platform.cancelTimer(id) }
+        timers[id] = Armed(id, "timer", atElapsed, 0, durationMs, 0, 0, origin)
+        register(id, "timer", atElapsed, origin) { platform.cancelTimer(id) }
         log("event=phone-mcp action=timer ok=true id=$id ms=$durationMs")
         return PhoneResult.done(
             "timer", id,
@@ -587,16 +992,16 @@ class PhoneEngine(
         )
     }
 
-    private fun setAlarm(hour: Int, minute: Int, nowEpoch: Long): PhoneResult {
+    private fun setAlarm(hour: Int, minute: Int, nowEpoch: Long, origin: Origin): PhoneResult {
         val at = nextOccurrence(hour, minute, nowEpoch)
         val id = "alarm-${++nextId}"
         if (!platform.startAlarm(id, hour, minute, at)) {
             log("event=phone-mcp action=alarm ok=false reason=unavailable")
             return PhoneResult.refused("alarm", PhoneReason.UNAVAILABLE, "the phone refused to arm the alarm")
         }
-        alarms[id] = Armed(id, "alarm", 0, at, 0, hour, minute)
+        alarms[id] = Armed(id, "alarm", 0, at, 0, hour, minute, origin)
         // The undo has no elapsed clock to expire on: the registry drops it when the alarm is pruned.
-        register(id, "alarm", Long.MAX_VALUE) { platform.cancelTimer(id) }
+        register(id, "alarm", Long.MAX_VALUE, origin) { platform.cancelTimer(id) }
         log("event=phone-mcp action=alarm ok=true id=$id at=${LocalActionSpeech.clock24(hour, minute)}")
         return PhoneResult.done(
             "alarm", id,
@@ -608,7 +1013,7 @@ class PhoneEngine(
         )
     }
 
-    private fun setDnd(on: Boolean, nowElapsed: Long): PhoneResult {
+    private fun setDnd(on: Boolean, nowElapsed: Long, origin: Origin): PhoneResult {
         if (!platform.dndGranted()) {
             log("event=phone-mcp action=dnd ok=false reason=permission")
             return PhoneResult.refused(
@@ -627,7 +1032,7 @@ class PhoneEngine(
         dndApplied = now
         supersede("dnd")
         // Restore only what we actually read; with no previous state there is nothing honest to say.
-        if (previous != null) register(id, "dnd", nowElapsed + CHANGE_UNDO_MS) { platform.setDnd(previous) }
+        if (previous != null) register(id, "dnd", nowElapsed + CHANGE_UNDO_MS, origin) { platform.setDnd(previous) }
         log("event=phone-mcp action=dnd ok=true id=$id on=$now")
         return PhoneResult.done(
             "dnd", id,
@@ -639,7 +1044,7 @@ class PhoneEngine(
         )
     }
 
-    private fun setVolume(level: Int?, direction: Int, nowElapsed: Long): PhoneResult {
+    private fun setVolume(level: Int?, direction: Int, nowElapsed: Long, origin: Origin): PhoneResult {
         val current = platform.currentVolume()
         val appliedLevel = if (level != null) {
             platform.setVolume(level)
@@ -657,7 +1062,7 @@ class PhoneEngine(
         volumeApplied = applied
         supersede("volume")
         if (current != null && current != applied) {
-            register(id, "volume", nowElapsed + CHANGE_UNDO_MS) { platform.setVolume(current) != null }
+            register(id, "volume", nowElapsed + CHANGE_UNDO_MS, origin) { platform.setVolume(current) != null }
         }
         log("event=phone-mcp action=volume ok=true id=$id level=$applied")
         return PhoneResult.done(
@@ -809,31 +1214,33 @@ class PhoneEngine(
      * caller's, and neither the result, the log nor the audit row needs it. There is no undo —
      * reversing a clipboard write would mean having read what was there, which this action does
      * not do; [readClip] is a separate call with its own grant and its own result.
+     *
+     * The write is attempted, not predicted. Android restricts clipboard *reads*, not writes, so a
+     * backgrounded or PiP call writes like any other; a platform refusal is reported with the
+     * platform's own reason.
      */
-    private fun clip(text: String): PhoneResult {
-        if (!platform.clip(text)) {
-            log("event=phone-mcp action=clip ok=false reason=unavailable")
-            return PhoneResult.refused(
-                "clip", PhoneReason.UNAVAILABLE,
-                "the phone would not take the text: it only writes to the clipboard from an app " +
-                    "the owner can see, and nothing was written",
+    private fun clip(text: String): PhoneResult = when (val wrote = platform.clip(text)) {
+        PhoneEngine.PhonePlatform.ClipWrite.Done -> {
+            log("event=phone-mcp action=clip ok=true chars=${text.length}")
+            PhoneResult.info(
+                "clip",
+                linkedMapOf<String, Any?>(
+                    "chars" to text.length,
+                    "undoable" to false,
+                ),
             )
         }
-        log("event=phone-mcp action=clip ok=true chars=${text.length}")
-        return PhoneResult.info(
-            "clip",
-            linkedMapOf<String, Any?>(
-                "chars" to text.length,
-                "undoable" to false,
-            ),
-        )
+        is PhoneEngine.PhonePlatform.ClipWrite.Refused -> {
+            log("event=phone-mcp action=clip ok=false reason=unavailable")
+            PhoneResult.refused("clip", PhoneReason.UNAVAILABLE, wrote.detail)
+        }
     }
 
     /**
-     * The clipboard's text, when the platform allows the read. The decision is Android's: since
-     * Android 10 an app that is not in front gets no clipboard, and an empty clip is no answer
-     * either. Both are `unavailable` with the platform's own reason — never empty text dressed up
-     * as what the clipboard holds.
+     * The clipboard's text, when the platform allows the read. The decision is Android's: an app
+     * that is not focused gets no clipboard, and an empty clip is no answer either. Both are
+     * `unavailable` with the platform's own outcome — never empty text dressed up as what the
+     * clipboard holds, and never a pre-emptive refusal in place of asking.
      */
     private fun readClip(): PhoneResult = when (val found = platform.readClip()) {
         is PhonePlatform.ClipRead.Text -> {
@@ -862,14 +1269,14 @@ class PhoneEngine(
 
     // ---- tier 1 ----
 
-    private fun saveNote(text: String, nowElapsed: Long, nowEpoch: Long): PhoneResult {
+    private fun saveNote(text: String, nowElapsed: Long, nowEpoch: Long, origin: Origin): PhoneResult {
         val id = "note-${++nextId}"
         if (!platform.saveNote(id, text, nowEpoch)) {
             log("event=phone-mcp action=note ok=false reason=unavailable")
             return PhoneResult.refused("note", PhoneReason.UNAVAILABLE, "the note could not be saved")
         }
-        notes[id] = Note(id, text, nowEpoch)
-        register(id, "note", nowElapsed + NOTE_UNDO_MS) { platform.deleteNote(id) }
+        notes[id] = Note(id, text, nowEpoch, origin)
+        register(id, "note", nowElapsed + NOTE_UNDO_MS, origin) { platform.deleteNote(id) }
         log("event=phone-mcp action=note ok=true id=$id chars=${text.length}")
         return PhoneResult.done(
             "note", id,
@@ -883,30 +1290,60 @@ class PhoneEngine(
 
     // ---- tier 1: files ----
 
-    /**
-     * The folder a call means: the one it named, or [PhoneFiles.DEFAULT_FOLDER] when it named
-     * none. [PhoneFiles.normalizeFolder] makes `Downloads`/`Download` and case irrelevant, so the
-     * folder the system picker named is found without asking the owner to spell it our way.
-     *
-     * There is no "pick the only folder that happens to be granted" fallback: the default is
-     * Downloads, and a call that omits the folder means Downloads. Reading Documents because it
-     * was the only grant would be a different file than the caller named.
-     */
-    private fun folderFor(requested: String?): PhonePlatform.GrantedFolder? {
-        val granted = platform.folders()
-        val wanted = PhoneFiles.normalizeFolder(requested)
-        return granted.firstOrNull { PhoneFiles.normalizeFolder(it.label) == wanted }
+    /** What a file action's `folder` resolved to: one grant, or the refusal that says why not. */
+    private sealed class FolderPick {
+        data class Found(val folder: PhonePlatform.GrantedFolder) : FolderPick()
+        data class Refused(val result: PhoneResult) : FolderPick()
     }
 
-    /** Both file actions answer this when the folder they mean has not been granted. */
-    private fun noFolder(action: String, requested: String?): PhoneResult {
+    /**
+     * The folder a call means: the grant it named by label, or the **only** grant when it named
+     * none. The vocabulary is the grants themselves ([PhoneFiles.folderChoices]), never a fixed
+     * `Downloads`/`Documents` pair: Android 11+ will not grant the `Download` root, so the folder
+     * the owner really picked is a subfolder and its own label is the only name it has.
+     *
+     * Omission is a default only when there is exactly one thing it could mean. With several
+     * grants a call without `folder` is `invalid-arguments` naming the choices — reading the first
+     * one would be a different folder than the caller asked for, which is the same mistake as
+     * reading `Documents` because it happened to be granted.
+     */
+    private fun folderFor(action: String, requested: String?): FolderPick {
         val granted = platform.folders()
+        if (granted.isEmpty()) return FolderPick.Refused(noFolder(action, requested, granted))
+        if (requested.isNullOrBlank()) {
+            if (granted.size == 1) return FolderPick.Found(granted.first())
+            val names = granted.joinToString(", ") { it.label }
+            log("event=phone-mcp action=$action ok=false reason=invalid-arguments")
+            return FolderPick.Refused(
+                PhoneResult.refused(
+                    action,
+                    PhoneReason.INVALID,
+                    "several folders are granted to your agent ($names); name the one to use with " +
+                        "`folder`, or the owner can remove one in Phone tools → Files",
+                )
+            )
+        }
+        val wanted = requested.trim()
+        val found = granted.firstOrNull { it.label.equals(wanted, ignoreCase = true) }
+        return if (found != null) {
+            FolderPick.Found(found)
+        } else {
+            FolderPick.Refused(noFolder(action, wanted, granted))
+        }
+    }
+
+    /** The refusal a file action gives when the folder it means is not one of the grants. */
+    private fun noFolder(
+        action: String,
+        requested: String?,
+        granted: List<PhonePlatform.GrantedFolder>,
+    ): PhoneResult {
         val detail = if (granted.isEmpty()) {
             PhoneFiles.NO_FOLDER
         } else {
             val names = granted.joinToString(", ") { it.label }
-            "the ${requested ?: PhoneFiles.DEFAULT_FOLDER} folder is not granted; the folder granted " +
-                "to your agent is $names. Name that folder, or the owner can grant another one in " +
+            "the \"${requested.orEmpty()}\" folder is not granted; the folders granted to your " +
+                "agent are $names. Name one of those, or the owner can grant another in " +
                 "Phone tools → Files"
         }
         log("event=phone-mcp action=$action ok=false reason=no_folder")
@@ -921,7 +1358,10 @@ class PhoneEngine(
      * The result carries the text and its length, and no undo — a read changes nothing.
      */
     private fun readFile(call: PhoneTool.Call.FileRead): PhoneResult {
-        val folder = folderFor(call.folder) ?: return noFolder("file_read", call.folder)
+        val folder = when (val pick = folderFor("file_read", call.folder)) {
+            is FolderPick.Found -> pick.folder
+            is FolderPick.Refused -> return pick.result
+        }
         val found = if (call.offset != null || call.length != null) {
             platform.fileWindow(
                 folder,
@@ -1012,7 +1452,10 @@ class PhoneEngine(
      * 12 entries` — and **never a name**, because the names in a listing are the owner's.
      */
     private fun listFiles(call: PhoneTool.Call.FileList): PhoneResult {
-        val folder = folderFor(call.folder) ?: return noFolder("file_list", call.folder)
+        val folder = when (val pick = folderFor("file_list", call.folder)) {
+            is FolderPick.Found -> pick.folder
+            is FolderPick.Refused -> return pick.result
+        }
         val listed = platform.fileList(
             folder, call.path, call.depth, call.pattern, call.offset, call.limit,
         )
@@ -1070,54 +1513,56 @@ class PhoneEngine(
     }
 
     /**
-     * Hand one file to the existing file bridge. The result is the capability the bridge minted —
-     * URL, size, hash, expiry — so the agent fetches an artifact instead of receiving bytes in a
-     * tool result. Nothing about the file's contents is returned here, and there is no undo.
+     * Hand one file to the existing file bridge. Offering exports the owner's content to the agent
+     * over the tailnet, where it stays; the folder grant makes that possible, not intended. The
+     * card said yes — at Ask — or the owner set the group to Allow, and either way this is the call
+     * that stages and serves the file. The result is the capability the bridge minted — URL, size,
+     * hash, expiry — never the bytes, and there is no undo.
      */
-    private fun offerFile(call: PhoneTool.Call.FileOffer): PhoneResult {
-        val folder = folderFor(call.folder) ?: return noFolder("file_offer", call.folder)
-        return when (val handoff = platform.fileOffer(folder, call.name)) {
-            PhonePlatform.FileHandoff.Missing -> {
-                log("event=phone-mcp action=file_offer ok=false reason=unavailable")
-                PhoneResult.refused(
-                    "file_offer", PhoneReason.UNAVAILABLE,
-                    "no file named \"${call.name}\" is in ${folder.label}; nothing was offered",
-                )
-            }
-            PhonePlatform.FileHandoff.Outside -> {
-                log("event=phone-mcp action=file_offer ok=false reason=bad_path")
-                PhoneResult.refused(
-                    "file_offer", PhoneReason.BAD_PATH,
-                    "that name resolves outside the folder you granted; nothing was offered",
-                )
-            }
-            is PhonePlatform.FileHandoff.TooBig -> {
-                log("event=phone-mcp action=file_offer ok=false reason=too_big")
-                PhoneResult.refused(
-                    "file_offer", PhoneReason.TOO_BIG,
-                    "that file is above the 100 MB the file bridge will serve; nothing was offered",
-                )
-            }
-            is PhonePlatform.FileHandoff.Unavailable -> {
-                log("event=phone-mcp action=file_offer ok=false reason=unavailable")
-                PhoneResult.refused("file_offer", PhoneReason.UNAVAILABLE, handoff.detail)
-            }
-            is PhonePlatform.FileHandoff.Ready -> {
-                log("event=phone-mcp action=file_offer ok=true bytes=${handoff.bytes}")
-                PhoneResult.info(
-                    "file_offer",
-                    linkedMapOf<String, Any?>(
-                        "name" to handoff.name,
-                        "folder" to folder.label,
-                        "mime" to handoff.mime,
-                        "bytes" to handoff.bytes,
-                        "sha256" to handoff.sha256,
-                        "url" to handoff.url,
-                        "expires_at" to handoff.expiresAtSec,
-                        "undoable" to false,
-                    ),
-                )
-            }
+    private fun executeFileOffer(
+        name: String,
+        folder: PhonePlatform.GrantedFolder,
+    ): PhoneResult = when (val handoff = platform.fileOffer(folder, name)) {
+        PhonePlatform.FileHandoff.Missing -> {
+            log("event=phone-mcp action=file_offer ok=false reason=unavailable")
+            PhoneResult.refused(
+                "file_offer", PhoneReason.UNAVAILABLE,
+                "no file named \"$name\" is in ${folder.label}; nothing was offered",
+            )
+        }
+        PhonePlatform.FileHandoff.Outside -> {
+            log("event=phone-mcp action=file_offer ok=false reason=bad_path")
+            PhoneResult.refused(
+                "file_offer", PhoneReason.BAD_PATH,
+                "that name resolves outside the folder you granted; nothing was offered",
+            )
+        }
+        is PhonePlatform.FileHandoff.TooBig -> {
+            log("event=phone-mcp action=file_offer ok=false reason=too_big")
+            PhoneResult.refused(
+                "file_offer", PhoneReason.TOO_BIG,
+                "that file is above the 100 MB the file bridge will serve; nothing was offered",
+            )
+        }
+        is PhonePlatform.FileHandoff.Unavailable -> {
+            log("event=phone-mcp action=file_offer ok=false reason=unavailable")
+            PhoneResult.refused("file_offer", PhoneReason.UNAVAILABLE, handoff.detail)
+        }
+        is PhonePlatform.FileHandoff.Ready -> {
+            log("event=phone-mcp action=file_offer ok=true bytes=${handoff.bytes}")
+            PhoneResult.info(
+                "file_offer",
+                linkedMapOf<String, Any?>(
+                    "name" to handoff.name,
+                    "folder" to folder.label,
+                    "mime" to handoff.mime,
+                    "bytes" to handoff.bytes,
+                    "sha256" to handoff.sha256,
+                    "url" to handoff.url,
+                    "expires_at" to handoff.expiresAtSec,
+                    "undoable" to false,
+                ),
+            )
         }
     }
 
@@ -1188,6 +1633,7 @@ class PhoneEngine(
         call: PhoneTool.Call.EventCreate,
         nowElapsed: Long,
         nowEpoch: Long,
+        origin: Origin,
     ): PhoneResult {
         calendarRefusal("event_create", write = true)?.let { return it }
         val created = platform.createEvent(
@@ -1202,7 +1648,7 @@ class PhoneEngine(
         }
         val id = created.id
         val lifetime = (created.startMs - nowEpoch).coerceAtLeast(CHANGE_UNDO_MS)
-        register(id, "event", nowElapsed + lifetime) { platform.deleteEvent(id) }
+        register(id, "event", nowElapsed + lifetime, origin) { platform.deleteEvent(id) }
         log("event=phone-mcp action=event_create ok=true id=$id minutes=${call.durationMin}")
         return PhoneResult.done(
             "event_create", id,
@@ -1283,6 +1729,23 @@ class PhoneEngine(
     }
 
     /**
+     * Dismiss by id or app. The lifetime check comes first, exactly as `notifications` does, so a
+     * phone with no live call answers `unavailable` even if the system grant is also missing.
+     */
+    private fun notificationDismiss(call: PhoneTool.Call.NotificationDismiss): PhoneResult {
+        if (!PhoneNotifications.attached()) {
+            return listenerClosed(PhoneNotifications.ACTION_DISMISS)
+        }
+        listenerPermission(PhoneNotifications.ACTION_DISMISS)?.let { return it }
+        val result = PhoneNotifications.dismiss(call.id, call.app)
+        log(
+            "event=phone-mcp action=${PhoneNotifications.ACTION_DISMISS} ok=${result.ok} " +
+                "count=${result.facts["count"] ?: 0}",
+        )
+        return result
+    }
+
+    /**
      * Both notification reads say the same thing when no call is live: the system grant may be
      * held, but this app's use of it is not. It names the listener's lifetime rather than a
      * generic failure.
@@ -1360,12 +1823,32 @@ class PhoneEngine(
     // ---- handoffs: messages, calls, apps ----
 
     /**
+     * The one background-activity-launch gate (B2).
+     *
+     * Android 10+ refuses a start from an app with no visible window **without throwing**, so
+     * `startActivity` returning is not proof anything opened. Every handoff asks this before it
+     * resolves a target, ends a call or announces anything, and a "no" is a refusal — never a
+     * silent success. On device the answer is "an activity of ours is resumed, or in
+     * picture-in-picture and visible"; the microphone service does not exempt us.
+     *
+     * The refusal carries [PhoneReason.BACKGROUND], not the generic `unavailable`: the mind can
+     * act on this one (ask again once the owner is looking at Vox) and cannot act on "the platform
+     * would not say". Nothing is performed on the way to it.
+     */
+    private fun backgroundRefusal(action: String): PhoneResult? {
+        if (platform.canStartActivity()) return null
+        log("event=phone-mcp action=$action ok=false reason=background")
+        return PhoneResult.refused(action, PhoneReason.BACKGROUND, backgroundDetail(action))
+    }
+
+    /**
      * Compose the text and open the owner's messaging app. **Nothing is sent here.** The result
      * says `handed_off:true` and carries the recipient and the text's length; the owner's tap
      * in their own app is what sends it. `ACTION_SENDTO` with an `smsto:` URI is the only path,
      * so no `SEND_SMS`, no `SmsManager` and no default-SMS role is involved.
      */
     private fun message(call: PhoneTool.Call.Message): PhoneResult {
+        backgroundRefusal("message")?.let { return it }
         val to = when (val r = resolveRecipient("message", call.to, call.contact)) {
             is Recipient.Number -> r.number
             is Recipient.Refused -> return r.result
@@ -1400,34 +1883,151 @@ class PhoneEngine(
      * With a live Vox call, [DialHandoff] announces one line through the being, ends the call
      * through the same teardown the hang-up runs, and then opens the dialer. Ending the call
      * does not end the conversation: the thread lives on the gateway.
+     *
+     * **The result always says which of the three happened.** [DIALER_OPENED] is the platform
+     * taking the intent; a refusal is "not opened" and names its reason; and when the dial happens
+     * after this reply (the live-call teardown) the honest answer is [DIALER_UNKNOWN] — the mind
+     * is never told a dialer opened when this phone cannot see it. `status` carries the late
+     * dialer's own answer once it is known.
      */
-    private fun dial(call: PhoneTool.Call.Dial): PhoneResult {
+    private fun dial(call: PhoneTool.Call.Dial, nowEpoch: Long): PhoneResult {
+        // Pre-flight the gate before resolving, announcing or tearing anything down: a blocked
+        // start must not cost the owner the call they are on (H1).
+        backgroundRefusal("dial")?.let { return it }
         val to = when (val r = resolveRecipient("dial", call.to, call.contact)) {
             is Recipient.Number -> r.number
             is Recipient.Refused -> return r.result
         }
-        return when (DialHandoff.run(platform, to)) {
-            DialHandoff.Outcome.NO_DIALER -> noApp(
+        // A new handoff retires the last one: `status` must never answer for a dialer this call
+        // did not open. The generation also stops an older, slower handoff from writing over it.
+        val generation = ++dialGeneration
+        lastDial = null
+        // The continuation runs before `run` returns when nothing speaks or the line is already
+        // over — then the dialer's own answer is known. On a real call it runs after the reply,
+        // and only "unknown" is honest.
+        val late = java.util.concurrent.atomic.AtomicReference<Boolean?>(null)
+        val outcome = DialHandoff.run(platform, to) { started ->
+            late.set(started)
+            auditLateDial(to, started, nowEpoch, generation)
+        }
+        return when (outcome) {
+            DialHandoff.Outcome.NO_DIALER -> PhoneResult.refused(
                 "dial",
+                PhoneReason.NO_APP,
                 "no app on this phone answers ACTION_DIAL; nothing was opened and no call was ended",
+                // What is known is not a success fact: no dialer took the number. Every dial
+                // result carries `dialer`, so placed / not placed / unknown read the same way.
+                facts = dialFacts(to, DIALER_NOT_OPENED),
             )
-            DialHandoff.Outcome.DIAL_FAILED -> noApp(
-                "dial",
-                "the dialer could not be opened; nothing was dialled and no call was placed",
-            )
+            DialHandoff.Outcome.DIAL_FAILED -> {
+                log("event=phone-mcp action=dial ok=false reason=unavailable dialer=not_opened")
+                rememberDial(generation, to, DIALER_NOT_OPENED, nowEpoch)
+                PhoneResult.refused(
+                    "dial",
+                    PhoneReason.UNAVAILABLE,
+                    "the dialer is on this phone but Android would not open it; nothing was " +
+                        "dialled and no call was placed",
+                    facts = dialFacts(to, DIALER_NOT_OPENED),
+                )
+            }
             DialHandoff.Outcome.DIALED -> {
-                log("event=phone-mcp action=dial ok=true")
-                PhoneResult.info("dial", linkedMapOf<String, Any?>("to" to to))
+                rememberDial(generation, to, DIALER_OPENED, nowEpoch)
+                dialerOpened(to)
             }
-            DialHandoff.Outcome.ANNOUNCED_END_THEN_DIAL -> {
-                log("event=phone-mcp action=dial ok=true ended_call=true")
-                PhoneResult.info("dial", linkedMapOf<String, Any?>("to" to to))
+            DialHandoff.Outcome.ANNOUNCED_END_THEN_DIAL -> when (late.get()) {
+                // The continuation already ran: carry its real outcome rather than a pending one.
+                true -> dialerOpened(to)
+                false -> {
+                    log("event=phone-mcp action=dial ok=false reason=unavailable dialer=not_opened")
+                    PhoneResult.refused(
+                        "dial",
+                        PhoneReason.UNAVAILABLE,
+                        "our call ended but the dialer did not open; nothing was dialled. The " +
+                            "conversation is still on the gateway — call again to resume it.",
+                        facts = dialFacts(to, DIALER_NOT_OPENED),
+                    )
+                }
+                // Still to happen: say exactly that. `outcome_uncertain` is what stops the mind
+                // telling the caller nothing happened, and `status` carries the late answer.
+                null -> {
+                    log("event=phone-mcp action=dial ok=false reason=unavailable dialer=unknown")
+                    PhoneResult.uncertain(
+                        "dial",
+                        "Vox's call is ending, so the dialer has not opened yet: it opens with " +
+                            "the number when the line is done, and this phone cannot see whether " +
+                            "it did — Vox never places the call, the owner presses call. Nothing " +
+                            "is known to have been dialled or to have failed; `status` reports " +
+                            "the dialer's own result once it arrives.",
+                        facts = dialFacts(to, DIALER_UNKNOWN),
+                    )
+                }
             }
+        }
+    }
+
+    /** The recipient and the dialer's state: the one shape every dial result carries. */
+    private fun dialFacts(to: String, dialer: String): Map<String, Any?> =
+        linkedMapOf("to" to to, "dialer" to dialer)
+
+    /** The dialer took the intent. It is open with the number; the owner presses call. */
+    private fun dialerOpened(to: String): PhoneResult {
+        log("event=phone-mcp action=dial ok=true dialer=opened")
+        return PhoneResult.info(
+            "dial",
+            linkedMapOf<String, Any?>(
+                "to" to to,
+                "dialer" to DIALER_OPENED,
+                "note" to
+                    "the dialer is open with the number ready; Vox has not placed a call — " +
+                    "the owner presses call",
+            ),
+        )
+    }
+
+    /** What the phone knows about a dial's dialer, kept for the mind's next `status`. */
+    private fun rememberDial(generation: Long, to: String, dialer: String, atEpochMs: Long) {
+        // An older handoff that finishes late must not answer for a newer dial.
+        if (generation != dialGeneration) return
+        lastDial = linkedMapOf<String, Any?>(
+            "to" to to,
+            "dialer" to dialer,
+            "at" to atEpochMs,
+        )
+    }
+
+    /**
+     * The dial that runs after a live call was ended. It is a second outcome, so it gets a
+     * second audit row: the owner can see whether the dialer actually opened, and a failure is
+     * never hidden behind the pending reply (H1). The same answer is kept for `status`, so the
+     * mind that was told "unknown" can ask what really happened.
+     */
+    private fun auditLateDial(to: String, started: Boolean, nowEpoch: Long, generation: Long) {
+        val dialer = if (started) DIALER_OPENED else DIALER_NOT_OPENED
+        val result = if (started) {
+            log("event=phone-mcp action=dial ok=true after_teardown=true dialer=opened")
+            PhoneResult.info(
+                "dial",
+                linkedMapOf<String, Any?>("to" to to, "handoff" to "opened", "dialer" to dialer),
+            )
+        } else {
+            log("event=phone-mcp action=dial ok=false reason=unavailable after_teardown=true dialer=not_opened")
+            PhoneResult.refused(
+                "dial",
+                PhoneReason.UNAVAILABLE,
+                "our call ended but the dialer did not open; nothing was dialled. The " +
+                    "conversation is still on the gateway — call again to resume it.",
+            )
+        }
+        rememberDial(generation, to, dialer, nowEpoch)
+        try {
+            audit(result, linkedMapOf<String, Any?>("action" to "dial", "to" to to), nowEpoch)
+        } catch (_: Throwable) {
         }
     }
 
     /** Open one launchable app, entering PiP first when a call is live ([CallWindow]). */
     private fun launch(call: PhoneTool.Call.Launch): PhoneResult {
+        backgroundRefusal("launch")?.let { return it }
         val target = platform.resolveLaunchable(call.app) ?: return noApp(
             "launch",
             "no launchable app matches \"${call.app}\"; only an activity with a launcher entry " +
@@ -1438,140 +2038,55 @@ class PhoneEngine(
 
     /** Open one URI, optionally in a named package, through the same PiP-first window. */
     private fun open(call: PhoneTool.Call.Open): PhoneResult {
-        val target = platform.resolveUri(call.uri, call.packageName) ?: return noApp(
-            "open",
-            "no app on this phone opens that URI" +
-                (call.packageName?.let { " in $it" } ?: "") + "; nothing was opened",
-        )
+        backgroundRefusal("open")?.let { return it }
+        val claimed = platform.resolveUri(call.uri, call.packageName)
+        val target = when (claimed) {
+            PhoneEngine.PhonePlatform.UriTarget.None -> return noApp(
+                "open",
+                "no app on this phone opens that URI" +
+                    (call.packageName?.let { " in $it" } ?: "") + "; nothing was opened",
+            )
+            PhoneEngine.PhonePlatform.UriTarget.Ambiguous -> {
+                // Android resolved its own chooser, not an app. Starting it explicitly would
+                // report `package:"android"` as though the chooser were the app; name the
+                // ambiguity and let the caller choose (M6).
+                log("event=phone-mcp action=open ok=false reason=invalid-arguments chooser=true")
+                return PhoneResult.refused(
+                    "open",
+                    PhoneReason.INVALID,
+                    "several apps can open this; name a `package`",
+                )
+            }
+            is PhoneEngine.PhonePlatform.UriTarget.App -> claimed.target
+        }
         return handOff("open", target) { platform.startUri(target, call.uri) }
     }
 
-    // ---- apps: the one card-gated action ----
+    // ---- apps: the consequential action ----
 
     /**
-     * `uninstall`, in two steps on the same tool.
+     * `uninstall`, once the owner has allowed it — by the card at Ask, or by a standing Allow.
      *
-     * Without [PhoneTool.Call.Uninstall.approvalId] this is the **request**: the platform's label
-     * is read, the card is raised, and the refusal carries the id and expiry the agent needs for
-     * the second call. Nothing is removed. With an id this is the **execution** check: the desk
-     * decides whether it is the same action, the same canonical package, unexpired and unburnt.
-     * Only then does Android's own confirmation open — after our card, not instead of it.
+     * Android's own confirmation still opens: it asks "may this app be removed?", which is a
+     * different question from our card's "did you mean this app?". Opening it is the limit of what
+     * this phone can honestly claim — it cannot see the owner's answer there.
      */
-    private fun uninstall(call: PhoneTool.Call.Uninstall, nowEpoch: Long): PhoneResult {
-        val canonical = PhoneApproval.canonical(PhoneApproval.ACTION, approvalArgs(call.packageName))
-        val digest = PhoneApproval.digest(canonical)
-
-        if (call.approvalId == null) {
-            val label = platform.appLabel(call.packageName) ?: run {
-                log("event=phone-mcp action=uninstall ok=false reason=unavailable")
-                return PhoneResult.refused(
-                    "uninstall",
-                    PhoneReason.UNAVAILABLE,
-                    "no installed app has the package \"${call.packageName}\"; nothing was removed",
-                )
-            }
-            return when (
-                val request = approvals.request(call.packageName, label, canonical, digest, nowEpoch)
-            ) {
-                is PhoneApproval.Request.Raised -> {
-                    val card = request.card
-                    log("event=phone-mcp action=uninstall ok=false reason=approval-required id=${card.id}")
-                    PhoneResult.refused(
-                        "uninstall",
-                        PhoneReason.APPROVAL,
-                        "the owner must approve removing ${card.label}; the card is up for " +
-                            "${PhoneApproval.TIMEOUT_MS / 1000} seconds. Call uninstall again with " +
-                            "the same package and approval=\"${card.id}\" after they answer.",
-                        tier = PhoneTiers.APPROVAL,
-                        facts = linkedMapOf<String, Any?>(
-                            "approval_id" to card.id,
-                            "expires_at" to card.expiresAtMs,
-                            "summary" to card.summary,
-                        ),
-                    )
-                }
-                PhoneApproval.Request.Busy -> {
-                    log("event=phone-mcp action=uninstall ok=false reason=approval_busy")
-                    PhoneResult.refused(
-                        "uninstall",
-                        PhoneApproval.Reason.BUSY,
-                        "three approval cards are already waiting on the phone; nothing was raised " +
-                            "and nothing was removed",
-                        tier = PhoneTiers.APPROVAL,
-                    )
-                }
-                is PhoneApproval.Request.Unavailable -> {
-                    log("event=phone-mcp action=uninstall ok=false reason=unavailable")
-                    PhoneResult.refused(
-                        "uninstall",
-                        PhoneReason.UNAVAILABLE,
-                        request.detail,
-                        tier = PhoneTiers.APPROVAL,
-                    )
-                }
-            }
-        }
-
-        return when (
-            val grant = approvals.authorize(
-                call.approvalId,
-                PhoneApproval.ACTION,
-                approvalArgs(call.packageName),
-                nowEpoch,
-            )
-        ) {
-            is PhoneApproval.Grant.Pending -> {
-                val card = grant.card
-                PhoneResult.refused(
-                    "uninstall",
-                    PhoneReason.APPROVAL,
-                    "the owner has not answered the card for ${card.label} yet; nothing was removed",
-                    tier = PhoneTiers.APPROVAL,
-                    facts = linkedMapOf<String, Any?>(
-                        "approval_id" to card.id,
-                        "expires_at" to card.expiresAtMs,
-                        "summary" to card.summary,
-                    ),
-                )
-            }
-            is PhoneApproval.Grant.Refused -> {
-                log("event=phone-mcp action=uninstall ok=false reason=${grant.reason}")
-                PhoneResult.refused(
-                    "uninstall",
-                    grant.reason,
-                    grant.detail,
-                    tier = PhoneTiers.APPROVAL,
-                )
-            }
-            is PhoneApproval.Grant.Allowed -> executeUninstall(grant.card)
-        }
-    }
-
-    /** The canonical argument set the card is bound to: the action and the package, nothing else. */
-    private fun approvalArgs(packageName: String): Map<String, Any?> = linkedMapOf(
-        "action" to PhoneApproval.ACTION,
-        "package" to packageName,
-    )
-
-    /**
-     * The card said yes. Android's own confirmation still runs: it asks "may this app be removed?",
-     * which is a different question from our card's "did you mean this app?". Opening it is the
-     * limit of what this phone can honestly claim — it cannot see the owner's answer there.
-     */
-    private fun executeUninstall(card: PhoneApproval.Card): PhoneResult =
-        when (val outcome = platform.uninstall(card.packageName)) {
+    private fun executeUninstall(packageName: String): PhoneResult {
+        backgroundRefusal("uninstall")?.let { return it }
+        val label = platform.appLabel(packageName).orEmpty().ifEmpty { packageName }
+        return when (val outcome = platform.uninstall(packageName)) {
             is PhonePlatform.Uninstall.Confirming -> {
-                log("event=phone-mcp action=uninstall ok=true package=${card.packageName} confirming=true")
+                log("event=phone-mcp action=uninstall ok=true package=$packageName confirming=true")
                 PhoneResult.done(
                     "uninstall",
                     null,
                     linkedMapOf<String, Any?>(
-                        "package" to card.packageName,
-                        "label" to card.label,
+                        "package" to packageName,
+                        "label" to label,
                         "platform_confirmation" to true,
                         "undoable" to false,
                         "note" to
-                            "Android is asking you to confirm removing ${card.label}; the phone " +
+                            "Android is asking you to confirm removing $label; the phone " +
                             "cannot see whether you do",
                     ),
                 )
@@ -1581,7 +2096,7 @@ class PhoneEngine(
                 PhoneResult.refused(
                     "uninstall",
                     PhoneReason.UNAVAILABLE,
-                    "${card.label} is not installed any more; nothing was removed",
+                    "$label is not installed any more; nothing was removed",
                     tier = PhoneTiers.APPROVAL,
                 )
             }
@@ -1595,6 +2110,7 @@ class PhoneEngine(
                 )
             }
         }
+    }
 
     /** Expire approval cards. The surface's timer calls this; the engine also ticks on each call. */
     fun tickApprovals(nowEpoch: Long) = approvals.tick(nowEpoch)
@@ -1625,13 +2141,13 @@ class PhoneEngine(
         val host = platform.window()
         var started = false
         val begin = { started = start() }
-        val order = if (host == null) {
+        val plan = if (host == null) {
             begin()
-            CallWindow.Order.LAUNCH_NOW
+            CallWindow.Plan(CallWindow.Order.LAUNCH_NOW, posted = true)
         } else {
             CallWindow.launch(host, begin)
         }
-        if (order == CallWindow.Order.LAUNCH_NOW && !started) {
+        if (plan.order == CallWindow.Order.LAUNCH_NOW && !started) {
             log("event=phone-mcp action=$action ok=false reason=unavailable")
             return PhoneResult.refused(
                 action,
@@ -1639,15 +2155,29 @@ class PhoneEngine(
                 "Android refused to start ${target.packageName}; nothing was opened",
             )
         }
+        // The posted start is only arranged, never observed. If the window refused to take it
+        // (finishing/destroyed) nothing will run, so this is a refusal; if it took it, the
+        // result says `pending` rather than claiming the app is on screen (M6).
+        if (plan.order == CallWindow.Order.PIP_THEN_LAUNCH && !plan.posted) {
+            log("event=phone-mcp action=$action ok=false reason=unavailable window=finishing")
+            return PhoneResult.refused(
+                action,
+                PhoneReason.UNAVAILABLE,
+                "the Vox window is closing, so ${target.packageName} was not opened; nothing was opened",
+            )
+        }
+        val pending = plan.order == CallWindow.Order.PIP_THEN_LAUNCH
         log(
             "event=phone-mcp action=$action ok=true package=${target.packageName} " +
-                "pip=${order == CallWindow.Order.PIP_THEN_LAUNCH}"
+                "pip=$pending pending=$pending"
         )
         return PhoneResult.info(
             action,
             linkedMapOf<String, Any?>(
                 "package" to target.packageName,
                 "component" to target.component,
+                "started" to if (pending) "after_pip" else "now",
+                "handoff" to if (pending) "pending" else "opened",
             ),
         )
     }
@@ -1660,7 +2190,8 @@ class PhoneEngine(
 
     /**
      * A number as given, or a name resolved through [PhonePlatform.contactMatches]. The Contacts
-     * group's grant is checked before this runs ([PhoneTool.parse]); what remains here is the
+     * grant is enforced before this runs ([PhoneTool.parse]): only Allow reaches here with a name,
+     * because Ask and Off are both refused with a governance reason. What remains here is the
      * platform's answer: a missing `READ_CONTACTS`, no such person, or a provider failure.
      */
     private fun resolveRecipient(action: String, raw: String, contact: Boolean): Recipient {
@@ -1699,13 +2230,54 @@ class PhoneEngine(
 
     // ---- undo ----
 
-    fun undo(id: String, nowElapsed: Long, nowEpoch: Long): PhoneResult = synchronized(lock) {
+    /**
+     * Reverse one registered action.
+     *
+     * The owner's door ([Origin.OWNER], the sheet's Undo tap) may reverse anything still
+     * registered: those are the owner's own actions, and the phone's own behaviour is unchanged.
+     * The mind's door ([Origin.MIND]) may reverse only a **mind** entry whose group is not Off —
+     * an owner's 6 am alarm is not the agent's to cancel, and a grant that has since been turned
+     * Off is not a grant. A refusal leaves the entry in place, so the owner can still reverse it.
+     */
+    fun undo(
+        id: String,
+        nowElapsed: Long,
+        nowEpoch: Long,
+        origin: Origin = Origin.OWNER,
+    ): PhoneResult = synchronized(lock) {
         prune(nowElapsed, nowEpoch)
-        val entry = undos.remove(id)
+        val entry = undos[id]
             ?: return PhoneResult.refused(
                 "undo", PhoneReason.EXPIRED,
                 "no undo is registered for that id any more; it fired, was superseded, or was never this phone's",
             )
+        if (origin == Origin.MIND) {
+            if (entry.origin != Origin.MIND) {
+                log("event=phone-mcp action=undo ok=false id=$id kind=${entry.kind} reason=owner-entry")
+                return PhoneResult.refused(
+                    "undo", PhoneReason.NOT_GRANTED,
+                    "that ${entry.kind} was set on the phone by the owner, not by the agent; only " +
+                        "the owner can reverse it. Nothing was undone.",
+                )
+            }
+            val action = actionForKind(entry.kind)
+            if (action == null || !mindDoorOpen(action)) {
+                val group = action?.let { PhoneGrants.groupOf(it)?.label }
+                log("event=phone-mcp action=undo ok=false id=$id kind=${entry.kind} reason=not_granted")
+                return PhoneResult.refused(
+                    "undo", PhoneReason.NOT_GRANTED,
+                    if (group == null) {
+                        "that ${entry.kind} is outside every capability group, so the agent may " +
+                            "not reverse it; nothing was undone"
+                    } else {
+                        "the \"$group\" group is off on this phone, so the agent may not reverse " +
+                            "that ${entry.kind}; nothing was undone. Only the owner can turn it " +
+                            "on in Phone tools."
+                    },
+                )
+            }
+        }
+        undos.remove(id)
         if (!entry.perform()) {
             log("event=phone-mcp action=undo ok=false id=${entry.id} kind=${entry.kind} reason=unavailable")
             return PhoneResult.refused("undo", PhoneReason.UNAVAILABLE, "the phone could not reverse that ${entry.kind}")
@@ -1729,11 +2301,21 @@ class PhoneEngine(
 
     // ---- discovery ----
 
+    /**
+     * What the phone is doing, filtered to what the mind may see.
+     *
+     * `running`, `notes` and the registry carry only **mind** entries whose group is not Off: an
+     * owner's voice-set timer, alarm or note is the owner's, and a group that is Off is not a
+     * grant to read it either (H4). The live DND and volume readings belong to the `dnd-volume`
+     * group, so they are omitted when it is Off as well. The owner's own screens do not read this
+     * view; nothing here changes what the phone does for the owner.
+     */
     fun status(nowElapsed: Long, nowEpoch: Long): PhoneResult = synchronized(lock) {
         prune(nowElapsed, nowEpoch)
         val offered = PhoneTool.offeredActions(grants)
         val running = ArrayList<Map<String, Any?>>(timers.size + alarms.size)
         for (a in timers.values) {
+            if (!mindSees("timer", a.origin)) continue
             running.add(
                 linkedMapOf(
                     "id" to a.id,
@@ -1743,6 +2325,7 @@ class PhoneEngine(
             )
         }
         for (a in alarms.values) {
+            if (!mindSees("alarm", a.origin)) continue
             running.add(
                 linkedMapOf(
                     "id" to a.id,
@@ -1753,40 +2336,58 @@ class PhoneEngine(
             )
         }
         val saved = ArrayList<Map<String, Any?>>(notes.size)
-        for (n in notes.values) saved.add(linkedMapOf("id" to n.id, "text" to n.text))
-        PhoneResult.info(
-            "status",
-            linkedMapOf<String, Any?>(
-                "offered" to offered,
-                "tiers" to linkedMapOf(
-                    "0" to offered.filter { PhoneTiers.of(it) == PhoneTiers.INSTANT },
-                    "1" to offered.filter { PhoneTiers.of(it) == PhoneTiers.REPORTED },
-                    // Named from the one tier table, so a name cannot linger here after it moved.
-                    "2" to PhoneTiers.names(PhoneTiers.APPROVAL),
-                ),
-                "grants" to PhoneGrants.summary(grants),
-                "running" to running,
-                "notes" to saved,
-                "registry" to registry(nowElapsed, nowEpoch),
-                "dnd" to linkedMapOf("on" to dndApplied, "granted" to platform.dndGranted()),
-                "volume" to (volumeApplied ?: platform.currentVolume()),
+        for (n in notes.values) {
+            if (!mindSees("note", n.origin)) continue
+            saved.add(linkedMapOf("id" to n.id, "text" to n.text))
+        }
+        val facts = linkedMapOf<String, Any?>(
+            "offered" to offered,
+            "tiers" to linkedMapOf(
+                "0" to offered.filter { PhoneTiers.of(it) == PhoneTiers.INSTANT },
+                "1" to offered.filter { PhoneTiers.of(it) == PhoneTiers.REPORTED },
+                // Named from the one tier table, so a name cannot linger here after it moved.
+                "2" to PhoneTiers.names(PhoneTiers.APPROVAL),
             ),
+            "grants" to PhoneGrants.summary(grants),
+            "running" to running,
+            "notes" to saved,
+            "registry" to registry(nowElapsed, nowEpoch),
         )
+        if (mindDoorOpen("dnd")) {
+            facts["dnd"] = linkedMapOf("on" to dndApplied, "granted" to platform.dndGranted())
+            facts["volume"] = volumeApplied ?: platform.currentVolume()
+        }
+        // The dial handoff that has finished since the last dial started. A mind that was told
+        // `dialer:"unknown"` asks here for the answer it could not be given on the turn.
+        if (mindDoorOpen("dial")) lastDial?.let { facts["dial"] = it }
+        PhoneResult.info("status", facts)
     }
 
     /**
      * The compact registry the presence context reports — the same strings, from the same state, that
      * `status` explains in full. Expired entries are dropped here, so the registry cannot report a
-     * timer that already rang.
+     * timer that already rang. It is the **mind's** view: owner-initiated entries are not in it
+     * (H4), because this line is read into the agent's context.
      */
     fun registry(nowElapsed: Long, nowEpoch: Long): List<String> = synchronized(lock) {
         prune(nowElapsed, nowEpoch)
         val out = ArrayList<String>()
-        dndApplied?.let { out.add("dnd=${if (it) "on" else "off"}") }
-        volumeApplied?.let { out.add("volume=$it%") }
-        for (a in timers.values) out.add("timer(remaining=${LocalActionSpeech.remaining(a.firesAtElapsed - nowElapsed)})")
-        for (a in alarms.values) out.add("alarm(at=${LocalActionSpeech.clock24(a.hour, a.minute)})")
-        for (n in notes.values) out.add("note(id=${n.id})")
+        if (mindDoorOpen("dnd")) {
+            dndApplied?.let { out.add("dnd=${if (it) "on" else "off"}") }
+            volumeApplied?.let { out.add("volume=$it%") }
+        }
+        for (a in timers.values) {
+            if (!mindSees("timer", a.origin)) continue
+            out.add("timer(remaining=${LocalActionSpeech.remaining(a.firesAtElapsed - nowElapsed)})")
+        }
+        for (a in alarms.values) {
+            if (!mindSees("alarm", a.origin)) continue
+            out.add("alarm(at=${LocalActionSpeech.clock24(a.hour, a.minute)})")
+        }
+        for (n in notes.values) {
+            if (!mindSees("note", n.origin)) continue
+            out.add("note(id=${n.id})")
+        }
         out.takeLast(PresenceContext.MAX_ACTIONS)
     }
 
@@ -1795,8 +2396,38 @@ class PhoneEngine(
 
     // ---- internals ----
 
-    private fun register(id: String, kind: String, expiresAtElapsed: Long, perform: () -> Boolean) {
-        undos[id] = Undo(id, kind, expiresAtElapsed, perform)
+    /** The action whose group governs an entry of [kind], or null when no group does. */
+    private fun actionForKind(kind: String): String? = when (kind) {
+        "timer", "alarm", "dnd", "volume", "note" -> kind
+        // The registry's kind is the noun; the action that made it is `event_create`.
+        "event" -> "event_create"
+        else -> null
+    }
+
+    /** True when the mind's door is open for [action]'s group: the group exists and is not Off. */
+    private fun mindDoorOpen(action: String): Boolean =
+        PhoneGrants.stateOf(grants, action)?.let { it != PhoneGrants.State.OFF } == true
+
+    /**
+     * True when an entry of [kind] that was made by [origin] may be shown to — and reversed by —
+     * the mind. Ask is enough (it is not Off, and an action that ran behind a card is on), but the
+     * entry must
+     * be the mind's own: an owner's action is never cleared by a group being on.
+     */
+    private fun mindSees(kind: String, origin: Origin): Boolean {
+        if (origin != Origin.MIND) return false
+        val action = actionForKind(kind) ?: return false
+        return mindDoorOpen(action)
+    }
+
+    private fun register(
+        id: String,
+        kind: String,
+        expiresAtElapsed: Long,
+        origin: Origin,
+        perform: () -> Boolean,
+    ) {
+        undos[id] = Undo(id, kind, expiresAtElapsed, origin, perform)
     }
 
     /** A second change of the same setting makes the older change's "previous" meaningless. */
@@ -1816,6 +2447,29 @@ class PhoneEngine(
     companion object {
         /** How long a dnd/volume undo stays meaningful. Long enough for the next turn to correct it. */
         const val CHANGE_UNDO_MS = 10 * 60_000L
+
+        /**
+         * The one background-launch refusal. Android blocks an activity start from an app that
+         * is not visible without throwing, so the handoffs say this rather than claiming a
+         * launch that never happened (B2). It names the action so the mind can report which
+         * request was declined, and says plainly that nothing was attempted.
+         */
+        fun backgroundDetail(action: String): String =
+            "the phone is not in the foreground, so $action was not attempted: Vox has to be " +
+                "on screen to hand off to another app, and Android blocks the start from the " +
+                "background. Nothing was opened, sent or ended."
+
+        /** The dialer took the intent: it is open with the number. Vox has not placed a call. */
+        const val DIALER_OPENED = "opened"
+
+        /** The dialer was resolved but would not start, or the call ended and it did not open. */
+        const val DIALER_NOT_OPENED = "not_opened"
+
+        /**
+         * The dial happens after the reply (the live-call teardown), so this phone cannot see
+         * whether the dialer opened. Said as unknown, never as done.
+         */
+        const val DIALER_UNKNOWN = "unknown"
 
         /** A note's undo outlives the turn that made it, because the note itself does. */
         const val NOTE_UNDO_MS = 24 * 60 * 60_000L

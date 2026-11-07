@@ -15,6 +15,9 @@ import android.content.SharedPreferences
  *
  * A set's own preferences keep their meaning *inside* the gate: Presence's switch, and the two
  * continuous-listening switches (which default **on**, D29), apply only once the set is allowed.
+ * Continuous listening is how the being hears, so it also requires the Presence set; Phone tools
+ * is the mind acting on the phone and is independent of Presence (D38). Either can be taken
+ * without the other.
  *
  * Upgrades keep what was running ([migrate]): an install that already had Presence running (the
  * layer chosen and its model downloaded) or continuous capture switched on keeps it, with the
@@ -35,16 +38,17 @@ object AlphaGate {
         PRESENCE(
             "alpha_set_presence", "Presence",
             "The being on the phone: it speaks its own short lines while your agent works, in " +
-                "your agent's voice. Needs its on-device model (about 2.6 GB) and a phone with " +
-                "8 GB of memory. While a call is live it holds about 3 GB of memory. Unfinished, " +
-                "and honest about it.",
+                "your agent's voice. It may look at what the phone is doing; it does not act on " +
+                "the phone. Needs its on-device model (about 2.6 GB) and a phone with 8 GB of " +
+                "memory. While a call is live it holds about 3 GB of memory. Unfinished, and " +
+                "honest about it. Independent of Phone tools.",
         ),
         CONTINUOUS_LISTENING(
             "alpha_set_continuous_listening", "Continuous listening",
             "Continuous capture keeps the microphone open and reads the recogniser every 100 ms; " +
                 "semantic endpointing judges when you have finished instead of waiting out a " +
                 "silence. Costs about 300 MB more memory during a call. Both switches live in " +
-                "Hearing.",
+                "Hearing. Requires Presence: continuous listening is how the being hears.",
         ),
         TURN_TAKING(
             "alpha_set_turn_taking", "Turn-taking",
@@ -55,24 +59,10 @@ object AlphaGate {
         ),
         PHONE_TOOLS(
             "alpha_set_phone_tools", "Phone tools",
-            "Lets your agent act on this phone — a timer, an alarm, Do Not Disturb, the volume. " +
-                "Vox runs a small server on your tailnet with its own token, and your agent " +
-                "reaches it over MCP. Off until you set it up.",
-        ),
-        PROFILES(
-            "alpha_set_profiles", "Switching profiles",
-            "Talk to another agent on your host. Each profile carries its own address, key, " +
-                "model and voice, and switching starts a fresh conversation. Unfinished until a " +
-                "host's own profile list arrives reliably (#436).",
-        ),
-        // #437: the session browser. The sibling of Switching profiles — both are the same
-        // class of unfinished surface (a host question answered with the host's key), and both
-        // leave Alpha together once they have been lived with.
-        SESSIONS(
-            "alpha_set_sessions", "Sessions",
-            "See the conversations your agent already has — including ones you started at your " +
-                "desk — and pick one up on the phone. Resuming shows what was said and continues " +
-                "the same conversation.",
+            "The mind acting on the phone: your agent can set a timer or an alarm, change Do Not " +
+                "Disturb or the volume, through one tool. Vox runs a small server on your tailnet " +
+                "with its own token, and your agent reaches it over MCP. Off until you set it up. " +
+                "Independent of Presence.",
         ),
     }
 
@@ -87,8 +77,26 @@ object AlphaGate {
 
     fun selected(r: Reader, set: FeatureSet): Boolean = r.getBoolean(set.key, false)
 
-    /** The one question every alpha surface asks: may [set] run (and be reached) right now? */
-    fun allows(r: Reader, set: FeatureSet): Boolean = masterOn(r) && selected(r, set)
+    /**
+     * The one dependency between sets: continuous listening is how the being hears, so it
+     * cannot run without Presence. Null means none.
+     *
+     * Phone tools has no entry here on purpose. The phone is the mind's capability and the being
+     * is a voice; either can be taken without the other (D38).
+     */
+    fun dependencyRefusal(r: Reader, set: FeatureSet): String? =
+        if (set == FeatureSet.CONTINUOUS_LISTENING && !selected(r, FeatureSet.PRESENCE))
+            "Requires Presence: continuous listening is how the being hears."
+        else null
+
+    /**
+     * The one question every alpha surface asks: may [set] run (and be reached) right now?
+     *
+     * The set's own selection is not enough for continuous listening — a stored preference from
+     * an earlier build where Presence was off must be inert, not merely dimmed in the picker.
+     */
+    fun allows(r: Reader, set: FeatureSet): Boolean =
+        masterOn(r) && selected(r, set) && dependencyRefusal(r, set) == null
 
     fun allows(prefs: SharedPreferences, set: FeatureSet): Boolean = allows(reader(prefs), set)
 

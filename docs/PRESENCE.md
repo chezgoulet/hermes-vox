@@ -245,21 +245,25 @@ question (#251), with the owner's read being one or the other.
 
 ---
 
-## Local actions: the four things the phone does by itself (#421 step 2)
+## The phone does not decide what you meant (#421, D38)
 
-Some requests cannot wait for a gateway. "Set a timer for five minutes" has to be running before a
-streamed turn would even have opened its connection, so it is matched by a **deterministic grammar,
-not a model** (`LocalActionGrammar`) and taken on the phone: the action runs, the caller hears one
-short line, and the registry the presence context reports is updated so the mind can answer
-follow-ups ("how long left?").
+The phone used to match the caller's words against a deterministic grammar and take a timer, alarm,
+Do Not Disturb or volume action locally, before the mind was asked. That made a regex on the phone a
+second actor: the owner was talking to one decision-maker and not the other, and *"set a timer"*
+never reached the mind, with Presence on or off. The grammar and the interception are gone. Every
+voice turn goes to the mind; when it wants the phone it calls the `phone` tool below, with that
+path's grant and card.
 
-The grammar is tried on any live voice turn, before the Alpha gate is consulted for Presence: it is
-the caller's own instruction, not the soul speaking, and it has no switch of its own today. The
-MCP server and the capability grants (below) are behind the **Phone tools** set.
+**Presence may look; it may not act.** The being reads the registry so it can say *"your timer has
+about four minutes left"*, and it reads the clock, battery, network and Do Not Disturb state. It does
+not get a call that sets, cancels or changes anything: `PhoneReadout` exposes the registry and
+nothing else. The mind is what acts. Presence and **Phone tools** are therefore independent sets —
+either can be taken without the other.
 
-**Four actions, Tier 0 only — reversible, private, nothing outward-facing:**
+**The actions the mind can ask for** (Tier 0, reversible and private, which is the description of
+their consequence and undo — not a permission the phone grants itself):
 
-| action | what it sounds like | how |
+| action | what the caller hears when the mind reports it | how |
 |---|---|---|
 | timer | "Timer set for 5 minutes." | `AlarmManager.setExact(…, OnAlarmListener)`; rings through this app |
 | alarm | "Alarm set for 7:30 am." | the same at a wall-clock time (`RTC_WAKEUP`), next occurrence |
@@ -288,19 +292,16 @@ MCP server and the capability grants (below) are behind the **Phone tools** set.
 actions): a failure has its own words and names what failed. Nothing here claims a result it did not
 produce.
 
-**When it does not match, nothing changes.** A compound or ambiguous sentence ("set a timer for five
-minutes and then email Bob"), a question that merely contains the words ("what does do not disturb
-do"), or any utterance with a letter outside A–Z — English only for now — falls through to the mind
-exactly as before. The grammar claims the whole utterance or none of it.
+**What it costs, stated.** A timer now costs a gateway round trip and needs the **Phone tools** set
+with the timer group granted. With the tool absent or the group Off, the mind cannot act on the phone
+and says so; the phone does not invent a timer behind the conversation's back.
 
 ---
 
 ## The mind's own actions: one MCP tool, and a result (#421 steps 3–5)
 
-The lane above is the caller's. The mind needs its own, and it cannot be the same wire: a timer the
-caller asked for must be running before a streamed turn would have connected, while a timer the
-*mind* asked for must come back with an answer. So the phone runs a small **MCP server on the
-tailnet** with **one** tool, `phone`:
+The mind needs a way to act, and it needs a result to reason about. So the phone runs a small **MCP
+server on the tailnet** with **one** tool, `phone`:
 
 | action | tier | what the phone does |
 |---|---|---|
@@ -322,9 +323,10 @@ the phone's own claims before the mind's.
 (`{"action":"undo","id":"timer-3"}`), and it lives for the action's lifetime: a timer until it rings,
 dnd and volume until superseded or ten minutes, a note for a day.
 
-**One registry.** `PhoneEngine` holds the ids, the running actions and the undos, and both lanes go
-through it — so the `local_actions:` line the presence context sends and the `status` the mind asks
-for are the same memory. The world the mind reads about and the world it acts on cannot drift apart.
+**One registry.** `PhoneEngine` holds the ids, the running actions and the undos — so the
+`local_actions:` line the presence context sends and the `status` the mind asks for are the same
+memory. The world the mind reads about and the world it acts on cannot drift apart, and Presence
+reads none of the mutating half.
 
 The gateway needs one `mcp_servers` entry to see the tool, and the owner is not asked to write it.
 **Set up with my agent** sends one ordinary turn asking the agent to add the entry to its own
@@ -378,7 +380,7 @@ gateway appends to the system prompt for that request only and never persists
 |---|---|---|
 | `instructions` | the voice register: *"You are speaking out loud on a phone call. Reply in two to four sentences of plain speech — no code, no markdown, no lists."* | the mind knows how it is being heard. It says nothing about what it may do, so every tool stays available (D31) |
 | `instructions` | the soul-sync (`ErDrift.sync`): what the phone's voice has already said this turn, and the caller's measured vibe | the mind does not repeat or contradict the beat |
-| `instructions` | the presence context (`PresenceContext`): the soul's last line, whether the phone is speaking, the local actions the phone is running, and the time, battery, connectivity and Do Not Disturb state | the mind can answer "how long is left?" without asking, and knows what the phone has already done |
+| `instructions` | the presence context (`PresenceContext`): the soul's last line, whether the phone is speaking, the actions running on the phone, and the time, battery, connectivity and Do Not Disturb state | the mind can answer "how long is left?" without asking, and knows what the phone has already done. Presence reads this; it does not get a mutating call |
 | `model_options.reasoning` | `{"enabled":true,"effort":"low"}` by default (`voice_reasoning_effort`: off / low / medium / high) | a spoken turn wants the fast answer; a provider that ignores it behaves as before |
 
 Every request sends `instructions`, **including an empty one on typed turns**: the gateway inherits

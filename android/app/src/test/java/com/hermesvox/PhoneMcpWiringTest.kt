@@ -6,8 +6,8 @@ import org.junit.Test
 import java.io.File
 
 /**
- * #421 steps 3–4's wiring, pinned at source level the way [LocalActionWiringTest] and
- * [GlueClaimGuardTest] pin theirs: the parts that matter are Android-bound (a foreground service's
+ * #421 steps 3–4's wiring, pinned at source level the way [GlueClaimGuardTest] pins its:
+ * the parts that matter are Android-bound (a foreground service's
  * lifetime, a keystore, a tailnet interface), so what can be checked off-device is the ORDER, the
  * OWNERSHIP, and the one address.
  *
@@ -31,8 +31,9 @@ class PhoneMcpWiringTest {
             vc.contains("PhoneMcp.start(context) { args -> localActions.phone(args) }"),
         )
         assertTrue(
-            "the presence context must report the same instance",
-            vc.contains("actions = localActions.registry()"),
+            "the presence context must report the same instance, read-only",
+            vc.contains("private val presenceReadout: PhoneReadout by lazy { localActions }") &&
+                vc.contains("actions = presenceReadout.registry("),
         )
         assertTrue("one lazy instance, not two", vc.contains("private val localActions: LocalActions by lazy"))
     }
@@ -45,6 +46,39 @@ class PhoneMcpWiringTest {
         assertTrue("the server starts with the call", startBody.contains("PhoneMcp.start("))
         val stopBody = vc.substring(stopAt, minOf(vc.length, stopAt + 600))
         assertTrue("and is closed by the hangup", stopBody.contains("PhoneMcp.stop()"))
+    }
+
+    /**
+     * The one-button setup's listener: `hermes mcp add` proves reachability when the agent gets to
+     * it, and the button is pressed from an idle phone. So the press opens the listener itself, the
+     * store opens it *before* the turn goes out, and the window follows the run — there is no
+     * closing clock for the agent to beat. A hangup during the attempt does not close it; turning
+     * the set off still does, immediately.
+     */
+    @Test fun the_setup_window_opens_the_listener_without_a_call() {
+        val store = File("src/main/java/com/hermesvox/PhoneBootstrapStore.kt").readText()
+        val sheet = File("src/main/java/com/hermesvox/PhoneToolsSheet.kt").readText()
+        assertTrue("the window exists", mcp.contains("fun openWindow("))
+        assertTrue("and closes when the run ends", mcp.contains("fun closeWindow("))
+        assertFalse("there is no closing clock any more", mcp.contains("scheduleWindowClose"))
+        assertTrue("a window that cannot open is a named failure, not a send",
+            store.contains("PhoneMcp.openWindow(app)") && store.contains("Failure.WINDOW_CLOSED"))
+        val windowAt = store.indexOf("PhoneMcp.openWindow(app)")
+        val sendAt = store.indexOf("session.startSetupStream(prompt)")
+        assertTrue("the listener is up before the instruction leaves", windowAt in 1 until sendAt)
+        assertTrue("a hangup keeps a window that is still open", mcp.contains("hold=window"))
+        assertTrue("the flow closes it at the run's end, with a short grace",
+            store.contains("PhoneMcp.closeWindow(") && store.contains("HANDSHAKE_GRACE_MS"))
+        assertTrue("and immediately once the handshake lands",
+            store.contains("PhoneMcp.closeWindow(\"setup-connected\")"))
+        assertTrue("the Alpha gate closes it immediately", mcp.contains("fun closeNow()"))
+        assertTrue("the owner is told the listener's life, never a countdown",
+            sheet.contains("PhoneBootstrap.listeningLine("))
+        assertTrue("one registry serves the call path and the window",
+            store.contains("LocalActions.shared(app)") &&
+                vc.contains("LocalActions.shared(context)") &&
+                File("src/main/java/com/hermesvox/LocalActions.kt").readText()
+                    .contains("fun shared(context: Context): LocalActions"))
     }
 
     @Test fun it_binds_the_tailnet_address_and_nothing_else() {
@@ -82,17 +116,11 @@ class PhoneMcpWiringTest {
         assertTrue("the status carries the gate", mcp.contains("allowed = AlphaGate.allows(app, AlphaGate.FeatureSet.PHONE_TOOLS)"))
         assertTrue("the settings row is dimmed and takes no tap",
             settings.contains("gate(R.id.row_phone_mcp, phoneTools)"))
-        assertTrue("turning the set off stops a live listener", settings.contains("if (!phoneTools) PhoneMcp.stop()"))
+        assertTrue("turning the set off closes a live listener, window included",
+            settings.contains("if (!phoneTools) PhoneMcp.closeNow()"))
         assertTrue("the first-run offer is gated too",
             offer.contains("AlphaGate.allows(prefs, AlphaGate.FeatureSet.PHONE_TOOLS)"))
         assertTrue("status rows say why they are off", view.contains("const val ALPHA_OFF"))
-    }
-
-    @Test fun the_user_initiated_path_is_untouched_and_still_local() {
-        val parse = vc.indexOf("LocalActionGrammar.parse(text)")
-        val submit = vc.indexOf("session.voiceTurn(")
-        assertTrue("the grammar still runs before the mind is asked", parse > 0 && parse < submit)
-        assertTrue("and it still ends the turn locally", vc.contains("if (local != null) { takeLocalAction(text, local, gen); return }"))
     }
 
     @Test fun the_settings_row_opens_the_setup_sheet_not_a_paste_block() {
@@ -105,17 +133,20 @@ class PhoneMcpWiringTest {
     @Test fun setup_is_an_ordinary_turn_composed_by_the_app() {
         val setup = File("src/main/java/com/hermesvox/PhoneSetup.kt").readText()
         val store = File("src/main/java/com/hermesvox/PhoneSetupStore.kt").readText()
+        val bootstrap = File("src/main/java/com/hermesvox/PhoneBootstrapStore.kt").readText()
         val sheet = File("src/main/java/com/hermesvox/PhoneToolsSheet.kt").readText()
-        assertTrue("the app composes the turn", setup.contains("fun prompt(host: String"))
-        // #452: the turn used to carry the token (and, on the day it shipped, a `***` where the
-        // token should have been). The agent now writes the entry with the key it already holds.
-        assertFalse("the turn carries no bearer", setup.contains("Authorization: Bearer \$token"))
-        assertTrue("it names the key the agent already has", setup.contains("the API key you already use for this host"))
-        assertTrue("it writes the documented shape", setup.contains("mcp_servers:"))
-        assertTrue("with the documented env reference", setup.contains("API_SERVER_KEY"))
+        assertTrue("the app composes the turn", setup.contains("fun prompt(") && setup.contains("host: String"))
+        // The one-button flow carries the phone's token, because `hermes mcp add` needs it to
+        // write the server entry; the agent is told not to echo it.
+        assertTrue("the turn carries the phone's token", setup.contains("Token: \$token"))
+        assertTrue("it uses the documented CLI", setup.contains("hermes mcp add"))
+        assertFalse("it asks for no restart", setup.contains("systemctl"))
+        assertFalse("it asks for no job id", setup.contains("JOB_ID"))
+        assertFalse("it creates no job", setup.contains("hermes cron create"))
+        assertTrue("it says the listener is open for the setup", setup.contains("open for as long as this attempt runs"))
         assertTrue("it names the tool the model sees", setup.contains("MODEL_TOOL_NAME"))
         assertTrue("it is idempotent by content", setup.contains("Do not add a second"))
-        assertTrue("it is sent as an ordinary stored turn", store.contains("session.turnStored(prompt)"))
+        assertTrue("it is sent as a no-deadline streamed turn", bootstrap.contains("session.startSetupStream(prompt)"))
         assertTrue(
             "through the live session only when it is the connection in force",
             store.contains("PhoneSetupSend.plan(liveFor, live != null, active)"),
@@ -125,7 +156,12 @@ class PhoneMcpWiringTest {
             File("src/main/java/com/hermesvox/MainActivity.kt").readText()
                 .contains("PhoneSetupStore.attach(session, PhoneSetupSend.Connection("),
         )
-        assertTrue("the prompt is visible in the sheet", sheet.contains("SHOW THE SETUP TURN"))
+        val promptAt = sheet.indexOf("configView(col, text)")
+        val copyAt = sheet.indexOf("COPY SETUP PROMPT")
+        val noteAt = sheet.indexOf("note?.let { body(col, it) }")
+        assertTrue("the prompt is on the sheet itself, not behind a disclosure", promptAt > 0)
+        assertTrue("its copy action sits with the turn", copyAt > promptAt)
+        assertTrue("and the window's note follows them", noteAt > copyAt)
         assertTrue("manual config is a disclosed fallback", sheet.contains("Manual fallback"))
     }
 
@@ -236,7 +272,10 @@ class PhoneMcpWiringTest {
 
     @Test fun the_server_reads_the_grants_per_request_not_once_at_start() {
         assertTrue("the server is handed a source", server.contains("private val grants: PhoneGrants.Source"))
-        assertTrue("tools/list builds the schema now", server.contains("PhoneTool.schema(grants)"))
+        assertTrue(
+            "tools/list builds the schema now, with the grants and the granted folders read per call",
+            server.contains("PhoneTool.schema(grants, folderLabels())"),
+        )
         assertTrue(
             "the app passes the live store, not a snapshot",
             mcp.contains("grants = PhoneGrantStore.source(app)"),

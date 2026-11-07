@@ -1,50 +1,85 @@
 # The phone as an MCP server (#421 steps 3–5)
 
-Presence has two ways of acting on the phone, and they deliberately do not share a wire:
+The mind is the only initiator. The phone does not parse the caller's words, so there is one wire:
 
 | initiator | path | guarantee |
 |---|---|---|
-| **the caller** — "set a timer for five minutes" | `LocalActionGrammar` → `LocalActions.run` | instant, no round trip; the mind learns about it from the presence context on the next turn (D32) |
-| **the mind** — "I'll remind you in an hour" | MCP `tools/call` on this server → `LocalActions.phone` | a request and a **result**; the mind knows whether it happened |
+| **the mind** — "set a timer for five minutes", or "I'll remind you in an hour" | MCP `tools/call` on this server → `LocalActions.phone` | a request and a **result**; the mind knows whether it happened, and the caller hears what actually occurred (D38) |
 
-This document is the second one: what the phone exposes, how the agent is asked to add it, what
-happens when it cannot, and what the manifest actually needs. The setup turn changes the agent's own
-configuration; the manual block remains for an agent that cannot.
+Presence may read the registry this server maintains, so the being can say what is running and how
+long is left. It may not act: `PhoneReadout` exposes no mutating call. This document is the MCP
+surface: what the phone exposes, how the agent is asked to add it, what happens when it cannot, and
+what the manifest actually needs. The setup turn changes the agent's own configuration; the manual
+block remains for an agent that cannot.
 
 
 ---
 
-## Setting it up: the app asks your agent, not you
+## Setting it up: one button, and the agent does the configuring
 
 The setup path is a turn, not a block to paste. **Settings → About & Diagnostics → Phone as an MCP
-server → Set up with my agent** composes one ordinary turn and sends it on the active profile's client
-— its url, key and declared scope, from the same live prefs Settings' connection test builds from.
-The sheet resolves that connection at the moment of the press (`PhoneSetupStore.session`), and a
-session object built for a different connection is never reused: a `HermesSession` keeps the address
-and key it was created with, so after the connection is re-pointed the held one still names the old
-gateway. That was #430 — the connection test passed while the setup turn went to the previous address
-and the gateway in force logged nothing. If there is no session at that moment, one is built there;
-only an unconfigured connection refuses. The agent edits its own configuration, verifies the entry,
-and says what it changed. The turn is visible in the sheet behind **Show the setup turn**, and the
-agent's own reply is shown beneath the state — a change to the agent's configuration is never silent.
+server → Set this up with my agent** is the one action in the not-set-up state. The button's own line
+says what will happen before it happens: your agent will be given this phone's address and its token,
+and pressing the button opens this phone's listener for **as long as the attempt runs**, so the agent
+can reach it whenever it gets there. Nothing restarts and this call is not dropped. Nothing is written to the host by Vox itself — the
+agent edits its own configuration, which is the same act as pasting the prompt by hand. The copyable
+prompt stays behind the action as the fallback, for an agent that cannot configure itself.
+
+The turn is sent on the active profile's client — its url, key and declared scope, from the same
+live prefs Settings' connection test builds from. The sheet resolves that connection at the moment
+of the press (`PhoneSetupStore.session`), and a session object built for a different connection is
+never reused: a `HermesSession` keeps the address and key it was created with, so after the
+connection is re-pointed the held one still names the old gateway. That was #430 — the connection
+test passed while the setup turn went to the previous address and the gateway in force logged
+nothing. If there is no session at that moment, one is built there; only an unconfigured connection
+refuses.
 
 The turn carries the server name (`vox`), the real tailnet URL (`http://<tailnet-ip>:8765/mcp`), the
-tool name the model will see (`mcp__vox__phone`), the documented `mcp_servers` block to write (with
-`url` and `headers`, no `command`), what the phone can and cannot do, the idempotence rule, and the
-instruction to verify the entry and reload or restart the gateway if it needs that. The exact turn is
-rendered by `PhoneSetup.prompt` and is pinned by `PhoneSetupTest`.
+tool name the model will see (`mcp__vox__phone`), the phone's `Token:`, the documented
+`hermes mcp add vox --url ... --auth header --connect-timeout 5` command, the equivalent
+`mcp_servers` entry, what the phone can and cannot do, the idempotence rule, the fact that this
+phone's listener is open for as long as this attempt runs, and the rule that **no restart is needed and none is wanted**. It asks for no job id: the gateway reconciles its own MCP configuration while it
+runs. The exact turn is rendered by `PhoneSetup.prompt` and is pinned byte for byte by
+`PhoneSetupTest`.
 
-**It carries no credential** (#452). The agent authenticates with the API key it already uses for
-this host — the same key this phone sends on its own turns — so the entry's header is written as the
-documented environment reference (`Authorization: "Bearer ${API_SERVER_KEY}"`), which the gateway
-resolves at connect time from the profile's `~/.hermes/.env`. That is why there is no pairing step:
-nothing is exchanged, and nothing in the turn is a secret. The phone's MCP server accepts that key
-alongside its own token (`PhoneMcpServer.authorized`), so a host that is not the one this phone talks
-to can still use the token from the manual block below.
+**The token rides this one turn.** `hermes mcp add` needs it to write the server's bearer, so it is
+the one secret in the instruction. It leaves the phone only on this turn, over the same authenticated
+connection every other turn uses; `PhoneSetupStore` keeps the instruction in memory for this process
+only (`lastSent`), and `PhoneBootstrapStore` never logs, audits or persists it. The agent is told
+not to echo it, and a reply that does is scrubbed before it reaches the record. The phone's MCP
+server also accepts the active connection's API key (`PhoneMcpServer.authorized`), which is why the
+manual block below remains a second way in for a host that is not the one this phone talks to.
 
 **It is idempotent by content.** The turn says that if a `vox` entry already exists, the agent must
 update it in place, not add a second one. Sending the same turn twice therefore describes the same
 end state; the sheet's **Ask again** is safe.
+
+**The add proves itself.** `hermes mcp add` verifies the connection before it saves: it refuses a
+server it cannot reach and does not write the entry. The instruction says so, and tells the agent to
+report a refusal plainly rather than saving a dead entry. A saved entry is therefore a proven one —
+which is why the flow needs no restart and no second reachability test of its own.
+
+### The one-button flow
+
+| step | what the app does | what would be a lie |
+|---|---|---|
+| **open the listener** | `PhoneMcp.openWindow` starts this phone's listener without a call, before anything is sent. If it cannot open, nothing is sent and the sheet says so. | Sending an instruction the add is certain to fail against an idle phone |
+| **ask** | Sends one fixed turn on the authenticated connection and drains the run's own event stream (`GET /v1/runs/{run_id}/events`). There is **no turn ceiling**. The button's line already named the token and the listener. | Stopping a working run because two minutes passed |
+| **show the work** | Each `tool.started` event appends one line — the tool's own name plus this app's short phrase (*terminal · ran a command*). Arguments are never read, so the token cannot reach the screen. The whole list is kept, and silence is stated as an age (*Nothing new for 4 minutes.*), never a countdown. | Inventing an action, or rendering an argument |
+| **the agent answers** | Shows the agent's words. A reply that does not report a failed add moves to *Your agent has answered*; one that reports a refusal fails with its own words. | Treating a refusal, or a polite "done", as proof |
+| **wait for the handshake** | The listener stays up while the run is alive and for a short grace after it ends. Only the phone's own MCP `initialize` is proof; the sheet then says **Connected**. | Calling a reply — or a timeout — "connected" |
+| **close the listener** | Closed at once when the handshake is the outcome, after the short post-run grace otherwise, unless a live call is holding it. A hangup during the attempt does not close it. The run is stopped only when the owner presses **Stop this attempt** or the sheet goes away, and the card says which. | Leaving a listening socket open, or stopping a run on a clock |
+
+**There is no deadline.** The run id is durable and the events endpoint is resumable (`last_seq`), so
+a dropped connection reattaches to the **same** run instead of submitting a second turn. The only
+clocks are ages the card shows. After the run ends the listener stays open for a further
+`PhoneBootstrap.HANDSHAKE_GRACE_MS` (20 seconds), because the gateway may reconcile the new entry
+just after the answer; a handshake in that window closes it at once. Without the handshake the flow
+says *the setup may not have taken*, names the step it reached, keeps the agent's last words on
+screen, and offers the copyable prompt. It never becomes Connected by timeout.
+
+**One press is one attempt.** A second press while the flow is in flight is ignored; a failed
+attempt is terminal for that attempt and offers the fallback rather than looping.
 
 **The app verifies locally, never on the agent's word.** When the gateway connects it sends an MCP
 `initialize`; the phone's own server sees it, and only then may the sheet say **Connected**. An
@@ -53,32 +88,100 @@ force: rotating the token clears it.
 
 ### The state machine
 
+The sheet draws this state first, above the capability list: enabling Phone tools starts this
+phone's listener and mints its credential, but the entry in the *agent's* configuration is a
+separate, one-time step — and a running gateway only reads it when someone adds it.
+
 | state | what the sheet says | what the user can do |
 |---|---|---|
-| **not set up** | *Not set up yet* | **Set up with my agent** |
-| **waiting** | *Waiting for your agent to connect*, with the agent's reply beneath | **Ask again**; start a call, because the listener is only up while a call is |
-| **connected** | *Connected*, plus *Verified by an MCP initialize …* and the reply | **Ask again** (updates in place) |
+| **not set up** | *Your agent does not know about this phone yet* — until it is set up, the agent cannot see the phone at all, and any answer it gives about the phone is honest but unhelpful. The button's line names the token and the listener that follows the attempt; the setup turn is shown in full below it with **Copy setup prompt** and the sentence *Your agent writes the entry itself while this phone's listener is open. Nothing on your host restarts, and Vox writes nothing there.* | **Set this up with my agent**, or **Copy setup prompt** as the fallback |
+| **adding / waiting** | *Your agent is working on this*, with **What your agent did** — one line per tool call, appended in arrival order — and *Your agent has answered* once the run ends. Never Connected | Wait, or **Stop this attempt**; a second press is ignored. The agent's reply and the step are shown |
+| **waiting** | *Asked — your agent is working*, with the agent's reply beneath: the prompt has been handed over, no handshake has arrived | **Ask again**; the press opens the listener for it |
+| **connected** | *Connected* — the only state that may say it — plus *Verified by an MCP initialize …* and the reply | **Ask again** (updates in place) |
+| **failed** | *Your agent could not add this phone*, *This phone could not be made reachable*, *The setup may not have taken*, or another named cause, plus the step it reached and the agent's last words | Read the step, then use the copyable prompt (the fallback). A failed attempt does not retry by itself |
 | **unreachable** | the cause, in its own words: *No connection configured*, *Key rejected*, *Your agent did not answer: …*, or *Turn failed: …* | Fix what is named — the connection in Entity & Connection, the profile's key, the gateway — then **Try again** |
 | **refused** | *Your agent could not edit its configuration*, with its own explanation | Fix its file access and **Try again**, or use the manual fallback |
-| **timed out** | *Your agent was asked, but nothing connected in time* | **Try again**, or **Rotate token** and ask once more |
+
+The three states the owner passes through are worded apart on purpose, and `PhoneToolsView` holds
+them as constants (`NOT_SET_UP_HEADING`, `WAITING_HEADING`, `CONNECTED_HEADING`, `SETUP_NOTE`);
+`PhoneSetupTest` fails if they share a line, and fails if any state other than connected uses the
+word. `PhoneBootstrapTest` holds the same rule for every bootstrap step and failure. A handshake
+observed by the phone clears the waiting state on the next status poll — the owner does not re-enter
+anything.
 
 A failure names what happened, never one line for every case: a local misconfiguration must not read
-as a network outage. The four are `no connection configured`, `key rejected`, `agent did not answer`
-(transport, timeout, or an empty answer) and `turn failed: <the gateway's own reason>`
-(`PhoneSetupSend`). The line is persisted with the record, so it survives reopening the sheet.
+as a network outage. The four send failures are `no connection configured`, `key rejected`, `agent
+did not answer` (transport, timeout, or an empty answer) and `turn failed: <the gateway's own
+reason>` (`PhoneSetupSend`). The bootstrap adds its own: a listener window that could not be opened,
+an add the agent reports as failed, and a window that closed without the handshake. The line is
+persisted with the record, so it survives reopening the sheet.
 
-A timeout is three minutes. A late handshake still wins: if the agent connects after the sheet has
-shown the timeout, the phone says Connected because the handshake is real. The reply stays readable
-in every state, including the failures.
+The listener is open while the run is alive and for 20 seconds after it ends (or until the handshake
+arrives, which closes it at once). No elapsed time ends a setup. A bootstrap attempt that has
+already failed stays failed for that attempt; the next press is a new attempt. The reply stays
+readable in every state, including the failures. The activity list — the work the agent did, in the
+owner's words — stays visible with the outcome.
+
+### What a device run of the one button must show
+
+1. **The promise is on screen before the press.** In the not-set-up state the button's line names the
+   phone's address, the token, the listener that follows the attempt, and says nothing restarts and
+   Vox writes nothing to the host itself.
+2. **The listener opens before the turn, and has no clock.** Press once from an **idle phone**: the
+   log shows `event=phone-mcp start …` before the turn leaves, and `event=phone-mcp window=open`
+   carries no duration. Exactly one turn leaves on the active profile's connection; a second press
+   is ignored.
+3. **The work is shown, and is not proof.** With a deliberately slow agent (make it wait four
+   minutes before running `hermes mcp add`, e.g. a tool that sleeps), the card keeps showing the
+   run: **What your agent did** gains a line per tool call (*terminal · ran a command*), and after a
+   quiet stretch it says *Nothing new for 4 minutes.* It never posts `/stop`, and the sheet never
+   counts down to one. When the reply arrives, the sheet moves to *Your agent has answered* unless
+   the reply reports a failed add. A reply that reports a refusal fails with *Your agent could not
+   add this phone* and keeps its own words on screen; no reply at all fails as *Your agent did not
+   answer*.
+   **This is the case that failed before:** a setup that takes longer than three minutes must still
+   reach **Connected**. The listener stays up for the whole run, so `hermes mcp add`'s probe at
+   minute four succeeds, the gateway connects, and the card says Connected.
+4. **The tool appears while the app stays connected.** The agent runs `hermes mcp add` against the
+   open window; the gateway reconciles its MCP configuration and logs
+   `MCP servers reconciled with config … added=['vox']`. There is **no restart, no dropped call and
+   no gap in the conversation** — a typed turn sent right after the setup continues the same chain.
+   That continuity is the check: nothing restarted.
+5. **Connected is the handshake's.** The sheet reaches **Connected** only after the phone's own
+   server records an authenticated MCP `initialize`; its reply is shown but never counted. If no
+   handshake arrives in the 20-second grace after the run ends, it says *the setup may not have
+   taken*, shows the agent's last words and the copyable prompt. It never becomes Connected by
+   timeout.
+6. **The listener closes after the run.** When the handshake lands the log shows
+   `event=phone-mcp stop reason=setup-connected`; a run that ends without one closes after the
+   grace (`reason=setup-ended`). Unless a call is live, which holds the listener. A tool call
+   afterwards fails from the gateway's side.
+6b. **A dropped network reattaches to the same run.** Put the phone in airplane mode for a minute
+   mid-setup and restore it: the app reattaches to the run at its last `seq`, the run completes, and
+   `/v1/runs` was posted exactly once — no second turn.
+6c. **The owner's stop is said out loud.** Press **Stop this attempt** (or close the sheet): the
+   card says *You stopped this attempt* / *The setup stopped when this sheet closed*, keeps the work
+   it already showed, and the run is stopped.
+7. **An unopenable window sends nothing.** Turn Tailscale off: the sheet says *Cannot run —
+   Tailscale is not running*. Hold the port so the bind fails: it says *This phone could not be
+   made reachable*. In both cases it shows the copyable prompt and sends no turn, because an add
+   against a listener that is not up could only be refused.
+8. **The token stays off the host's logs and off the phone's records.** `grep` the app log and the
+   gateway log for the token: nothing. Recent actions has no setup entry. `adb shell run-as
+   com.hermesvox cat shared_prefs/hv.xml` has no instruction or token (the token itself is the
+   encrypted `phone_mcp_token` value; the sent prompt is memory only).
+9. **A failure offers the fallback, not a loop.** Ask the agent to refuse the add, or let the window
+   close without a handshake: the sheet shows the step reached and the copyable prompt, and does not
+   send again by itself.
 
 ### The manual fallback
 
 The config block still exists for an agent that cannot edit its own configuration, and for a host
 that is *not* the one this phone talks to. It is behind **Show the manual config block**, labelled as
-the fallback, and is never the default path. It is the one place that carries the phone's own token:
-that credential is what authenticates a client which does not hold this connection's API key. The
-token is created by the setup path (or by opening this disclosure); the block is generated by
-`PhoneMcpConfig.snippet`, the same renderer the snippet below is checked against.
+the fallback, and is never the default path. It carries the phone's own token, the credential that
+authenticates a client which does not hold this connection's API key. The token is created by the
+setup path (or by opening this disclosure); the block is generated by `PhoneMcpConfig.snippet`, the
+same renderer the snippet below is checked against.
 
 ---
 
@@ -107,13 +210,23 @@ ones declared for later lanes — with each action's arguments, result fields, u
 | `state` | 0 | – | battery, charging, screen, network, tailnet, storage, volume, dnd, zone and time; each `null` when unreadable |
 | `clip` | 0 | `text` (≤ 2 000 chars) | `chars` (the length only) |
 | `clip_read` | 0 | – | `text`, `chars` when the platform allows the read; `unavailable` when it does not |
+| `notifications` | 0 | – | `sensitive:true`, `count`, `apps` (`app`, `count`, `latest_at`, opaque `ids`); **no title and no text** |
+| `notification_read` | 0 | `id` from a summary of this call | `sensitive:true`, `app`, `posted_at`, `title`, `text` |
+| `notification_dismiss` | 1 | exactly one of `id` (from a summary) or `app` | `app`, `count`, `undoable:false`, `note`, and `failed` when some remained |
 | `file_list` | 1 | optional `folder`, `path` (relative, `""` = the folder), `depth` (1–5, default 1), `pattern` (a name glob on files), `offset`/`limit` (a page, default 200, max 1000) | `folder`, `path`, `depth`, `count`, `has_more`, `next_offset`, `entries` (`name`, `path`, `kind`, `bytes`, `modified`, `mime`) |
-| `file_read` | 1 | `name`, optional `folder` (`Downloads` or `Documents`), optional `offset`/`length` for a byte window | `name`, `folder`, `bytes`, `chars`, `text` (text only; `too_big` above the cap without a window); a window adds `offset`, `length`, `truncated`, with `bytes` the file's **total** |
-| `file_offer` | 1 | `name`, optional `folder` | `name`, `folder`, `mime`, `bytes`, `sha256`, `url`, `expires_at` |
+| `file_read` | 1 | `name`, optional `folder` (a granted folder's label), optional `offset`/`length` for a byte window (1 – 65 536) | `name`, `folder`, `bytes`, `chars`, `text` (text only; `too_big` above the cap without a window); a window adds `offset`, `length`, `truncated`, with `bytes` the file's **total** |
+| `file_offer` | 2 | `name`, optional `folder` (a granted folder's label); `approval` on the second call | `name`, `folder`, `mime`, `bytes`, `sha256`, `url`, `expires_at` |
 | `agenda` | 1 | – | `count`, `events` (`start`, `end`, `title`, `calendar`, `description`, `location`, `attendees` — names only) |
 | `event_create` | 1 | `title`, `start` (local ISO-8601), `duration_min` (≥ 1), optional `calendar` | `id`, `title`, `start`, `end`, `duration_min`, `start_ms`, `end_ms`, `calendar`, `undo` |
+| `contact` | 0 | `name` (full or partial, case-insensitive, ≤ 200 chars) | `count`, `matches` (`display_name`, `numbers` with `label`/`number`); ≤ 20, numbers only |
+| `message` | 0 | `to` (number, or a contact name with Contacts on), `text` (≤ 1 000 chars) | `to`, `chars`, `handed_off:true` — the owner's app sends |
+| `dial` | 0 | `to` (number, or a contact name with Contacts on) | `to`, `dialer` — `opened` when the platform took the intent, `not_opened` on a refusal, `unknown` (with `outcome_uncertain:true`) while a live-call teardown still has to open it; the owner presses call |
+| `launch` | 0 | `app` (package or launcher label) | `package`, `component` |
+| `open` | 0 | `uri`, optional `package` | `package`, `component` |
+| `apps` | 0 | – | `apps` (`package`, `label`), `total`, `truncated`; with usage access `can_see_running:true`, `foreground`, `recent`; without it `can_see_running:false`, `running_detail`, `usage_settings` |
+| `uninstall` | 2 | `package`; `approval` on the second call | `package`, `label`, `platform_confirmation`, `note` |
 | `undo` | 0 | `id` | `undone`, `state` (`cancelled` / `restored`) |
-| `status` | 0 | – | `offered`, `tiers`, `grants`, `running`, `notes`, `registry`, `dnd`, `volume` |
+| `status` | 0 | – | `offered`, `tiers`, `grants`, `running`, `notes`, `registry`, `dial` (the last handoff: `to`, `dialer`, `at`), `dnd`, `volume` |
 
 `play`, `pause` and `skip` dispatch a platform media key to whichever session is active: no
 permission. `dispatched` means the audio service took the key, never that playback changed.
@@ -123,9 +236,12 @@ access in the sheet — the active session's real package and title. Without tha
 playing access* row opens Android's own notification-access screen, the same shape as the Do Not
 Disturb row.
 
-`clip` writes the clipboard; `clip_read` returns its text **when Android allows the read**. Since
-Android 10 a backgrounded app gets no clipboard, and an empty clip is no answer: both refuse with
-`reason:"unavailable"` and the platform's own explanation, never empty text presented as the clip.
+`clip` writes the clipboard from wherever the call is — foreground, background or picture-in-picture
+— because Android restricts clipboard **reads**, not writes; a platform refusal is
+`reason:"unavailable"` with the platform's own reason. `clip_read` returns the text **when Android
+allows the read**: a backgrounded app gets no clipboard, and an empty clip is no answer. Both refuse
+with `reason:"unavailable"` and the platform's own outcome; when Vox is not focused, the sentence
+names that as the **likely** cause of the missing clip — never empty text presented as the clip.
 
 `status` is the discovery action: it answers "what can you do, and what is running right now" from
 the **same registry** the presence context block reports (`local_actions:`), so the mind never has to
@@ -151,40 +267,47 @@ all read it. There is no second list to drift.
 | Media | 0 | `play`, `pause`, `skip`, `now_playing` | play, pause, skip, ask what is playing |
 | Device state | 0 | `state` | read battery, charging, connectivity, screen, storage |
 | Clipboard | 0 | `clip`, `clip_read` | write to the clipboard, and read it when Android allows |
-| Files | 1 | `file_list`, `file_read`, `file_offer` | list what is in the folder you granted, read a named file in it (whole or a window), offer a file to the agent |
+| Files | 1 | `file_list`, `file_read`, `file_offer` | list what is in the folder you granted, read a named file in it (whole or a window), offer a file to the agent (Tier 2; a card at Ask, no card at Allow) |
 | Calendar | 1 | `agenda`, `event_create` | read today's events, create an event (undoable) |
-| Notifications | 0 | `notifications`, `notification_read` | read counts per app while a call is open, then one notification's content by id |
+| Notifications | 0 | `notifications`, `notification_read`, `notification_dismiss` | read counts per app while a call is open, read one notification's content by id, and dismiss one or all of an app's (not undoable) |
 | Messages | 0 | `message` | compose a text and open the messaging app; you send it |
 | Calls | 0 | `dial` | open the dialer with a number ready; you make the call |
-| Apps | 0 | `launch`, `open`; `install`\*, `uninstall`\* | open an app or a link; installing/uninstalling needs an approval that is not built |
+| Apps | 0 | `apps`, `launch`, `open`, `uninstall` | see what is installed and what the phone can honestly see running, open an app or a link, or remove an app (Tier 2; a card at Ask, no card at Allow) |
 | Contacts | 0 | `contact` | look up a contact's number by name |
 
-`*` A planned action: the group and its refusal exist, the capability does not ship yet. A name in
-this column is **never advertised**; a direct call is refused as `not_granted` (group Off) or
-`approval-required` (group Ask) rather than executed. The empty action column is the honest one for
-a group whose capability lands in a later lane.
+No group currently holds a **planned** action: every name in the table above is built, and the
+schema advertises it only while its group is on. `install` left the surface entirely — an ordinary
+app cannot install a package — so a direct call is `unknown-action`, not a governance refusal.
 
 ### The three states
+
+The same three words for every group, and the same behaviour behind each one. The tier does not
+change what a state means; it changes what the card says and whether an undo exists.
 
 **Off — the default for every group.** The group's actions are absent from the tool's `enum`, and a
 call that still names one returns `ok:false, reason:"not_granted"`. The model cannot call what it
 cannot see; if it tries anyway, the refusal is a result it can read and repeat, not a transport
 error.
 
-**Ask.** The actions are advertised, and every use is a decision rather than a run. On this wire an
-Ask call returns `ok:false, reason:"approval-required"` and performs nothing. The approval card
-arrives with the capability lanes (#429 steps 2–4): the MCP call has no run id, so the phone cannot
-mint the gateway's card from here, and inventing a second approval surface inside the server is what
-#421 rules out. Until then Ask is a visible refusal — visible to the model (the action is offered)
-and to the owner (the refusal is in Recent actions).
+**Ask — the agent asks you first, by tap or by voice.** The actions are advertised. The first call
+performs nothing: it returns `ok:false, reason:"approval-required"` with `approval_id`, `expires_at`
+and `summary`, and a card naming the action and its arguments is raised. The owner answers on the
+phone (tap, or the same allowlist's voice yes/no); the agent then calls **the same action with the
+same arguments plus `approval:"<id>"`**, and only then does it run. Every action uses this one
+handshake — `timer`, `note`, `message`, `file_read`, `uninstall`, `file_offer` — with no exception
+for tier. An id is bound to its arguments: different arguments are `approval_mismatch`, and every
+refusal (denied, expired, mismatch, locked, already used) burns it.
 
-**Allow.** The action runs immediately and is reported. **Only Tier 0 may be Allow** — reversible and
-private. Tier 1 stops at Ask because the owner sees its result and should stay in the loop; Tier 2
-stops at Ask because every use is a card of its own. A stored Allow against a Tier 1/2 group is read
-back as Ask; a grant that cannot be given is not a grant.
+**Allow — the agent acts without asking.** The action runs immediately, with no card raised. This
+holds for a consequential action too: Allow on Apps is permission to remove an app. That is not a
+bug or an oversight — the row says so in its own loud line, every group defaults to Off, and a
+permission the owner granted is a permission. There is no hidden veto and no short list of actions
+that always ask behind an Allow row.
 
 **There is no allow-all.** The one bulk shortcut the design permits is *Allow all instant actions*,
-and it touches Tier 0 groups alone. (The sheet does not need to show it for the promise to hold.)
+and it touches Tier 0 groups except **Notifications**, **Contacts** and **Apps** — the three whose
+Allow would also expose other people's words or removal. (The sheet does not need to show it for
+the promise to hold.)
 
 **The grant is read at call time.** `PhoneGrantStore.source` consults SharedPreferences on every
 `tools/call` and every `tools/list`; nothing is cached for the life of the session. Turning a group
@@ -193,11 +316,21 @@ mid-call, which is the only kind of revocation worth the name.
 
 ### What the owner sees
 
-The Phone tools sheet lists the thirteen groups by tier, each with its one-line description and its
-Off / Ask / Allow control (Allow only where the tier permits it). Files and Notifications carry one
-sentence of plain consequence where the ability is not obvious — "your agent could read a file in
-Downloads when you approve it". Messages and Calls do not need one: nothing leaves the phone except
-through an app the owner already uses, and the owner still presses send or call.
+The Phone tools sheet lists the thirteen groups by tier, each with its one-line description and the
+same three choices everywhere:
+
+- **Off — the agent cannot use this.**
+- **Ask — the agent asks you first, by tap or by voice.**
+- **Allow — the agent acts without asking.**
+
+The tier is the description above the rows, not a limit on the choice: Instant describes cheap,
+private actions and carries an undo **only where reversal is real** (a timer, a DND/volume change)
+— media keys, reads and handoffs have none; Reported actions are shown in Recent actions;
+Consequential ones have no undo. Files, Notifications, Clipboard, Messages, Calls, Apps and Contacts carry a second warning
+that appears **only while the row is Allow**, because that is the state in which the consequence
+happens without a card: a Messages row at Allow says Vox may write a text and open the messaging app
+without asking (the owner still presses send), and an Apps row at Allow says an app can be removed
+without asking, with no undo.
 
 **Recent actions** is the counter-claim: time, action, summarised arguments, outcome, and an Undo
 where the action carries one. It records **refusals as well as successes**, because "my agent says
@@ -228,12 +361,13 @@ The reason vocabulary is stable and small:
 | `reason` | meaning |
 |---|---|
 | `not_granted` | the capability group is Off; the action is not offered and was not performed |
-| `permission` | the phone does not hold a permission the action needs (Do Not Disturb only, today) |
+| `permission` | the phone does not hold a runtime permission or special access the action needs (Do Not Disturb, notification access, calendar or contacts), named in `detail` |
+| `background` | the phone is not in the foreground, so the activity start a handoff needs would be blocked; nothing was resolved, opened, sent or ended — the action was not attempted |
 | `unavailable` | the action was recognised and the platform refused or failed |
 | `expired` | no undo is registered for that id any more (it fired, was superseded, or was never this phone's) |
 | `invalid-arguments` | the arguments do not describe a runnable action |
 | `unknown-action` | not a phone action; `detail` lists what is on offer |
-| `approval-required` | the group is Ask or the action is Tier 2: nothing was done, and the owner's approval owns it |
+| `approval-required` | the group is Ask: nothing was done, and a card with `approval_id` and `expires_at` is waiting for the owner |
 
 **The invariant**: `ok: true` is only ever rendered after the platform said it performed the action,
 and a refusal carries no `id`, no `state`, no success fact. So the mind's claim "I set a timer" is
@@ -258,19 +392,22 @@ Every action that can be undone registers an undo **for its lifetime**, keyed by
 
 ### Tiers
 
-The tier is a property of the capability, not of the session. It decides whether Allow is even
-offered, and it does not change with the grant.
+The tier is a property of the capability, not of the session. It is the **description** of what a
+card says and whether an undo exists — it does not decide which of the three states the owner may
+choose. Every tier offers Off, Ask and Allow.
 
-| tier | actions | what the phone does | states |
+| tier | actions | what the phone does | undo |
 |---|---|---|---|
-| **0 — instant** | timer, alarm, dnd, volume, status, undo | executes now, reversible, private | Off / Ask / **Allow** |
-| **1 — reported** | note, file_list, file_read, file_offer, agenda, event_create | executes now when the group is on, reported in the next turn's presence context, undoable where the row says | Off / Ask |
-| **2 — approval** | delete, message, call, email, purchase, launch, send … | **never executes.** The result says `approval-required` and nothing happens | Off / Ask |
+| **0 — instant** | timer, alarm, dnd, volume, status, undo, play, pause, skip, now_playing, state, clip, clip_read, notifications, notification_read, contact, message, dial, launch, open, apps | executes now at Allow, or after its card at Ask; cheap and private | yes where the action has a reversal (timer, alarm, dnd, volume); reads, media keys and handoffs do not |
+| **1 — reported** | note, file_list, file_read, agenda, event_create, notification_dismiss | executes now at Allow, or after its card at Ask; the result is reported in the next turn's presence context | yes, where the row says |
+| **2 — consequential** | uninstall, file_offer; delete, purchase, pay, transfer (unbuilt) | executes now at Allow, or after its card at Ask, through the same two-step handshake as every other action | no |
 
-Tier 2 is refused rather than queued on purpose. An MCP call carries no run id, so the phone cannot
-mint the approval card `core/Approval.kt` answers — and building a second approval surface inside the
-MCP server is exactly what #421 rules out. Consequential actions stay on the **gateway's** approval
-surface. An owner who wants *every* phone call behind a card can have that without any code change:
+The unbuilt Tier 2 names are never advertised: an entry in the `enum` is a capability the phone must
+be able to keep, and a card cannot be raised for something the phone cannot do. `uninstall` and
+`file_offer` can raise one, so they are offered and run at Allow or after the card. `install` is not
+one of the unbuilt names: it left the surface entirely and a direct call is `unknown-action`. The
+card's notification is private and a yes needs an unlocked device. An owner who wants *every* phone
+call behind the gateway's card can have that without any code change:
 
 ```yaml
     trust: untrusted    # every write-capable tool call asks through the standard approval surface
@@ -307,8 +444,9 @@ mcp_servers:
 - `timeout: 30` is the documented per-server tool-call timeout (the MCP config reference's `timeout`
   key). `tool_timeout` is not a server key: an unknown key is ignored, so a block that names it reads
   as though the timeout were set when nothing was.
-- `trust: full` is what makes Tier 0 instant. `untrusted` routes every call through the approval
-  surface first — correct for a cautious owner, and it costs the "instant" part of the tier.
+- `trust: full` leaves the phone's own grants in charge: Off refuses, Ask raises the phone's card,
+  Allow runs. `untrusted` adds the gateway's approval surface in front of every call — correct for
+  a cautious owner, and it means an Allow group still asks at the gateway.
 
 Prefer the environment reference for the token if the config file is synced or shared:
 
@@ -329,6 +467,10 @@ secret scope). The literal form above is fine when `config.yaml` stays on the ga
   session-only=true`, and the owner re-copies the config next time.
 - It is **never logged**. The refusal log lines name the request's shape (`method=POST path=<mcp>`),
   never the credential.
+- **The one-button setup sends it to the agent once.** `hermes mcp add` needs the token to write the
+  server entry, so the instruction carries it over the same authenticated connection as every other
+  turn. The app keeps the instruction in memory only; it is never written to a preference, an audit
+  entry or a log, and a reply that echoes the token is scrubbed before storage.
 - Comparison is **constant-time** ([PhoneMcpToken.matches]), so the port does not leak a prefix.
 - **Rotating** it is the sheet's **Rotate token**: a fresh value is written, the live server reads
   it on the next request, and the old credential is refused immediately. Rotation also clears the
@@ -354,8 +496,8 @@ What that means, in order of who notices:
 2. **A call starts.** The phone binds again; the next connect (or the gateway's retry) finds the tool.
 3. **The tool is missing or the call fails.** The mind must not claim the action. There is no second
    path — a directive-in-reply fallback would be the fire-and-forget shape #421 rejected, and the
-   phone's own answer to "could you set a timer" is still the local path, which does not need the
-   gateway at all.
+   phone does not parse the caller's words (D38): every voice turn goes to the mind, so a mind that
+   cannot reach the phone says what it cannot do instead of the phone acting on its own.
 
 If the phone has no tailnet address, nothing binds and the log says
 `event=phone-mcp unavailable reason=no-tailnet`. If the port is taken, `reason=bind`. In both cases
@@ -401,9 +543,13 @@ result plus an undo, and a timer that rings in this process is the honest way to
 plain: an in-app timer or alarm rings while the app is alive, which during a call it is; one that
 must outlive the process is not this lane.
 
-**Server lifetime.** The listener is up exactly while a call is: `VoiceController.start` opens it and
-the hangup closes it. It has no foreground service and needs no new service type. The sheet says this
-plainly, and the cost is in "When the phone is offline" below.
+**Server lifetime.** The listener is up while a call is: `VoiceController.start` opens it and the
+hangup releases it. The one exception is the one-button setup's attempt (`PhoneMcp.openWindow`),
+opened by the owner's press because `hermes mcp add` proves reachability whenever the agent gets
+there. It follows the run: open while the run is alive, a 20-second grace after it ends, and closed
+at once when the handshake lands or the owner stops the attempt. Turning Phone tools off closes it
+immediately. There is no foreground service and no new service type. The sheet says this plainly,
+and the cost is in "When the phone is offline" below.
 
 ---
 
@@ -422,10 +568,13 @@ token, or the API key of the connection it talks to (#452) — and everything el
 of body is parsed. Both are compared in constant time and both comparisons always run, so the 401
 carries no hint of which one was presented.
 
-**Why the tiers are the third layer.** Neither of the first two says *what* an authenticated client
-may do. The tier table does: Tier 0 is reversible and private, Tier 1 is reversible and visible, and
-Tier 2 is refused because it leaves the phone or cannot be undone. The phone will not send a message
-or place a call for the mind however it authenticates.
+**Why the grants are the third layer.** Neither of the first two says *what* an authenticated client
+may do. The grant table does: a group is Off until the owner grants it, Ask raises the phone's card,
+and Allow is the owner's standing permission — including for the consequential actions. Tier 2 is
+not a refusal: `uninstall` and `file_offer` run at Allow or after the card, and the unbuilt Tier 2
+names are never advertised. The phone still never sends a message or places a call for the mind,
+however it authenticates: `message` and `dial` hand a draft or a number to the owner's own app, and
+the owner presses send or call.
 
 **What is deliberately absent.** No MCP resources and no resource listing, no second route, no SSE
 stream, no server-initiated messages, no session state (`Mcp-Session-Id`): each is a surface with no
@@ -466,14 +615,17 @@ The checklist for the actions added with the grants (`media`, `device-state`, `c
    Hang up: `event=phone-mcp stop served=N`.
 2. **Point a scratch client at the URL with either credential** (`curl` the `initialize` POST, or
    `mcp-server-fetch`-style tooling): the phone's own token from the manual block, or the gateway's
-   `API_SERVER_KEY`. With neither: `401`. With either: `tools/list` returns `phone`. **Run setup and
-   do not copy anything:** the agent's own connection should complete with the key it already holds,
-   and the sheet should reach *Connected* on its handshake.
+   `API_SERVER_KEY`. With neither: `401`. With either: `tools/list` returns `phone`. **Run the one
+   button and copy nothing:** the press opens the listener window, the agent's `hermes mcp add`
+   completes with the token in the turn, the gateway picks the entry up without restarting, and the
+   sheet reaches *Connected* only on its handshake.
 3. **With every group Off (a fresh install), `tools/list` offers `undo` and `status` only.** A
    `timer` call returns `ok:false, reason:"not_granted"`; nothing is armed.
 4. **Grant Timers and alarms = Ask.** `tools/list` now includes `timer`; a timer call returns
-   `ok:false, reason:"approval-required"` and nothing is armed. Set the group to **Allow**: the next
-   call returns `ok:true` with an id and the timer rings.
+   `ok:false, reason:"approval-required"` with an `approval_id`, a card names the timer and its
+   duration, and nothing is armed. **Answer the card by voice** ("yes"): call `timer` again with the
+   same duration and `approval:"<id>"` and it arms. A second call with a different duration is
+   `approval_mismatch`, and nothing runs. Set the group to **Allow**: the next call runs with no card.
 5. **Revoke mid-call.** While the call is live, set Timers and alarms back to Off. The **next**
    `tools/list` no longer lists `timer`; the next `timer` call is `not_granted`. No restart, no
    reconnect.
@@ -483,12 +635,16 @@ The checklist for the actions added with the grants (`media`, `device-state`, `c
 8. **`dnd` on a phone that has never granted policy access** → `ok:false, reason:"permission"`, and
    the Do Not Disturb state is unchanged.
 9. **`volume`** → the reported `level` matches the phone's own slider afterwards.
-10. **`note`** → the next voice turn's `local_actions:` line carries `note(id=…)`, and `undo` deletes
-    it.
-11. **`message`** → `not_granted` while Messages is Off, `approval-required` at Ask; at Allow the
-    owner's messaging app opens on the draft and nothing is sent. **`dial`** → `not_granted` while
-    Calls is Off; at Allow the dialer opens with the number, and a live Vox call is ended after the
-    being says *dialling — ending our call*.
+10. **`note`** → at Allow the next voice turn's `local_actions:` line carries `note(id=…)`, and
+    `undo` deletes it. At Ask the note is not written until the card is answered.
+11. **`message`** → `not_granted` while Messages is Off, `approval-required` with a card at Ask; at
+    Allow the owner's messaging app opens on the draft and nothing is sent. **`dial`** → `not_granted`
+    while Calls is Off; at Allow the dialer opens with the number, and a live Vox call is ended after
+    the being says *dialling — ending our call*. That dial happens after the reply, so the result
+    says `dialer:"unknown"` with `outcome_uncertain:true`; `status` then reports the dialer's own
+    `opened` / `not_opened`. With Vox backgrounded every handoff is refused `background` before a
+    target is resolved, a call is ended or a line is announced; the detail says the phone is not in
+    the foreground and nothing was attempted.
 12. **Recent actions** shows every one of those calls, successes and refusals, with time, action,
     summarised arguments and outcome. A note's row shows `text=N chars`, never the note. Tap an
     undoable row: the action is reversed, or the toast says the undo expired.
@@ -498,8 +654,9 @@ The checklist for the actions added with the grants (`media`, `device-state`, `c
     says it could not reach the phone rather than claiming the action.
 15. **Turn Tailscale off** → no listener at all (`reason=no-tailnet`), and the app is otherwise
     unaffected.
-16. **Run setup twice.** The second turn must update the existing `vox` entry in place; the gateway's
-    MCP configuration still has exactly one `vox`. The sheet's Ask again is the path to use.
+16. **Run the one button twice.** The second turn must update the existing `vox` entry in place;
+    the gateway's MCP configuration still has exactly one `vox`, and there is no restart job to
+    reuse because the flow creates none. The sheet's Ask again is the path to use.
 17. **Revoke Do Not Disturb access while the sheet is open.** Leave the sheet, revoke it in Android's
     special-access screen, return: the row says *Not granted* (no restart), and a `dnd` call returns
     `ok:false, reason:"permission"` with the DND state unchanged.

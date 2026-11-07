@@ -36,12 +36,25 @@ object ProfilesAsk {
     /** The reserved first token, so the agent can key on it and a log line can name it. */
     const val MARKER = "[[vox:profiles]]"
 
-    /** The exact user turn. The skill teaches the agent to answer this and nothing else. */
-    const val ASK = "[[vox:profiles]] Which Hermes profiles does this gateway serve to this key? " +
-        "Reply with one fenced vox-profiles block and nothing else."
-
     /** The one fence label the parser accepts. */
     const val LABEL = "vox-profiles"
+
+    /**
+     * The exact user turn: a question with a boundary, not a task with an implied latitude.
+     *
+     * Whoever reads this may be a full operator with a terminal, so the turn says what it
+     * is (a question), what an answer looks like, and what must not happen on the way to
+     * one. The marker and [LABEL] stay byte-identical — the parser and the skill key on
+     * them — and the wording deliberately carries no verb that asks for a change.
+     */
+    const val ASK =
+        "$MARKER This is a question, not a task. Which Hermes profiles does this gateway " +
+            "serve to this key? Reply with one fenced $LABEL block and nothing else — or, " +
+            "if you cannot answer, say plainly that the list cannot be produced. " +
+            "Do not modify this host, its configuration, its profiles, its memories, its " +
+            "sessions or its files. Do not run any command that changes them. If producing " +
+            "the list appears to need a change to the host, do not make it: say what would " +
+            "be needed instead."
 
     /** The OpenAI-shaped chat route on the gateway the app already holds. */
     const val PATH = "/v1/chat/completions"
@@ -57,6 +70,13 @@ object ProfilesAsk {
 
     /** A manual refresh inside this window of the last ask is refused. */
     const val REFRESH_MIN_MS = 60_000L
+
+    /**
+     * A cached answer younger than this is rendered with its age and no turn is sent.
+     * The ask is a turn the user pays for, so a connect inside the window reads the cache
+     * too; only an explicit refresh (or a connect after the window) asks again.
+     */
+    const val CACHE_FRESH_MS = 15 * 60_000L
 
     /** A chat reply is a small JSON document; anything past this is not a profile list. */
     const val BODY_MAX = 256 * 1024
@@ -241,6 +261,20 @@ object ProfilesAsk {
     /** Whether [name] is the spec's profile-name charset. */
     fun allowed(name: String): Boolean = NAME.matches(name)
 
+    /**
+     * What one refresh does after the host's own route was tried. [Answered] ends it: the
+     * conversational turn is not sent at all. [Ask] is the only branch that may send one.
+     * Kept here, beside [fastPath], so the suppression is a pure decision a test can pin.
+     */
+    sealed class Step {
+        data class Answered(val result: Result.Named) : Step()
+        object Ask : Step()
+    }
+
+    /** The route comes first, always: a fast-path answer means the ask never happens. */
+    fun step(fastCode: Int, fastBody: String): Step =
+        fastPath(fastCode, fastBody)?.let { Step.Answered(it) } ?: Step.Ask
+
     // ---- probes: the list is a hint, a probe is the proof ----
 
     /** One proof: the URL a served profile must answer `/v1/models` at. */
@@ -248,12 +282,15 @@ object ProfilesAsk {
 
     /**
      * The probe for each served name. The default answers at the host itself; a named
-     * profile at `/p/<name>/…` — the addressing rule the registry already documents.
+     * profile at `/p/<name>/…` — the addressing rule the registry already documents — and
+     * each is asked at exactly one `/v1/models`. Built through [HostProfiles.modelsUrl], so
+     * the plan is idempotent: `probes(base, served)` and `probes(base + "/v1/models",
+     * served)` are the same URLs, in both directions.
      */
     fun probes(base: String, served: List<HostProfiles.Served>): List<Probe> = served.map {
         Probe(
             name = it.name,
-            url = HostProfiles.urlFor(base, it.name, it.isDefault).trimEnd('/') + "/v1/models",
+            url = HostProfiles.modelsUrl(HostProfiles.urlFor(base, it.name, it.isDefault)),
             isDefault = it.isDefault,
         )
     }
@@ -326,7 +363,7 @@ object ProfilesAsk {
         /** Run the ask. */
         NOW,
 
-        /** The switcher opened: render the cache instantly, never wait on a turn. */
+        /** Render the cache instantly — the switcher opened, or a fresh answer exists. */
         READ_CACHE,
 
         /** A manual refresh inside [REFRESH_MIN_MS] of the last ask: refused. */
@@ -340,13 +377,19 @@ object ProfilesAsk {
      * The whole refresh policy in one pure function:
      *  * opening the switcher never asks — it reads the cache (the reason a cache exists);
      *  * a live call defers any ask, so a refresh can never disturb a conversation;
-     *  * a connect asks;
-     *  * a manual refresh asks only when the last ask is at least a minute old.
+     *  * a connect asks only when there is no answer younger than [CACHE_FRESH_MS]: a fresh
+     *    cache is rendered with its age and costs nothing;
+     *  * a manual refresh is what sends the turn, and asks only when the last ask is at
+     *    least [REFRESH_MIN_MS] old.
+     *
+     * [lastAskedAt] is the cache's clock: 0 means the host was never asked, so there is no
+     * answer to render.
      */
     fun decide(kind: AskKind, lastAskedAt: Long, now: Long, callLive: Boolean): AskDecision {
         if (kind == AskKind.SWITCHER_OPEN) return AskDecision.READ_CACHE
         if (callLive) return AskDecision.DEFER
-        if (kind == AskKind.CONNECT) return AskDecision.NOW
+        val fresh = lastAskedAt > 0L && now - lastAskedAt < CACHE_FRESH_MS
+        if (kind == AskKind.CONNECT) return if (fresh) AskDecision.READ_CACHE else AskDecision.NOW
         return if (lastAskedAt <= 0L || now - lastAskedAt >= REFRESH_MIN_MS) AskDecision.NOW
         else AskDecision.REFUSE_RECENT
     }

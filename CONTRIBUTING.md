@@ -35,11 +35,27 @@ Never paste API keys, tokens, gateway addresses you would rather not share, or
 personal logs into an issue, a commit or a test fixture. A report that contains
 them gets edited, and the credential gets rotated.
 
-## Licence
+## Licence and contributions
 
-The project is GPL-3.0. By opening a pull request you agree your contribution is
-licensed under the same terms; there is no CLA and no copyright assignment. Only
-contribute code you have the right to license this way.
+The community edition is GPL-3.0. The House also keeps the option of a separate commercial
+edition, so the project uses a contributor licence agreement: you keep your copyright, and you
+grant the project's rights holder — today Christopher Goulet, and any company formed to hold them by assignment under the agreement — the right to sublicense your contribution. The agreement is in `CLA.md`,
+and it is in force.
+
+**To contribute**, post this on your first pull request:
+
+> I have read the CLA at CLA.md and I agree to it.
+> Name: · GitHub handle: · Email:
+
+A maintainer records that comment in `CLA-SIGNATURES.md` against the pull request, and the code
+merges after it. Small fixes — a typo, a broken link, a one-line correction — do not need the
+agreement; send them and we will ask if it turns out to be more than that.
+
+**This is automatic.** When you open your first pull request, a bot comments with that text and
+sets the CLA check to red. Post the three lines as a reply and it records your entry, turns the
+check green and gets out of the way. Only the author of the pull request can sign it.
+
+Do not send code you do not have the right to license.
 
 ## Repository layout
 

@@ -3,10 +3,10 @@
 **Status:** prepared, not cut. Version code **147** · `versionName` `0.9.1` · built and gated on
 `testing`; the release commit is cherry-picked to `main`, where `release.yml` builds twice and
 compares the payloads before the tag is made. The list below is read from the tree at
-`2dd7e56`; nothing here is announced as shipped until the tag exists.
+`0f3ec3a`; nothing here is announced as shipped until the tag exists.
 
 The shape of this release is the Alpha gate. Most of what 0.9.1 adds needs no switch at all;
-the unfinished work sits behind **Settings → Alpha features** (off on a fresh install), in five
+the unfinished work sits behind **Settings → Alpha features** (off on a fresh install), in four
 sets a tester takes one at a time. This document is ordered that way.
 
 ## Ships with no gate
@@ -15,6 +15,10 @@ sets a tester takes one at a time. This document is ordered that way.
 - **Approvals on the phone (#282).** When Hermes stops to ask before a consequential command, the
   approval reaches the live call: what is being approved, why, and yes/no by voice or touch. The
   choices are the gateway's own; `deny` is always offered and a timeout resolves to *no*.
+- The card is **private on the lock screen** (`VISIBILITY_PRIVATE`) and **cannot be answered
+  from a locked phone**: approving needs an unlocked device, and a pending card cannot be
+  answered from the lock screen at any point in its two minutes. A confirmation that anyone
+  holding the phone could press would not confirm anything.
 - **Turns ride `/v1/runs` by default (#404).** The route that carries approvals, stops the run on
   a barge-in and replays a dropped event stream without leaving a hole. A gateway that answers the
   admission with **404** is remembered per profile and the turn falls back to `/v1/responses`;
@@ -63,11 +67,22 @@ sets a tester takes one at a time. This document is ordered that way.
   disclosure per section and a hint on each row. Particle controls with a live preview.
 - **The hardware check** runs at first run for everyone and advises in the Alpha panel; it never
   enables anything.
+- **Sessions (#437).** The conversations your agent already has — including ones you started at
+  your desk — can be picked up on the phone: `/sessions` lists what the host holds, the one in use
+  is marked, and resuming shows what was said and continues the same conversation. Long lists page
+  in full rather than being cut short. Picking a session during a live call asks first. It left
+  Alpha on 2026-11-06, its device pass made (D39) — the switch is on for every install.
+- **Switching profiles (#436).** The **Profiles** command appears in the commands sheet under *The
+  agent*; each row is the agent you would be talking to, with **IN USE** on the active one, and a
+  switch ends the live call and starts a fresh conversation. It is a picker, not an editor:
+  profiles are configured on the host, so there is nothing here that creates or changes one, and a
+  host that serves none says so. It left Alpha on 2026-11-06, its device pass made (D39).
 
-### The phone, without Alpha
-- **The caller's four local actions** (timer, alarm, Do Not Disturb, volume) are matched on any
-  live voice turn and executed on the phone with no round trip; there is no separate switch for
-  them today. The MCP server and the capability-grant screen are behind the **Phone tools** set.
+### The phone is not a second decision-maker
+- The phone no longer matches your words against a local phrase list. *"Set a timer"* goes to
+  Hermes like every other turn: with **Phone tools** set up and the timer group granted, Hermes
+  calls the phone tool; without it, Hermes says what it cannot do instead of the phone acting
+  behind the conversation's back (D38).
 
 ### Fixed earlier in the 0.9.x line, still shipping here
 `#328` cold-start listening retry, `#330` a failed TTS engine must not block a call, `#346` TTS
@@ -86,6 +101,9 @@ Each set is selected on its own; with the master off, everything below is dimmed
 - It hears tone through the model's own audio encoder; mood steers delivery.
 - The handoff receipt (`event=er-handoff`) proves what the mind was handed; queued words
   (`event=er-pending`) prove the caller was not dropped.
+- Presence may read what the phone is doing — a running timer, the time left, the device facts —
+  so it can say *"your timer has about four minutes left"*. It may not set, cancel or change
+  anything: phone actions belong to the mind. Presence and **Phone tools** are independent sets.
 - Presence is unfinished and says so. It needs the 2.6 GB presence model and a phone with 8 GB of
   memory; the hardware check advises and the first real load can demote the choice.
 
@@ -94,6 +112,9 @@ Each set is selected on its own; with the master off, everything below is dimmed
   and semantic endpointing judges the end of a turn instead of waiting out a fixed silence. Both
   switches default **on inside this set**; about 300 MB more memory during a call. With the gate
   off, the old 800 ms endpoint runs unchanged.
+- This set **requires Presence**, because continuous listening is how the being hears. It cannot
+  be selected without Presence; a stored selection from an earlier build is inert and the picker
+  says why. Turning Presence off leaves it inert.
 
 ### Turn-taking
 - **Backchannels (#245)** — a recorded nonverbal acknowledgement in a mid-thought pause, capped,
@@ -104,19 +125,46 @@ Each set is selected on its own; with the master off, everything below is dimmed
   and listen, or start a new turn.
 
 ### Phone tools
+- This is the mind acting on the phone, and it is independent of Presence: take either set without
+  the other.
 - The mind acts on the phone through **one MCP tool**, `phone`, on the tailnet, with a result for
-  every call and an undo for every reversible one. The tool schema is built from **twelve
-  capability groups**, each Off / Ask / Allow and **all Off by default**; Allow is a Tier 0 word.
-  Tier 2 is refused and stays on the gateway's approval surface. The app sets the server up by
-  asking the agent to edit its own configuration, and says **Connected** only after its own server
-  has seen an authenticated MCP handshake.
-- The caller's local lane (timer, alarm, Do Not Disturb, volume) executes instantly and reports to
-  the mind through the presence context.
-
-### Switching profiles
-- The **Profiles** command appears in the commands sheet under *The agent*; each row is the agent
-  you would be talking to, with **IN USE** on the active one, and a switch ends the live call and
-  starts a fresh conversation. Unfinished until a host's own profile list arrives reliably (#436).
+  every call and an undo for every reversible one. The tool schema is built from **thirteen
+  capability groups**, each Off / Ask / Allow and **all Off by default**. The three words mean one
+  thing for every group: Off refuses, Ask raises the phone's card for **every** action, Allow runs
+  without one; there is no per-tier restriction. `uninstall` and `file_offer` are built and run at
+  Allow or after their card; `install` is not on the surface at all (a direct call is
+  `unknown-action`). The app sets the server up with **one button**: it opens this phone's listener
+  for a stated three minutes, asks the agent to add the phone with `hermes mcp add` while it is
+  reachable, and says **Connected** only after its own server has seen an authenticated MCP
+  handshake. Nothing restarts: a running gateway reconciles its own MCP configuration, and the
+  window closes on its own clock.
+- The surface this release adds: `file_list` / `file_read` (with a 65 536-byte cap per answer and a
+  windowed read above it), `file_offer`, `apps` (the installed list, plus what usage access can
+  honestly say is running), and `notification_dismiss`. `notification_dismiss` is Tier 1 and not
+  undoable; `apps` is a read.
+- Files are keyed by the grant's tree id, and the `folder` enum is the granted labels. Android 11+
+  will not grant the `Download` root, so the picker opens there and the owner picks a subfolder.
+- There is no local phone lane any more. A timer now costs a round trip and needs this set plus the
+  timer group; that is the price of the mind being the only decision-maker (D38).
+- **The engine runs off the drawing thread.** Phone actions execute on their own thread, not on
+  the one that paints the being and runs the voice loop. Only what Android insists on — opening
+  another app, the floating window — crosses to the UI thread, and that crossing is bounded. A
+  depth-five listing stops at the page it answers instead of walking the whole tree, so a large
+  folder can no longer block the call it was asked in.
+- **A timeout is not a refusal.** When a caller's bound expires the result is `ok:false`,
+  `reason:"unavailable"` and **`outcome_uncertain:true`** — the action may still complete, and
+  `status` will say whether it did. The old wording claimed nothing had been performed, which was
+  false whenever the work it gave up on finished anyway.
+- **A launch the phone blocked is reported as blocked.** Android refuses to open another app from
+  the background without raising anything, and the app used to report success regardless. It now
+  checks that Vox is on screen before anything is resolved, ended or announced, and says plainly
+  that Vox has to be on screen to open another app when it is not.
+- **An uninstall approved from the notification opens Vox first**, so the platform's own
+  confirmation has a window to appear in. The card is the owner's decision; it was never the
+  platform's.
+- **`dial` finishes its line before it hangs up.** The announcement used to be cut off by the
+  teardown that followed it, and a dialer that then failed left no record. Both are fixed, and a
+  dialer that resolves but will not start is `unavailable` rather than `no_app`.
 
 ## Not in this release
 
@@ -128,6 +176,15 @@ Each set is selected on its own; with the master off, everything below is dimmed
   work and the release waits for it; see `docs/FDROID.md`.
 - **The wake word** — foundation only. **Tier 3 / screen control** — design only. **Full-duplex**
   — long horizon.
+- **The two handoff edges are closed in this release.** Android still refuses a background activity
+  start without raising, so every handoff asks first whether an activity of ours is resumed or in
+  picture-in-picture: when Vox is not on screen the call is refused `background` and says so,
+  and `uninstall` approved from the notification opens Vox before firing. `dial` finishes its
+  announcement before ending the call, and because the dialer opens after that reply the result says
+  `dialer:"unknown"` with `outcome_uncertain:true` rather than claiming it opened; `status` carries
+  the dialer's own `opened` / `not_opened` answer.
+- **Nothing left waiting on D39.** Sessions' and Switching profiles' device passes were both made
+  on 2026-11-06 and both sets are gone; the Alpha gate is four sets.
 
 ## Verification
 
