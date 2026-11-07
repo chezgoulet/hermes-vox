@@ -685,8 +685,8 @@ Every path disarms at once:
 | **Turn off screen control** in the sheet | disarm, `disableSelf()` (API 24), then disable the component. Re-enabling needs Android's settings again |
 | the user disables the service in Android settings | the system unbinds; the tier shows *Off* |
 
-**Schema versus enforcement.** The MCP server has no session and no SSE (D34), so it cannot send
-`notifications/tools/list_changed`; the gateway keeps the tool list it fetched. The seven actions are
+**Schema versus enforcement.** The MCP server's session carries no SSE stream (D34), so it cannot
+send `notifications/tools/list_changed`; the gateway keeps the tool list it fetched. The seven actions are
 therefore **advertised whenever the tier is Enabled** (any non-Off state), and enforcement is
 entirely on the phone: a call when not armed is `not-armed`. Each turn's `instructions` (D31) carry
 `screen_control: armed(call) apps=Messages,Maps` or `screen_control: paused`, so the mind knows

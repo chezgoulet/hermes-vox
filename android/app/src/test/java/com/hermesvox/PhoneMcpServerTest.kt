@@ -19,15 +19,17 @@ import java.net.InetAddress
 import java.net.Socket
 
 /**
- * #421 step 3: the MCP wire, proven on **loopback** so it runs in CI.
+ * #421 step 3 / #503: the MCP wire, proven on **loopback** so it runs in CI.
  *
  * The app binds the tailnet address; this binds `127.0.0.1`, which is what makes the socket test
  * possible and is exactly the address `PhoneMcpServer.start` takes. The rule that only the tailnet
  * address is ever passed is [Tailnet]'s and [PhoneMcpWiringTest]'s job.
  *
- * What is pinned is the shape the gateway's client actually speaks (Streamable HTTP, stateless
- * JSON-RPC): `initialize`, `notifications/initialized`, `tools/list`, `tools/call`, and a refusal
- * that is a *result* rather than a transport error.
+ * What is pinned is the shape the gateway's client actually speaks — Streamable HTTP with a session:
+ * `initialize` (and its `Mcp-Session-Id`), `notifications/initialized` (202), `tools/list`,
+ * `tools/call`, `ping`, `DELETE`, and keep-alive on the socket. The reason this file is so explicit
+ * about the session is #503: without one every response closed the connection, the gateway's client
+ * charged five reconnects and parked the server, and no phone tool was ever registered.
  */
 class PhoneMcpServerTest {
 
@@ -53,29 +55,47 @@ class PhoneMcpServerTest {
         server.close()
     }
 
-    private class Response(val status: Int, val headers: Map<String, String>, val body: String)
+    private class Response(val status: Int, val headers: Map<String, String>, val body: String) {
+        val sessionId: String? get() = headers[PhoneMcpServer.SESSION_HEADER.lowercase()]
+    }
 
-    private fun request(
-        method: String = "POST",
-        target: String = PhoneMcpServer.PATH,
-        body: String? = null,
-        bearer: String? = token,
-        extra: Map<String, String> = emptyMap(),
-    ): Response {
-        Socket(InetAddress.getLoopbackAddress(), server.port).use { s ->
-            s.soTimeout = 5_000
-            val out = s.getOutputStream()
+    /**
+     * One TCP connection, used for more than one request.
+     *
+     * A response is read by its `Content-Length`, not by end-of-stream: that is the whole point of
+     * the keep-alive tests, and it is what lets this file tell "the server ended the connection"
+     * from "the test read one response".
+     */
+    private inner class Wire : AutoCloseable {
+        private val socket = Socket(InetAddress.getLoopbackAddress(), server.port).apply {
+            soTimeout = 5_000
+        }
+        private val out = socket.getOutputStream()
+        private val input = BufferedInputStream(socket.getInputStream())
+
+        fun send(
+            method: String = "POST",
+            target: String = PhoneMcpServer.PATH,
+            body: String? = null,
+            bearer: String? = token,
+            extra: Map<String, String> = emptyMap(),
+            close: Boolean = false,
+        ): Response {
+            val bytes = (body ?: "").toByteArray(Charsets.UTF_8)
             val sb = StringBuilder("$method $target HTTP/1.1\r\nHost: 127.0.0.1\r\n")
             bearer?.let { sb.append("Authorization: Bearer ").append(it).append("\r\n") }
-            for ((k, v) in extra) sb.append(k).append(": ").append(v).append("\r\n")
-            val bytes = (body ?: "").toByteArray(Charsets.UTF_8)
             if (method == "POST") sb.append("Content-Type: application/json\r\n")
             sb.append("Content-Length: ").append(bytes.size).append("\r\n")
-            sb.append("Connection: close\r\n\r\n")
+            for ((k, v) in extra) sb.append(k).append(": ").append(v).append("\r\n")
+            if (close) sb.append("Connection: close\r\n")
+            sb.append("\r\n")
             out.write(sb.toString().toByteArray(Charsets.UTF_8))
             if (method == "POST") out.write(bytes)
             out.flush()
-            val input = BufferedInputStream(s.getInputStream())
+            return read()
+        }
+
+        private fun read(): Response {
             val status = readLine(input)!!.split(' ')[1].toInt()
             val headers = LinkedHashMap<String, String>()
             while (true) {
@@ -84,14 +104,19 @@ class PhoneMcpServerTest {
                 val i = h.indexOf(':')
                 if (i > 0) headers[h.substring(0, i).trim().lowercase()] = h.substring(i + 1).trim()
             }
-            val buf = ByteArrayOutputStream()
-            val chunk = ByteArray(4096)
-            while (true) {
-                val n = input.read(chunk)
+            val length = headers["content-length"]?.toIntOrNull() ?: 0
+            val body = ByteArray(length)
+            var got = 0
+            while (got < length) {
+                val n = input.read(body, got, length - got)
                 if (n < 0) break
-                buf.write(chunk, 0, n)
+                got += n
             }
-            return Response(status, headers, buf.toString("UTF-8"))
+            return Response(status, headers, String(body, 0, got, Charsets.UTF_8))
+        }
+
+        override fun close() {
+            try { socket.close() } catch (_: Throwable) { }
         }
     }
 
@@ -105,30 +130,71 @@ class PhoneMcpServerTest {
         }
     }
 
-    private fun rpc(method: String, params: String? = null, id: String = "1"): Response {
+    /** One request on its own connection. */
+    private fun request(
+        method: String = "POST",
+        target: String = PhoneMcpServer.PATH,
+        body: String? = null,
+        bearer: String? = token,
+        extra: Map<String, String> = emptyMap(),
+        close: Boolean = true,
+    ): Response = Wire().use { it.send(method, target, body, bearer, extra, close) }
+
+    private fun rpcBody(method: String, params: String? = null, id: String = "1"): String {
         val p = if (params == null) "" else ",\"params\":$params"
-        return request(body = """{"jsonrpc":"2.0","id":$id,"method":"$method"$p}""")
+        return """{"jsonrpc":"2.0","id":$id,"method":"$method"$p}"""
     }
 
     private fun obj(r: Response): JObj = Json.parse(r.body) as JObj
 
+    /**
+     * A client that has completed the handshake: one connection, one session id, both reused.
+     *
+     * This is the shape the SDK has — its session id outlives the individual request — so the tests
+     * that need "an ordinary request" get one without restating the handshake every time.
+     */
+    private inner class Client : AutoCloseable {
+        val wire = Wire()
+        val id: String
+
+        init {
+            val r = wire.send(body = rpcBody("initialize", """{"protocolVersion":"2025-06-18"}"""))
+            assertEquals(200, r.status)
+            id = r.sessionId ?: throw AssertionError("initialize returned no session id")
+        }
+
+        fun rpc(method: String, params: String? = null, id: String = "1", session: String? = this.id): Response =
+            wire.send(body = rpcBody(method, params, id), extra = sessionHeader(session))
+
+        fun call(arguments: String, id: String = "2"): Response = rpc(
+            "tools/call",
+            """{"name":"phone","arguments":$arguments}""",
+            id = id,
+        )
+
+        override fun close() = wire.close()
+    }
+
+    private fun sessionHeader(id: String?): Map<String, String> =
+        if (id == null) emptyMap() else mapOf(PhoneMcpServer.SESSION_HEADER to id)
+
     // ---- security ----
 
     @Test fun a_request_without_the_token_is_refused_and_nothing_runs() {
-        val r = request(bearer = null, body = """{"jsonrpc":"2.0","id":1,"method":"tools/list"}""")
+        val r = request(bearer = null, body = rpcBody("tools/list"))
         assertEquals(401, r.status)
         assertTrue(r.headers["www-authenticate"]!!.contains("Bearer"))
         assertTrue(calls.isEmpty())
     }
 
     @Test fun a_request_with_the_wrong_token_is_refused() {
-        val r = request(bearer = token.reversed(), body = """{"jsonrpc":"2.0","id":1,"method":"tools/list"}""")
+        val r = request(bearer = token.reversed(), body = rpcBody("tools/list"))
         assertEquals(401, r.status)
         assertTrue(calls.isEmpty())
     }
 
     @Test fun the_token_is_never_logged() {
-        request(bearer = null, body = """{"jsonrpc":"2.0","id":1,"method":"tools/list"}""")
+        request(bearer = null, body = rpcBody("tools/list"))
         assertTrue(log.isNotEmpty())
         for (line in log) assertFalse("a log line carried the token: $line", line.contains(token))
     }
@@ -157,22 +223,34 @@ class PhoneMcpServerTest {
         )
     }
 
-    private fun list(): Response =
-        request(bearer = null, body = """{"jsonrpc":"2.0","id":1,"method":"tools/list"}""")
-
     private fun listWith(bearer: String?): Response =
-        request(bearer = bearer, body = """{"jsonrpc":"2.0","id":1,"method":"tools/list"}""")
+        request(bearer = bearer, body = rpcBody("tools/list"))
+
+    /** A handshake on its own connection: 200 means the credential opened the door. */
+    private fun handshake(bearer: String?): Response =
+        request(bearer = bearer, body = rpcBody("initialize", """{"protocolVersion":"2025-06-18"}"""))
 
     @Test fun the_connections_own_key_is_accepted_as_a_bearer() {
         restartWithBoth()
-        val r = listWith(connectionKey)
+        // A handshake with the key is what proves it: it mints a session and returns the tool list
+        // on the next request, exactly as the phone's own token does.
+        val r = request(bearer = connectionKey, body = rpcBody("initialize", """{"protocolVersion":"2025-06-18"}"""))
         assertEquals("the agent presents the key it already holds", 200, r.status)
-        assertTrue(r.body, r.body.contains("\"phone\""))
+        assertNotNull(r.sessionId)
+        val tools = request(
+            bearer = connectionKey,
+            body = rpcBody("tools/list"),
+            extra = sessionHeader(r.sessionId),
+        )
+        assertEquals(200, tools.status)
+        assertTrue(tools.body, tools.body.contains("\"phone\""))
     }
 
     @Test fun the_phones_own_token_still_works() {
         restartWithBoth()
-        assertEquals(200, listWith(token).status)
+        val r = request(body = rpcBody("initialize", """{"protocolVersion":"2025-06-18"}"""))
+        assertEquals(200, r.status)
+        assertNotNull(r.sessionId)
     }
 
     @Test fun an_initialize_with_the_connections_key_is_the_handshake_the_phone_records() {
@@ -189,14 +267,17 @@ class PhoneMcpServerTest {
         )
         assertEquals(
             200,
-            request(bearer = connectionKey, body = """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}""").status,
+            request(
+                bearer = connectionKey,
+                body = rpcBody("initialize", """{"protocolVersion":"2025-06-18"}"""),
+            ).status,
         )
         assertEquals("the key is the proof, exactly as the token was", 1, seen.size)
     }
 
     @Test fun a_request_with_neither_credential_is_refused() {
         restartWithBoth()
-        assertEquals(401, list().status)
+        assertEquals(401, listWith(null).status)
         assertEquals(401, listWith("").status)
         assertTrue(calls.isEmpty())
     }
@@ -222,10 +303,10 @@ class PhoneMcpServerTest {
         restartWithBoth(onTokenRead = { tokenReads++ }, onKeyRead = { keyReads++ })
         val tokenAtStart = tokenReads
         val keyAtStart = keyReads
-        assertEquals(200, listWith(token).status)
+        assertEquals(200, handshake(token).status)
         assertEquals("the token branch still reads the key", keyAtStart + 1, keyReads)
         assertEquals(tokenAtStart + 1, tokenReads)
-        assertEquals(200, listWith(connectionKey).status)
+        assertEquals(200, handshake(connectionKey).status)
         assertEquals("the key branch still reads the token", tokenAtStart + 2, tokenReads)
         assertEquals(keyAtStart + 2, keyReads)
     }
@@ -233,7 +314,7 @@ class PhoneMcpServerTest {
     @Test fun a_refusal_is_one_401_with_no_hint_of_which_credential_was_tried() {
         restartWithBoth()
         val wrong = "0".repeat(32)
-        val noHeader = list()
+        val noHeader = listWith(null)
         val wrongKey = listWith(wrong)
         assertEquals(401, noHeader.status)
         assertEquals(401, wrongKey.status)
@@ -243,7 +324,7 @@ class PhoneMcpServerTest {
 
     @Test fun the_connection_key_is_never_logged() {
         restartWithBoth()
-        list()
+        listWith(null)
         listWith(connectionKey.reversed())
         listWith(connectionKey)
         assertTrue(log.isNotEmpty())
@@ -259,9 +340,9 @@ class PhoneMcpServerTest {
     @Test fun an_unconfigured_connection_leaves_only_the_phones_token_valid() {
         // No key provider (the default): a phone with no connection configured must not accept
         // an empty bearer as a second credential.
-        assertEquals(200, listWith(token).status)
-        assertEquals(401, listWith(connectionKey).status)
-        assertEquals(401, list().status)
+        assertEquals(200, handshake(token).status)
+        assertEquals(401, handshake(connectionKey).status)
+        assertEquals(401, handshake(null).status)
     }
 
     @Test fun one_address_is_required_and_any_local_is_refused() {
@@ -286,7 +367,8 @@ class PhoneMcpServerTest {
     @Test fun get_does_not_open_a_stream_we_do_not_have() {
         val r = request(method = "GET")
         assertEquals(405, r.status)
-        assertEquals("POST", r.headers["allow"])
+        assertTrue(r.headers["allow"]!!.contains("POST"))
+        assertTrue("the client is told DELETE is a method too", r.headers["allow"]!!.contains("DELETE"))
     }
 
     @Test fun head_is_mcp_shaped_so_the_gateway_probe_passes() {
@@ -296,10 +378,129 @@ class PhoneMcpServerTest {
         assertTrue(r.body.isEmpty())
     }
 
+    // ---- the session (#503) ----
+
+    @Test fun initialize_returns_a_session_id_that_is_unpredictable() {
+        val first = request(body = rpcBody("initialize", """{"protocolVersion":"2025-06-18"}"""))
+        val second = request(body = rpcBody("initialize", """{"protocolVersion":"2025-06-18"}"""))
+        val a = first.sessionId!!
+        val b = second.sessionId!!
+        assertTrue(
+            "the header the SDK stores is Mcp-Session-Id",
+            first.headers.containsKey(PhoneMcpServer.SESSION_HEADER.lowercase()),
+        )
+        assertTrue("an id is at least 128 bits of hex, got $a", a.matches(Regex("[0-9a-f]{32,}")))
+        assertNotEquals("every connection attempt gets its own session", a, b)
+    }
+
+    @Test fun a_request_without_the_session_id_is_refused_after_initialize() {
+        val r = request(body = rpcBody("tools/list"))
+        assertEquals("the spec's answer once initialize has happened", 404, r.status)
+        val err = obj(r)["error"] as JObj
+        assertTrue((err["message"] as JStr).value.contains("Mcp-Session-Id"))
+        assertTrue("nothing ran", calls.isEmpty())
+    }
+
+    @Test fun a_request_with_an_unknown_session_id_is_refused() {
+        val r = request(
+            body = rpcBody("tools/list"),
+            extra = sessionHeader("0123456789abcdef0123456789abcdef"),
+        )
+        assertEquals(404, r.status)
+        assertTrue(calls.isEmpty())
+    }
+
+    @Test fun the_session_carries_every_later_request() {
+        Client().use { c ->
+            assertEquals(200, c.rpc("tools/list").status)
+            assertEquals(200, c.call("""{"action":"timer","duration_ms":1000}""").status)
+            assertEquals("the same session served both", 1, server.sessionCount)
+        }
+    }
+
+    @Test fun delete_ends_the_session() {
+        Client().use { c ->
+            assertEquals(200, c.rpc("ping").status)
+            assertEquals(200, c.wire.send(method = "DELETE", extra = sessionHeader(c.id)).status)
+            assertEquals("the session is gone", 0, server.sessionCount)
+            val after = c.wire.send(body = rpcBody("tools/list"), extra = sessionHeader(c.id))
+            assertEquals("a deleted session is refused per the spec", 404, after.status)
+        }
+    }
+
+    @Test fun delete_without_a_session_is_refused() {
+        assertEquals(404, request(method = "DELETE").status)
+        assertEquals(
+            404,
+            request(method = "DELETE", extra = sessionHeader("0123456789abcdef0123456789abcdef")).status,
+        )
+    }
+
+    // ---- keep-alive ----
+
+    @Test fun a_normal_response_does_not_close_the_connection() {
+        Client().use { c ->
+            val r = c.rpc("tools/list")
+            assertNotEquals(
+                "until #503 every response said this, and every exchange ended the connection",
+                "close",
+                r.headers["connection"]?.lowercase(),
+            )
+        }
+    }
+
+    @Test fun two_requests_share_one_connection_and_one_session() {
+        Client().use { c ->
+            val first = c.rpc("ping", id = "1")
+            val second = c.rpc("tools/list", id = "2")
+            assertEquals(200, first.status)
+            assertEquals(200, second.status)
+            assertTrue(first.body.contains("\"id\":1"))
+            assertTrue(second.body.contains("\"id\":2"))
+        }
+    }
+
+    @Test fun the_connection_closes_when_the_client_asks() {
+        Client().use { c ->
+            val r = c.wire.send(
+                body = rpcBody("ping"),
+                extra = sessionHeader(c.id),
+                close = true,
+            )
+            assertEquals("close", r.headers["connection"]?.lowercase())
+        }
+    }
+
+    @Test fun the_connection_closes_when_the_server_stops() {
+        val c = Client()
+        try {
+            val r = c.wire.send(body = rpcBody("ping"), extra = sessionHeader(c.id))
+            assertEquals(200, r.status)
+            server.close()
+            // The next write fails (or the read does) because the server closed the socket rather
+            // than leaving a keep-alive thread to time out.
+            var ended = false
+            try {
+                val after = c.wire.send(body = rpcBody("ping"), extra = sessionHeader(c.id))
+                ended = after.status != 200
+            } catch (_: Throwable) {
+                ended = true
+            }
+            assertTrue("a stopped server ends its open connections", ended)
+        } finally {
+            c.close()
+        }
+    }
+
     // ---- the handshake ----
 
     @Test fun initialize_negotiates_a_version_and_advertises_tools() {
-        val r = rpc("initialize", """{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}""")
+        val r = request(
+            body = rpcBody(
+                "initialize",
+                """{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}""",
+            ),
+        )
         assertEquals(200, r.status)
         val result = obj(r)["result"] as JObj
         assertEquals("2025-06-18", (result["protocolVersion"] as JStr).value)
@@ -308,20 +509,28 @@ class PhoneMcpServerTest {
     }
 
     @Test fun an_unknown_protocol_version_gets_the_one_we_speak() {
-        val r = rpc("initialize", """{"protocolVersion":"2099-01-01"}""")
+        val r = request(body = rpcBody("initialize", """{"protocolVersion":"2099-01-01"}"""))
         assertEquals(PhoneMcpServer.OURS, ((obj(r)["result"] as JObj)["protocolVersion"] as JStr).value)
     }
 
     @Test fun the_initialized_notification_is_acknowledged_with_no_body() {
-        val r = request(body = """{"jsonrpc":"2.0","method":"notifications/initialized"}""")
-        assertEquals(202, r.status)
-        assertTrue(r.body.isEmpty())
+        Client().use { c ->
+            val r = c.wire.send(
+                body = """{"jsonrpc":"2.0","method":"notifications/initialized"}""",
+                extra = sessionHeader(c.id),
+            )
+            assertEquals(202, r.status)
+            assertTrue(r.body.isEmpty())
+        }
     }
 
-    @Test fun ping_answers() {
-        val r = rpc("ping")
-        assertEquals(200, r.status)
-        assertNotNull(obj(r)["result"])
+    @Test fun ping_answers_with_an_empty_result() {
+        Client().use { c ->
+            val r = c.rpc("ping")
+            assertEquals(200, r.status)
+            val result = obj(r)["result"] as JObj
+            assertEquals("ping is optional to the SDK, and a real answer is better", 0, result.fields.size)
+        }
     }
 
     @Test fun only_an_authenticated_initialize_is_the_handshake_the_phone_records() {
@@ -336,15 +545,16 @@ class PhoneMcpServerTest {
             onInitialize = { seen.add(it) },
         )
 
-        request(bearer = null, body = """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}""")
+        request(bearer = null, body = rpcBody("initialize", """{"protocolVersion":"2025-06-18"}"""))
         assertTrue("an unauthenticated initialize is not a connection", seen.isEmpty())
-        request(bearer = token.reversed(), body = """{"jsonrpc":"2.0","id":2,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}""")
+        request(bearer = token.reversed(), body = rpcBody("initialize", """{"protocolVersion":"2025-06-18"}"""))
         assertTrue("a wrong token is not a connection", seen.isEmpty())
 
-        rpc("initialize", """{"protocolVersion":"2025-06-18"}""")
-        assertEquals("one authenticated initialize is the evidence", 1, seen.size)
-        rpc("tools/list")
-        assertEquals("tools/list is not a handshake", 1, seen.size)
+        Client().use { c ->
+            assertEquals("one authenticated initialize is the evidence", 1, seen.size)
+            c.rpc("tools/list")
+            assertEquals("tools/list is not a handshake", 1, seen.size)
+        }
     }
 
     @Test fun rotating_the_token_invalidates_the_old_one_on_the_next_request() {
@@ -359,57 +569,68 @@ class PhoneMcpServerTest {
             log = { log.add(it) },
         )
 
-        assertEquals(200, rpc("tools/list").status)
+        assertEquals(200, handshake(token).status)
         current = fresh
-        assertEquals("the old credential stops working at rotation", 401, rpc("tools/list").status)
-        assertEquals(200, request(bearer = fresh, body = """{"jsonrpc":"2.0","id":3,"method":"tools/list"}""").status)
+        assertEquals("the old credential stops working at rotation", 401, handshake(token).status)
+        assertEquals(200, handshake(fresh).status)
     }
 
     // ---- tools ----
 
     @Test fun tools_list_is_one_phone_tool_with_the_decided_schema() {
-        val r = rpc("tools/list")
-        val tools = (obj(r)["result"] as JObj)["tools"] as JArr
-        assertEquals(1, tools.items.size)
-        val tool = tools.items[0] as JObj
-        assertEquals("phone", (tool["name"] as JStr).value)
-        val required = ((tool["inputSchema"] as JObj)["required"] as JArr).items.map { (it as JStr).value }
-        assertEquals(listOf("action"), required)
+        Client().use { c ->
+            val r = c.rpc("tools/list")
+            val tools = (obj(r)["result"] as JObj)["tools"] as JArr
+            assertEquals(1, tools.items.size)
+            val tool = tools.items[0] as JObj
+            assertEquals("phone", (tool["name"] as JStr).value)
+            val required = ((tool["inputSchema"] as JObj)["required"] as JArr).items.map { (it as JStr).value }
+            assertEquals(listOf("action"), required)
+        }
     }
 
     @Test fun tools_call_reaches_the_handler_and_returns_its_result_as_text() {
-        val r = request(
-            body = """{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"phone","arguments":{"action":"timer","duration_ms":60000}}}"""
-        )
-        assertEquals(200, r.status)
-        val result = obj(r)["result"] as JObj
-        assertEquals(false, (result["isError"] as JBool).value)
-        val content = (result["content"] as JArr).items[0] as JObj
-        assertEquals("text", (content["type"] as JStr).value)
-        assertEquals("""{"ok":true,"action":"timer","id":"timer-1"}""", (content["text"] as JStr).value)
-        assertEquals(1, calls.size)
-        assertEquals(60_000L, calls[0]["duration_ms"])
+        Client().use { c ->
+            val r = c.call("""{"action":"timer","duration_ms":60000}""")
+            assertEquals(200, r.status)
+            val result = obj(r)["result"] as JObj
+            assertEquals(false, (result["isError"] as JBool).value)
+            val content = (result["content"] as JArr).items[0] as JObj
+            assertEquals("text", (content["type"] as JStr).value)
+            assertEquals("""{"ok":true,"action":"timer","id":"timer-1"}""", (content["text"] as JStr).value)
+            assertEquals(1, calls.size)
+            assertEquals(60_000L, calls[0]["duration_ms"])
+        }
     }
 
     @Test fun a_tool_call_with_no_arguments_is_an_empty_object_not_an_error() {
-        val r = request(body = """{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"phone"}}""")
-        assertEquals(200, r.status)
-        assertEquals(1, calls.size)
-        assertTrue(calls[0].isEmpty())
+        Client().use { c ->
+            val r = c.wire.send(
+                body = rpcBody("tools/call", """{"name":"phone"}"""),
+                extra = sessionHeader(c.id),
+            )
+            assertEquals(200, r.status)
+            assertEquals(1, calls.size)
+            assertTrue(calls[0].isEmpty())
+        }
     }
 
     @Test fun an_unknown_tool_is_a_protocol_error_the_client_can_see() {
-        val r = request(body = """{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"shell","arguments":{}}}""")
-        val err = obj(r)["error"] as JObj
-        assertEquals("-32602", (err["code"] as com.hermesvox.core.JNum).raw)
-        assertTrue(calls.isEmpty())
+        Client().use { c ->
+            val r = c.rpc("tools/call", """{"name":"shell","arguments":{}}""")
+            val err = obj(r)["error"] as JObj
+            assertEquals("-32602", (err["code"] as com.hermesvox.core.JNum).raw)
+            assertTrue(calls.isEmpty())
+        }
     }
 
     @Test fun an_unknown_method_is_a_json_rpc_error_not_a_500() {
-        val r = rpc("tools/execute")
-        assertEquals(200, r.status)
-        val err = obj(r)["error"] as JObj
-        assertEquals("-32601", (err["code"] as com.hermesvox.core.JNum).raw)
+        Client().use { c ->
+            val r = c.rpc("tools/execute")
+            assertEquals(200, r.status)
+            val err = obj(r)["error"] as JObj
+            assertEquals("-32601", (err["code"] as com.hermesvox.core.JNum).raw)
+        }
     }
 
     @Test fun malformed_json_is_a_parse_error() {
@@ -419,42 +640,46 @@ class PhoneMcpServerTest {
     }
 
     @Test fun the_id_comes_back_in_the_same_json_type() {
-        val numeric = request(body = """{"jsonrpc":"2.0","id":42,"method":"ping"}""")
-        assertTrue(numeric.body, numeric.body.contains("\"id\":42"))
-        val textual = request(body = """{"jsonrpc":"2.0","id":"abc","method":"ping"}""")
-        assertTrue(textual.body, textual.body.contains("\"id\":\"abc\""))
+        Client().use { c ->
+            val numeric = c.rpc("ping", id = "42")
+            assertTrue(numeric.body, numeric.body.contains("\"id\":42"))
+            val textual = c.rpc("ping", id = "\"abc\"")
+            assertTrue(textual.body, textual.body.contains("\"id\":\"abc\""))
+        }
     }
 
-    @Test fun a_handler_that_throws_is_a_described_refusal_not_a_dead_socket() {
+    /**
+     * A handler that throws is a described refusal, not a dead socket — and the session survives it.
+     * The transport's job ends at "the client got a CallToolResult"; what the text and `isError`
+     * say belongs to the tool surface and is pinned in `PhoneSurfaceTest`.
+     */
+    @Test fun a_handler_that_throws_inside_a_session_is_a_described_refusal() {
+        val original = server
         val failing = PhoneMcpServer.start(
             bind = InetAddress.getLoopbackAddress(),
             token = token,
             handler = { throw IllegalStateException("boom") },
             port = 0,
+            log = { log.add(it) },
         )
         try {
-            Socket(InetAddress.getLoopbackAddress(), failing.port).use { s ->
-                s.soTimeout = 5_000
-                val body = """{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"phone","arguments":{"action":"timer"}}}"""
-                val out = s.getOutputStream()
-                out.write(("POST ${PhoneMcpServer.PATH} HTTP/1.1\r\nHost: h\r\nAuthorization: Bearer $token\r\n" +
-                    "Content-Type: application/json\r\nContent-Length: ${body.toByteArray().size}\r\n" +
-                    "Connection: close\r\n\r\n").toByteArray())
-                out.write(body.toByteArray())
-                out.flush()
-                val text = s.getInputStream().readBytes().toString(Charsets.UTF_8)
-                // The refusal rides a normal result: isError stays false, and the text is a JSON
-                // object the model can read (`ok:false` + a reason), not a transport failure.
-                val payload = text.substringAfter("\r\n\r\n")
-                val result = (Json.parse(payload) as JObj)["result"] as JObj
+            server = failing
+            Client().use { c ->
+                val r = c.call("""{"action":"timer"}""")
+                assertEquals("the socket survived the throw", 200, r.status)
+                val result = obj(r)["result"] as JObj
                 assertEquals(false, (result["isError"] as JBool).value)
-                val inner = Json.parse(((result["content"] as JArr).items[0] as JObj)
-                    .let { (it["text"] as JStr).value }) as JObj
+                val inner = Json.parse(
+                    ((result["content"] as JArr).items[0] as JObj).let { (it["text"] as JStr).value }
+                ) as JObj
                 assertEquals(false, (inner["ok"] as JBool).value)
                 assertEquals("unavailable", (inner["reason"] as JStr).value)
+                // And the session is still usable: a throw is not a transport failure.
+                assertEquals(200, c.rpc("ping").status)
             }
         } finally {
             failing.close()
+            server = original
         }
     }
 }
