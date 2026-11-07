@@ -487,10 +487,14 @@ class SettingsActivity : AppCompatActivity() {
                 // not both read as "None".
                 val failure = typed?.let { com.hermesvox.core.MtlsConfig.failureFor(it) }
                     ?.takeIf { it != com.hermesvox.core.MtlsConfig.Reason.NO_ALIAS }
+                // A certificate this edit would leave behind: the one on screen (stored
+                // under the old address) or one the new address already holds, which Save
+                // clears so it cannot be used without being chosen again.
+                val stale = changed && (!currentAlias.isNullOrBlank() ||
+                    (typed != null && com.hermesvox.core.MtlsConfig.getAlias(prefs, typed) != null))
                 when {
-                    changed && !currentAlias.isNullOrBlank() -> {
-                        // Say it here, before Save: the old certificate is still stored
-                        // under the old address, and it will not follow this change.
+                    stale -> {
+                        // Say it here, before Save: neither certificate will follow this change.
                         dMtlsAlias.text = "Address changed — choose the certificate again"
                         dMtlsClear.visibility = View.GONE
                     }
@@ -605,14 +609,19 @@ class SettingsActivity : AppCompatActivity() {
                     // credential, with no prompt and no visible change.
                     val finalOrigin = com.hermesvox.core.MtlsConfig.originOf(u)
                     if (finalOrigin != null) {
+                        // Was a certificate dropped by this edit — the one on screen, or one
+                        // the new origin already held? Either way the address changed, and
+                        // the user has to choose again; say so rather than let the row go
+                        // quietly back to "None".
+                        val dropped = com.hermesvox.core.MtlsConfig.getAlias(prefs, finalOrigin)
+                        val addressChanged = finalOrigin != chosenFor && finalOrigin != initialOrigin
                         when (val d = com.hermesvox.core.MtlsConfig.saveAlias(
                             initialOrigin, chosenFor, currentAlias, finalOrigin)) {
                             is com.hermesvox.core.MtlsConfig.SaveAlias.Write ->
                                 com.hermesvox.core.MtlsConfig.setAlias(prefs, finalOrigin, d.alias)
                             com.hermesvox.core.MtlsConfig.SaveAlias.Leave -> Unit
                         }
-                        if (finalOrigin != chosenFor && finalOrigin != initialOrigin &&
-                            !currentAlias.isNullOrBlank()) {
+                        if (addressChanged && (dropped != null || !currentAlias.isNullOrBlank())) {
                             Toast.makeText(this,
                                 "The address changed, so the certificate must be chosen again for it.",
                                 Toast.LENGTH_LONG).show()
