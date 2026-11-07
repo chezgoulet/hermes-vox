@@ -93,11 +93,30 @@ class PhoneToolsSheet(
     private var dialog: Dialog? = null
     private var open = false
     private var notice: String? = null
-    private var poll: Runnable? = null
     private val main = Handler(Looper.getMainLooper())
+
+    /**
+     * The one tick: a second, and only while an attempt is in flight ([follow]). It used to be
+     * re-posted for as long as the screen was open, which is what rebuilt the column every second
+     * while nothing was happening.
+     */
+    private val poll = PhoneToolsPoll(
+        post = { delay, what -> main.postDelayed(what, delay) },
+        cancel = { what -> main.removeCallbacks(what) },
+        onTick = { tick() },
+    )
 
     /** The column the sheet scrolls, so a repaint can put the owner back where they were. */
     private var scroll: ScrollView? = null
+
+    /** The setup block: rebuilt on its own when the attempt moves, never with the grant list. */
+    private var setupBox: LinearLayout? = null
+
+    /** Everything after the setup block: the grants, Recent actions and This phone. */
+    private var bodyBox: LinearLayout? = null
+
+    /** The lines a tick may rewrite in place; assigned as [build] draws them. */
+    private var lines = Lines()
 
     /** What the sheet is drawing right now; a tick that would draw the same thing does nothing. */
     private var shown: Drawn? = null
@@ -109,12 +128,11 @@ class PhoneToolsSheet(
         open = true
         current = this
         paint()
-        schedulePoll()
     }
 
     /** Re-read the live state (a call started, DND access came back from system settings). */
     fun refresh() {
-        if (open) paint()
+        if (open) render(snapshot(System.currentTimeMillis()))
     }
 
     /**
@@ -124,11 +142,22 @@ class PhoneToolsSheet(
      */
     internal val scroller: ScrollView? get() = scroll
 
+    /**
+     * Is a tick posted right now? Read by [PhoneToolsSheetLayoutTest] on a device, and the same
+     * question [PhoneToolsPollTest] asks of the poll itself: a settled screen must have none.
+     */
+    internal val ticking: Boolean get() = poll.scheduled
+
     fun close() {
         dialog?.dismiss()
     }
 
-    private fun paint() {
+    /**
+     * Rebuild the column from [next] — the whole tree, the one rewrite that restructures it. The
+     * owner's place in a long screen is carried across it (#451), and the tick follows the step the
+     * new tree draws ([follow]).
+     */
+    private fun paint(next: Drawn = snapshot(System.currentTimeMillis())) {
         if (!open) return
         val d = dialog ?: VoxSheet.dialog(act).also { created ->
             dialog = created
@@ -136,9 +165,11 @@ class PhoneToolsSheet(
                 open = false
                 dialog = null
                 scroll = null
+                setupBox = null
+                bodyBox = null
+                lines = Lines()
                 shown = null
-                poll?.let { main.removeCallbacks(it) }
-                poll = null
+                poll.stop()
                 if (current === this) current = null
                 // The screen going away is one of the two reasons a setup run is stopped. Say so
                 // in the card rather than leaving the owner to wonder why the work vanished.
@@ -152,27 +183,94 @@ class PhoneToolsSheet(
         // a long sheet is theirs, and a state that lands while they are reading must not yank them
         // back to the top (#451).
         val at = if (d.isShowing) scroll?.scrollY ?: 0 else 0
-        val next = snapshot(System.currentTimeMillis())
         d.setContentView(build(next))
         shown = next
         if (at > 0) scroll?.post { scroll?.scrollTo(0, at) }
         d.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-        if (d.isShowing) return
-        d.show()
+        if (!d.isShowing) d.show()
+        follow()
     }
 
-    private fun schedulePoll() {
-        if (poll != null) return
-        val tick = object : Runnable {
-            override fun run() {
-                if (!open) return
-                // #451: a tick repaints only when what the sheet would draw has changed.
-                if (repaints(shown, snapshot(System.currentTimeMillis()))) paint()
-                main.postDelayed(this, 1_000L)
+    /**
+     * Apply one snapshot, doing the least that draws it — nothing at all when nothing changed.
+     *
+     * This is a tick's only entry point, and a resume's too. [work] decides between the three
+     * rewrites: the lines that age and the state line by `setText`, the setup block on its own, or
+     * the whole column. The grant list lives in the body, whose inputs are the phone's status, so a
+     * step change never re-inflates it.
+     */
+    internal fun render(next: Drawn) {
+        if (!open) return
+        val work = work(shown, next)
+        if (!work.any) {
+            // Nothing the owner can see moved. Not one setText, not one rebuild.
+            follow()
+            return
+        }
+        if (work.body) {
+            paint(next)
+            return
+        }
+        if (work.setup) {
+            setupBox?.let { box ->
+                box.removeAllViews()
+                fillSetup(box, next)
             }
         }
-        poll = tick
-        main.postDelayed(tick, 1_000L)
+        if (work.lines) writeLines(next)
+        shown = next
+        follow()
+    }
+
+    /**
+     * One tick a second while an attempt is in flight, and none once it settles: the clock can move
+     * *waiting* to *failed*, the silence line can age and the handshake can arrive, and that is the
+     * whole of why a tick exists. A settled screen reads itself again on a resume, not on a clock.
+     */
+    private fun follow() {
+        if (!open) {
+            poll.stop()
+            return
+        }
+        poll.follow(shown?.step ?: PhoneBootstrap.Step.IDLE)
+    }
+
+    /** The tick's body: one fresh read, the least redraw it needs, then re-arm ([follow]). */
+    private fun tick() {
+        if (!open) return
+        render(snapshot(System.currentTimeMillis()))
+    }
+
+    /**
+     * Write the lines that move with the clock or the step. Each is a `setText` on the view [build]
+     * already made — never a new tree — and a line whose text is unchanged is not touched at all,
+     * so a second passing with nothing to say causes no draw.
+     */
+    private fun writeLines(next: Drawn) {
+        put(lines.state, next.stateLine, "Setup")
+        put(lines.listening, next.listening)
+        put(lines.silence, next.silence)
+        put(lines.lastRequest, next.lastRequest, "Last request")
+        put(lines.handshake, next.handshake)
+    }
+
+    private fun put(view: TextView?, text: String, label: String? = null) {
+        if (view == null) return
+        if (view.text.toString() == text) return
+        view.text = text
+        if (label != null) view.contentDescription = "$label: $text"
+    }
+
+    /**
+     * The lines a tick may rewrite in place. They move with the clock or the step, and none of them
+     * needs the tree around it: `setText` is the whole of the update.
+     */
+    private class Lines {
+        var state: TextView? = null
+        var listening: TextView? = null
+        var silence: TextView? = null
+        var lastRequest: TextView? = null
+        var handshake: TextView? = null
     }
 
     /**
@@ -199,6 +297,20 @@ class PhoneToolsSheet(
         /** How long since the stream last said anything, once that is worth saying. */
         val silence: String = "",
     )
+
+    /**
+     * What one redraw has to do — the rule, pure, proved without a device ([PhoneToolsSheetPollTest]).
+     *
+     * A tick used to rebuild the column whenever anything in [Drawn] differed, and the lines that
+     * age made that happen every few seconds: the refresh the owner could see. Each region is
+     * written only when its own inputs moved, so a step change rewrites the state line and the
+     * setup block and never the grant list — the body's input is the phone's status, which a step
+     * does not touch. [lines] is a `setText` per line, [setup] a refill of the setup block, [body]
+     * the whole column.
+     */
+    internal data class Work(val lines: Boolean, val setup: Boolean, val body: Boolean) {
+        val any: Boolean get() = lines || setup || body
+    }
 
     private fun snapshot(now: Long): Drawn =
         drawn(
@@ -231,22 +343,41 @@ class PhoneToolsSheet(
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         scroll.addView(col, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
+        val wrap = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        )
+
         // The state line, first, in the five words the rest of the app uses: [PhoneToolsView
         // .stepLine] over [PhoneBootstrap.settled], which is the same reading the Settings home
-        // row draws.
-        row(col, "Setup", drawn.stateLine)
+        // row draws. It is a line a tick rewrites by `setText`, so it is never rebuilt for a step.
+        lines = Lines()
+        lines.state = row(col, "Setup", drawn.stateLine)
 
-        // The setup block: the sequence the owner is actually in, before the grants it depends on.
-        fillSetup(col, drawn)
+        // The setup block, on its own: the attempt's own words move it, and it is rebuilt alone
+        // when they do — the grant list below it is not part of that rewrite.
+        val setup = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        setupBox = setup
+        col.addView(setup, wrap)
+        fillSetup(setup, drawn)
 
-        // Everything else: the grants, the audit and the phone's own state.
-        fillBody(col, drawn)
+        // The body: the grants, the audit and the phone's own state. Rebuilt only when the phone's
+        // status changed, which a step never does.
+        val body = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        bodyBox = body
+        col.addView(body, wrap)
+        fillBody(body, drawn)
 
         return root
     }
 
     /** The setup block: the sequence the owner is actually in, before the grants it depends on. */
     private fun fillSetup(col: LinearLayout, drawn: Drawn) {
+        // The lines this block owns are re-made below, so a stale reference to a view that is no
+        // longer in the tree must not survive the rewrite.
+        lines.listening = null
+        lines.silence = null
+        lines.handshake = null
         if (!drawn.status.allowed) return
         setupSection(col, drawn, hostOrPlaceholder(drawn.status))
     }
@@ -254,6 +385,7 @@ class PhoneToolsSheet(
     /** Everything the screen holds besides the state line and the setup block. */
     private fun fillBody(col: LinearLayout, drawn: Drawn) {
         val status = drawn.status
+        lines.lastRequest = null
 
         body(
             col,
@@ -392,7 +524,7 @@ class PhoneToolsSheet(
                 requestCalendar()
             }
         }
-        row(col, "Last request", drawn.lastRequest)
+        lines.lastRequest = row(col, "Last request", drawn.lastRequest)
         row(col, "Token", PhoneToolsView.token(status.token, status.allowed))
 
         if (!status.allowed) {
@@ -511,7 +643,7 @@ class PhoneToolsSheet(
             },
         )
         body(col, block.meaning, dim = state == PhoneSetup.State.CONNECTED)
-        if (state == PhoneSetup.State.CONNECTED) body(col, drawn.handshake, dim = true)
+        if (state == PhoneSetup.State.CONNECTED) lines.handshake = body(col, drawn.handshake, dim = true)
 
         // The short path first, so the action is on screen where the state is; the prompt below it
         // is the same turn, for an owner who would rather hand it over himself.
@@ -552,7 +684,7 @@ class PhoneToolsSheet(
             },
         )
         body(col, PhoneBootstrap.meaning(boot), dim = boot.step == PhoneBootstrap.Step.CONNECTED)
-        if (boot.step == PhoneBootstrap.Step.CONNECTED) body(col, drawn.handshake, dim = true)
+        if (boot.step == PhoneBootstrap.Step.CONNECTED) lines.handshake = body(col, drawn.handshake, dim = true)
         if (boot.step == PhoneBootstrap.Step.FAILED) body(col, PhoneBootstrap.reachedLine(boot), dim = true)
 
         // The work, as it arrives: a history of the attempt, in arrival order, kept after the run
@@ -564,10 +696,10 @@ class PhoneToolsSheet(
             col.addView(VoxSheet.subhead(act, "What your agent did"))
             for (line in drawn.activity) body(col, line)
         }
-        drawn.silence.takeIf { it.isNotBlank() }?.let { body(col, it, dim = true) }
+        lines.silence = drawn.silence.takeIf { it.isNotBlank() }?.let { body(col, it, dim = true) }
 
         // The listener follows the run, so this is a statement of its life, never a countdown.
-        drawn.listening.takeIf { it.isNotBlank() }?.let { body(col, it, dim = true) }
+        lines.listening = drawn.listening.takeIf { it.isNotBlank() }?.let { body(col, it, dim = true) }
         drawn.record.failure?.let { if (boot.step == PhoneBootstrap.Step.FAILED) body(col, it, dim = true) }
         notice?.let { body(col, it) }
 
@@ -906,7 +1038,7 @@ class PhoneToolsSheet(
         notice = setUpWithAgent(act) {
             // The store calls this only when the step moved, so the screen draws that step — by the
             // same rule as a tick ([render]), not by rebuilding the whole column.
-            act.runOnUiThread { if (open) paint() }
+            act.runOnUiThread { if (open) render(snapshot(System.currentTimeMillis())) }
         }
         paint()
     }
@@ -1132,11 +1264,35 @@ class PhoneToolsSheet(
         }
 
         /**
-         * The poll's rule, pure: a tick repaints only when what the sheet would draw differs from
-         * what it already shows. A second passing is not on its own a reason to rebuild the column
-         * (#451) — that rebuild is what reset the scroll and dropped a drag in flight.
+         * What one redraw has to do — the rule, pure, proved without a device
+         * ([PhoneToolsSheetPollTest]).
+         *
+         * A tick used to rebuild the column whenever anything in [Drawn] differed, and the lines
+         * that age made that happen every few seconds: the refresh the owner could see. Each region
+         * is written only when its own inputs moved, so a step change rewrites the state line and
+         * the setup block and never the grant list — the body's input is the phone's status, which
+         * a step does not touch.
          */
-        internal fun repaints(shown: Drawn?, next: Drawn): Boolean = next != shown
+        internal fun work(shown: Drawn?, next: Drawn): Work = when {
+            shown == null -> Work(lines = true, setup = true, body = true)
+            next == shown -> Work(lines = false, setup = false, body = false)
+            else -> Work(
+                lines = next.lineText() != shown.lineText(),
+                setup = next.setupKey() != shown.setupKey(),
+                body = next.bodyKey() != shown.bodyKey(),
+            )
+        }
+
+        /** The five lines that move with the clock or the step, and nothing structural. */
+        private fun Drawn.lineText(): List<String> =
+            listOf(stateLine, listening, silence, lastRequest, handshake)
+
+        /** The setup block's inputs: what the attempt, its record and the gate say. */
+        private fun Drawn.setupKey(): List<Any?> =
+            listOf(step, state, record, bootstrap, activity, status.allowed, handshake.isNotBlank())
+
+        /** The body's inputs: the phone's own status. The grants and the audit are read when built. */
+        private fun Drawn.bodyKey(): List<Any?> = listOf(status)
 
         @Volatile private var current: PhoneToolsSheet? = null
 
