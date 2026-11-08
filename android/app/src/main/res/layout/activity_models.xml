@@ -17,6 +17,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:background="@drawable/bg_button_ghost"
+            android:contentDescription="@string/hv_back"
             android:paddingHorizontal="14dp"
             android:text="←"
             android:textColor="@color/hv_text"
@@ -28,7 +29,7 @@
             android:layout_weight="1"
             android:layout_marginStart="12dp"
             style="@style/TextVox.Title"
-            android:text="Voice models" />
+            android:text="@string/models_title" />
     </LinearLayout>
 
     <TextView
@@ -49,7 +50,7 @@
         android:layout_height="wrap_content"
         android:paddingHorizontal="20dp"
         android:paddingBottom="4dp"
-        android:text="⚠ Setup required"
+        android:text="@string/models_setup_required"
         android:textColor="@color/hv_warn"
         android:textSize="15sp"
         android:textStyle="bold" />
@@ -75,7 +76,7 @@
         android:layout_marginTop="8dp"
         android:background="@drawable/bg_button_primary"
         android:elevation="4dp"
-        android:text="Install the required voice models"
+        android:text="@string/models_install_prompt"
         android:textColor="@color/hv_bg"
         android:textSize="16sp"
         android:textAllCaps="false" />
@@ -117,14 +118,14 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="Advanced — download source"
+                    android:text="@string/models_adv_source"
                     style="@style/HvRowTitle" />
 
                 <TextView
                     android:id="@+id/m_adv_state"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="show ›"
+                    android:text="@string/models_adv_show"
                     style="@style/HvRowAction" />
             </LinearLayout>
 
@@ -141,7 +142,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
                     android:lineSpacingExtra="2dp"
-                    android:text="Where new model files are fetched from. The default is the upstream release; leave it alone unless you mirror the models yourself."
+                    android:text="@string/models_adv_desc"
                     android:textColor="@color/hv_text_dim"
                     android:textSize="13sp" />
 
@@ -151,7 +152,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
                     android:background="@drawable/bg_input"
-                    android:hint="https://…"
+                    android:hint="@string/models_source_hint"
                     android:inputType="textUri"
                     android:padding="14dp"
                     android:textColor="@color/hv_text"
@@ -183,7 +184,7 @@
                         android:background="@drawable/bg_button_primary"
                         android:minHeight="48dp"
                         android:paddingHorizontal="12dp"
-                        android:text="Save source"
+                        android:text="@string/models_save_source"
                         android:textAllCaps="false"
                         android:textColor="@color/hv_bg" />
 
@@ -196,7 +197,7 @@
                         android:background="@drawable/bg_button_ghost"
                         android:minHeight="48dp"
                         android:paddingHorizontal="12dp"
-                        android:text="Use default"
+                        android:text="@string/models_use_default"
                         android:textAllCaps="false"
                         android:textColor="@color/hv_text" />
                 </LinearLayout>
@@ -206,7 +207,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="10dp"
                     android:lineSpacingExtra="2dp"
-                    android:text="Installed models are not affected by this address. Changing it only changes where a future download is fetched from."
+                    android:text="@string/models_source_note"
                     android:textColor="@color/hv_text_dim"
                     android:textSize="12sp" />
             </LinearLayout>

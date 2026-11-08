@@ -4,6 +4,7 @@
      Reading order on screen == reading order for a screen reader: name, what it
      does for you, size, state, licence, action. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginBottom="10dp"
@@ -15,7 +16,7 @@
         android:id="@+id/mi_name"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="—"
+        tools:text="—"
         style="@style/TextVox.Body"
         android:textStyle="bold" />
 
@@ -27,7 +28,7 @@
         android:background="@drawable/bg_chip"
         android:paddingHorizontal="10dp"
         android:paddingVertical="4dp"
-        android:text="★ Recommended"
+        android:text="@string/model_recommended"
         android:textColor="@color/hv_cyan"
         android:textSize="13sp"
         android:visibility="gone" />
@@ -40,7 +41,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"
         android:lineSpacingExtra="2dp"
-        android:text="—"
+        tools:text="—"
         android:textColor="@color/hv_text_dim"
         android:textSize="14sp" />
 
@@ -50,7 +51,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"
-        android:text="—"
+        tools:text="—"
         android:textColor="@color/hv_text_dim"
         android:textSize="13sp" />
 
@@ -63,7 +64,7 @@
         android:layout_marginTop="8dp"
         android:accessibilityLiveRegion="polite"
         android:lineSpacingExtra="2dp"
-        android:text="Not installed"
+        android:text="@string/model_not_installed"
         android:textColor="@color/hv_text_dim"
         android:textSize="14sp" />
 
@@ -100,7 +101,7 @@
         android:background="@drawable/bg_button_primary"
         android:minHeight="48dp"
         android:paddingHorizontal="18dp"
-        android:text="Download"
+        android:text="@string/model_download"
         android:textAllCaps="false"
         android:textColor="@color/hv_bg" />
 </LinearLayout>
