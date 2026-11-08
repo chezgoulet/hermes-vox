@@ -6,6 +6,7 @@
      nothing and would describe a value unrelated to that profile. Settings adds it to the
      dialog it controls; the editor never inflates it. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/d_mtls_block"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
@@ -36,7 +37,7 @@
             android:layout_weight="1"
             android:ellipsize="middle"
             android:singleLine="true"
-            android:text="@string/mtls_cert_none"
+            tools:text="None (system default)"
             android:textColor="@color/hv_text"
             android:textSize="14sp" />
 

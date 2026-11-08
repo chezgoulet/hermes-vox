@@ -64,7 +64,7 @@
         android:layout_marginTop="8dp"
         android:accessibilityLiveRegion="polite"
         android:lineSpacingExtra="2dp"
-        android:text="@string/model_not_installed"
+        tools:text="Not installed"
         android:textColor="@color/hv_text_dim"
         android:textSize="14sp" />
 
@@ -101,7 +101,7 @@
         android:background="@drawable/bg_button_primary"
         android:minHeight="48dp"
         android:paddingHorizontal="18dp"
-        android:text="@string/model_download"
+        tools:text="Download"
         android:textAllCaps="false"
         android:textColor="@color/hv_bg" />
 </LinearLayout>

@@ -28,8 +28,6 @@
 
     <!-- Voice models and mTLS certificates screen resources -->
     <string name="models_title">Voice models</string>
-    <string name="models_setup_required">⚠ Setup required</string>
-    <string name="models_install_prompt">Install the required voice models</string>
     <string name="models_adv_source">Advanced — download source</string>
     <string name="models_adv_show">show ›</string>
     <string name="models_adv_desc">Where new model files are fetched from. The default is the upstream release; leave it alone unless you mirror the models yourself.</string>
@@ -39,11 +37,8 @@
     <string name="models_source_note">Installed models are not affected by this address. Changing it only changes where a future download is fetched from.</string>
 
     <string name="model_recommended">★ Recommended</string>
-    <string name="model_not_installed">Not installed</string>
-    <string name="model_download">Download</string>
 
     <string name="mtls_cert_title">Client certificate (mTLS)</string>
-    <string name="mtls_cert_none">None (system default)</string>
     <string name="mtls_cert_choose">Choose</string>
     <string name="mtls_cert_clear">Clear</string>
 </resources>
