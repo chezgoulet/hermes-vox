@@ -109,6 +109,17 @@ internal object ReleaseNotes {
             ),
         ),
         ReleaseNote(
+            versionCode = 149,
+            versionName = "0.9.1.2",
+            title = "The profile fix, corrected",
+            bullets = listOf(
+                "A gateway that answers with only a default line is now checked against the address that line actually names. A name the gateway does not serve is reported as unreachable instead of being saved as a profile.",
+                "A one-profile gateway answering with the default line still adds that profile, which is what 0.9.1.1 was for.",
+                "Renaming a profile now says so when its VOX.md could not be moved, instead of leaving the document silently under the old name.",
+            ),
+        ),
+
+        ReleaseNote(
             versionCode = 148,
             versionName = "0.9.1.1",
             title = "The profile fix",

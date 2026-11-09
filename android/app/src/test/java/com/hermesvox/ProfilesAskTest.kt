@@ -184,6 +184,17 @@ class ProfilesAskTest {
     }
 
     /** A one-profile host may answer with only its default line. */
+    /** A default line naming something the host does not call `default` is probed as a profile. */
+    @Test fun aDefaultLineThatIsNotTheBuiltInNameIsProbedUnderP() {
+        val b = ok("```vox-profiles\ndefault=none\n```")
+        val probe = ProfilesAsk.probes(base, b.served).single()
+        assertEquals("$base/p/none/v1/models", probe.url)
+        // The built-in does answer at the root.
+        assertEquals("$base/v1/models", ProfilesAsk.probes(base, listOf(
+            HostProfiles.Served("default", isDefault = true),
+        )).single().url)
+    }
+
     @Test fun aDefaultLineAloneIsTheWholeServedList() {
         val b = ok("```vox-profiles\ndefault=default\n```")
         assertEquals(listOf("default"), b.served.map { it.name })
@@ -378,7 +389,7 @@ class ProfilesAskTest {
     // ---- probes: the list is a hint, a probe is the proof ----
 
     @Test fun theDefaultProbesAtTheRootAndNamedOnesUnderP() {
-        val served = listOf(HostProfiles.Served("home", true), HostProfiles.Served("work"))
+        val served = listOf(HostProfiles.Served("default", true), HostProfiles.Served("work"))
         val ps = ProfilesAsk.probes("$base/p/work", served)
         assertEquals("$base/v1/models", ps[0].url)
         assertEquals("$base/p/work/v1/models", ps[1].url)
@@ -393,7 +404,7 @@ class ProfilesAskTest {
      * address is already carried, the URL is the same — and it must carry exactly one route.
      */
     @Test fun aProbeIsIdempotentAndEndsInExactlyOneModelsPath() {
-        val served = listOf(HostProfiles.Served("home", true), HostProfiles.Served("work"))
+        val served = listOf(HostProfiles.Served("default", true), HostProfiles.Served("work"))
         val once = ProfilesAsk.probes(base, served)
         assertEquals(listOf("$base/v1/models", "$base/p/work/v1/models"), once.map { it.url })
         for (suffix in listOf(
@@ -409,8 +420,8 @@ class ProfilesAskTest {
     /** A persisted profile URL is data, not a promise: a saved `…/v1/models` must still
      *  probe the profile it names, not a route beneath the route. */
     @Test fun aSavedProfileUrlCarryingAnEndpointStillProbesCorrectly() {
-        val savedDefault = Profiles.Profile("home", "$base/v1/models", "enc:aaa")
-        val default = ProfilesAsk.probes(savedDefault.url, listOf(HostProfiles.Served("home", true)))
+        val savedDefault = Profiles.Profile("default", "$base/v1/models", "enc:aaa")
+        val default = ProfilesAsk.probes(savedDefault.url, listOf(HostProfiles.Served("default", true)))
         assertEquals("$base/v1/models", default.single().url)
 
         val savedNamed = Profiles.Profile("work", "$base/v1/models", "enc:bbb")
@@ -476,7 +487,7 @@ class ProfilesAskTest {
     }
 
     @Test fun theDefaultThatFailedItsProbeLeavesNoDefaultClaimed() {
-        val served = listOf(HostProfiles.Served("home", true), HostProfiles.Served("work"))
+        val served = listOf(HostProfiles.Served("default", true), HostProfiles.Served("work"))
         val applied = ProfilesAsk.settle(emptyList(), base, "enc:aaa",
             Result.Named(served, "home", ProfilesAsk.Source.CONVERSATION), "",
             mapOf("home" to false, "work" to true))
