@@ -49,12 +49,14 @@ object ProfilesAsk {
      */
     const val ASK =
         "$MARKER This is a question, not a task. Which Hermes profiles does this gateway " +
-            "serve to this key? Reply with one fenced $LABEL block and nothing else — or, " +
-            "if you cannot answer, say plainly that the list cannot be produced. " +
-            "Do not modify this host, its configuration, its profiles, its memories, its " +
-            "sessions or its files. Do not run any command that changes them. If producing " +
-            "the list appears to need a change to the host, do not make it: say what would " +
-            "be needed instead."
+            "serve to this key? Reply with one fenced $LABEL block and nothing else. Inside " +
+            "it: one optional `default=<name>` line and one `profile=<name>` line per " +
+            "profile, including the default. Names are lowercase letters, digits, `-` or " +
+            "`_`, at most 64 characters. No other lines, no commentary, no table. If you " +
+            "cannot answer, say plainly that the list cannot be produced. Do not modify " +
+            "this host, its configuration, its profiles, its memories, its sessions or its " +
+            "files. Do not run any command that changes them. If producing the list appears " +
+            "to need a change to the host, do not make it: say what would be needed instead."
 
     /** The OpenAI-shaped chat route on the gateway the app already holds. */
     const val PATH = "/v1/chat/completions"
@@ -83,16 +85,18 @@ object ProfilesAsk {
 
     const val DEFAULT_MODEL = "hermes-agent"
 
-    // The spec's failure lines, verbatim (§A "Failure, stated plainly").
+    // The failure lines, each naming one distinct failure (SPEC §A "Failure, stated plainly").
     const val FALLBACK_NO_BLOCK = "this host did not answer with a profile list"
-    const val FALLBACK_NO_NAMES = "this host named no usable profiles"
+    const val FALLBACK_EMPTY_BLOCK = "the host's reply had a block but no profile names"
     const val FALLBACK_TIMEOUT = "the host did not answer in time"
 
     /**
-     * A profile name the client will accept. Everything else is dropped before it reaches
-     * the registry: no slashes, no dots, no traversal (SPEC §A "The reply", "Security").
+     * A host profile name the client will accept. Hermes enforces lowercase ids with
+     * `[a-z0-9][a-z0-9_-]{0,63}` (`_PROFILE_NAME_RULE`), so 64 characters is the host's own
+     * ceiling. Everything else is dropped before it reaches the registry: no slashes, no
+     * dots, no whitespace, no traversal (SPEC §A "The reply", "Security").
      */
-    private val NAME = Regex("[a-z0-9][a-z0-9_-]{0,31}")
+    private val NAME = Regex("[a-z0-9][a-z0-9_-]{0,63}")
 
     // A fenced block whose info string is exactly the label. Other fences (an example, a
     // command) are prose and are ignored.
@@ -102,14 +106,22 @@ object ProfilesAsk {
     /** Where a usable list came from. Both are "this host"; the log names which one. */
     enum class Source { FAST_PATH, CONVERSATION }
 
-    /** The three ways a conversational ask fails, each with the one line the switcher says. */
-    enum class Failure(val line: String) {
-        NO_BLOCK(FALLBACK_NO_BLOCK),
-        NO_NAMES(FALLBACK_NO_NAMES),
-        TIMEOUT(FALLBACK_TIMEOUT),
+    /** The four ways a conversational ask fails, each with the one line the switcher says. */
+    enum class Failure {
+        /** No labelled block, or prose instead of one. */
+        NO_BLOCK,
+
+        /** A block was present but contained no profile names at all. */
+        EMPTY_BLOCK,
+
+        /** Names were present but every one failed the charset. */
+        UNUSABLE,
+
+        /** The 45 s budget expired. */
+        TIMEOUT,
     }
 
-    /** The outcome of one ask: a usable list, or a stated failure. */
+    /** The outcome of one ask: a usable list, or a stated failure with its counts. */
     sealed class Result {
         data class Named(
             val served: List<HostProfiles.Served>,
@@ -117,21 +129,36 @@ object ProfilesAsk {
             val source: Source = Source.CONVERSATION,
             /** Names dropped for the charset — kept for the log, never for a profile. */
             val dropped: Int = 0,
+            /** Non-empty lines in the block — the diagnosis when [dropped] is not enough. */
+            val seen: Int = 0,
         ) : Result()
 
-        data class Failed(val failure: Failure, val code: Int = -1) : Result()
+        data class Failed(
+            val failure: Failure,
+            val code: Int = -1,
+            /** Names the reply carried but the charset rejected. */
+            val dropped: Int = 0,
+            /** Non-empty lines seen in the labelled block. */
+            val seen: Int = 0,
+        ) : Result()
     }
 
-    /** A parsed block: the names that survived, the default, and how many were dropped. */
-    data class Block(val served: List<HostProfiles.Served>, val default: String, val dropped: Int = 0)
+    /** A parsed block: the names that survived, the default, and how many lines were seen. */
+    data class Block(
+        val served: List<HostProfiles.Served>,
+        val default: String,
+        val dropped: Int = 0,
+        val seen: Int = 0,
+    )
 
     /**
      * What a reply's text parsed as. [Echoed] is "a block was there but named nothing
-     * usable"; [None] is "no block at all". The two say different things to the user.
+     * usable"; [None] is "no block at all". The two say different things to the user, and
+     * [Echoed.dropped] separates "no names offered" from "every name rejected".
      */
     sealed class Parsed {
         data class Ok(val block: Block) : Parsed()
-        data class Echoed(val dropped: Int) : Parsed()
+        data class Echoed(val dropped: Int, val seen: Int) : Parsed()
         object None : Parsed()
     }
 
@@ -166,14 +193,20 @@ object ProfilesAsk {
     }
 
     /**
-     * Parse one assistant reply into exactly the spec's block, or say why it is not one.
+     * Parse one assistant reply into a block, or say which kind of nothing it was.
      *
      * Rules, and the interpretations this client chose:
      *  * exactly one fenced block labelled [LABEL] — none, an unterminated one, or two of
      *    them are [Parsed.None] (two blocks are ambiguous, and guessing would be inventing);
-     *  * inside it, only `default=<name>` and `profile=<name>` are honoured; any other line
-     *    type is ignored, never guessed at;
-     *  * a name must match [NAME]; a line that does not is counted in [Block.dropped];
+     *  * the lines an agent plausibly writes are normalised before they are read: a leading
+     *    bullet or `◆`, `=` or `:` as the separator, wrapping backticks/quotes, a trailing
+     *    `,`/`;`, and a leading `◆` on the value;
+     *  * names are lowercased — Hermes enforces lowercase ids, so `Geek` is `geek`, not an
+     *    illegal name — then must match [NAME] (1–64 characters);
+     *  * `default=<name>` alone is a one-profile host: that name is the whole served list;
+     *  * when a block has no `profile=`/`default=` line at all, each surviving bare line
+     *    that matches [NAME] is read as a name; when keyed lines exist, bare lines are
+     *    ignored rather than guessed at. The probe still proves every name before it is saved;
      *  * duplicates are read once, first wins;
      *  * a default only means something when the same reply lists that profile — otherwise
      *    the block's names stand and no default is claimed;
@@ -201,16 +234,22 @@ object ProfilesAsk {
         }
         if (blocks.size != 1) return Parsed.None
 
+        val content = blocks.single()
+        val seen = content.count { it.trim().isNotEmpty() }
         val names = LinkedHashSet<String>()
         var dropped = 0
         var namedDefault: String? = null
-        for (raw in blocks.single()) {
-            val line = raw.trim()
+        var keyed = 0
+
+        for (raw in content) {
+            val line = unbulleted(raw)
             if (line.isEmpty()) continue
-            val eq = line.indexOf('=')
-            if (eq < 0) continue                       // not a line type we honour
-            val key = line.substring(0, eq).trim()
-            val value = line.substring(eq + 1).trim()
+            val sep = separator(line)
+            if (sep < 0) continue                      // a bare line: read only by the fallback
+            val key = line.substring(0, sep).trim().lowercase()
+            if (key != "profile" && key != "default") continue   // no other line types honoured
+            keyed++
+            val value = cleanValue(line.substring(sep + 1)).lowercase()
             when (key) {
                 "profile" -> if (NAME.matches(value)) names.add(value) else dropped++
                 "default" -> when {
@@ -218,13 +257,67 @@ object ProfilesAsk {
                     NAME.matches(value) -> namedDefault = value
                     else -> dropped++
                 }
-                else -> Unit                           // no other line types are honoured
             }
         }
-        if (names.isEmpty()) return Parsed.Echoed(dropped)
+
+        // No keyed line at all: the agent may have written the names bare, one per line.
+        // This is only a hint — every name is still probed before it is saved.
+        if (keyed == 0) {
+            for (raw in content) {
+                val line = cleanValue(unbulleted(raw)).lowercase()
+                if (line.isNotEmpty() && NAME.matches(line)) names.add(line)
+            }
+        }
+
+        // A one-profile host may answer with only its default line.
+        if (names.isEmpty() && namedDefault != null) names.add(namedDefault!!)
+        if (names.isEmpty()) return Parsed.Echoed(dropped, seen)
         // A default names a profile in this reply, or it names nothing: never invent one.
         val default = namedDefault?.takeIf { names.contains(it) }.orEmpty()
-        return Parsed.Ok(Block(names.map { HostProfiles.Served(it, it == default) }, default, dropped))
+        return Parsed.Ok(Block(names.map { HostProfiles.Served(it, it == default) }, default, dropped, seen))
+    }
+
+    private val BULLET = Regex("^[-*+]\\s+")
+    private val QUOTE = mapOf(
+        '`' to '`', '"' to '"', '\'' to '\'', '“' to '”', '‘' to '’',
+    )
+
+    /** Strip a leading bullet and the `◆` marker `hermes profile list` prints. */
+    private fun unbulleted(raw: String): String {
+        var s = BULLET.replace(raw.trim(), "").trim()
+        if (s.startsWith("◆")) s = s.removePrefix("◆").trim()
+        return s
+    }
+
+    /** The key/value separator an agent may use; -1 when the line is not keyed. */
+    private fun separator(line: String): Int {
+        val eq = line.indexOf('=')
+        val colon = line.indexOf(':')
+        return when {
+            eq < 0 -> colon
+            colon < 0 -> eq
+            else -> minOf(eq, colon)
+        }
+    }
+
+    /** Strip wrapping backticks/quotes and a trailing `,`/`;` from a value or bare line. */
+    private fun cleanValue(raw: String): String {
+        var v = raw.trim()
+        if (v.startsWith("◆")) v = v.removePrefix("◆").trim()
+        fun trimTail() {
+            while (v.isNotEmpty() && (v.last() == ',' || v.last() == ';')) v = v.dropLast(1).trimEnd()
+        }
+        trimTail()
+        var changed = true
+        while (changed && v.length >= 2) {
+            val close = QUOTE[v.first()]
+            if (close != null && v.last() == close) {
+                v = v.substring(1, v.length - 1).trim()
+                if (v.startsWith("◆")) v = v.removePrefix("◆").trim()
+                trimTail()
+            } else changed = false
+        }
+        return v
     }
 
     /**
@@ -237,8 +330,12 @@ object ProfilesAsk {
         if (status != 200) return Result.Failed(Failure.NO_BLOCK, status)
         val text = assistantText(body) ?: return Result.Failed(Failure.NO_BLOCK, status)
         return when (val p = parse(text)) {
-            is Parsed.Ok -> Result.Named(p.block.served, p.block.default, Source.CONVERSATION, p.block.dropped)
-            is Parsed.Echoed -> Result.Failed(Failure.NO_NAMES, status)
+            is Parsed.Ok -> Result.Named(
+                p.block.served, p.block.default, Source.CONVERSATION, p.block.dropped, p.block.seen,
+            )
+            is Parsed.Echoed ->
+                if (p.dropped > 0) Result.Failed(Failure.UNUSABLE, status, p.dropped, p.seen)
+                else Result.Failed(Failure.EMPTY_BLOCK, status, 0, p.seen)
             Parsed.None -> Result.Failed(Failure.NO_BLOCK, status)
         }
     }
@@ -342,10 +439,16 @@ object ProfilesAsk {
 
     /**
      * The switcher's one line for a result. A partial refresh names both halves; a full one
-     * is the familiar count. Failures use the spec's three lines, never an empty list.
+     * is the familiar count. Each failure names which failure it was, never an empty list.
      */
     fun line(result: Result, added: Int = 0, unreachable: Int = 0): String = when (result) {
-        is Result.Failed -> result.failure.line
+        is Result.Failed -> when (result.failure) {
+            Failure.NO_BLOCK -> FALLBACK_NO_BLOCK
+            Failure.EMPTY_BLOCK -> FALLBACK_EMPTY_BLOCK
+            Failure.UNUSABLE ->
+                "the host named ${count(result.dropped, "profile")}, none in a usable form"
+            Failure.TIMEOUT -> FALLBACK_TIMEOUT
+        }
         is Result.Named ->
             if (unreachable > 0) "${count(added, "profile")} added · $unreachable not reachable"
             else HostProfiles.line(HostProfiles.Answer.Advertised(result.served, result.default))

@@ -50,7 +50,7 @@ object VoxMirror {
      * The directory component a profile name gets.
      *
      * `[A-Za-z0-9_-]` passes through (the host's profile spec is
-     * `[a-z0-9][a-z0-9_-]{0,31}`, so a real profile keeps its own readable name); every
+     * `[a-z0-9][a-z0-9_-]{0,63}`, so a real profile keeps its own readable name); every
      * other UTF-8 byte becomes `%XX`. That makes the mapping injective — a literal `%` is
      * always escaped — and it keeps separators, leading dots and dot-only components out of
      * the path. A name long enough to overrun a filesystem component folds to

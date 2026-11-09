@@ -49,11 +49,15 @@ object Profiles {
     const val K_PROVIDER = "provider"
 
     /**
-     * The longest saved name. #384: the profile list comes from the host, whose names follow
-     * the spec's `[a-z0-9][a-z0-9_-]{0,31}` — 32 characters. A smaller UI cap would silently
-     * skip a name the host legitimately serves, so the registry's limit is the spec's.
+     * The longest saved host name. #384: the profile list comes from the host, whose names
+     * follow Hermes' own `[a-z0-9][a-z0-9_-]{0,63}` — 64 characters. A smaller UI cap would
+     * silently skip a name the host legitimately serves, so the registry's limit is the
+     * host's own rule.
      */
-    const val NAME_MAX = 32
+    const val NAME_MAX = 64
+
+    /** The longest display label a local rename may carry (a label is not a host id). */
+    const val LABEL_MAX = 32
 
     /**
      * One saved connection. [keyEnc] is the stored (encrypted) key, never the plain one.
