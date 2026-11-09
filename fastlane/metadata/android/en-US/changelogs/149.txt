@@ -1,0 +1,4 @@
+A gateway that answers with only a default line is now checked against the address it names: a name it does not serve is reported instead of saved.
+Renaming a profile now says when its VOX.md could not be moved.
+
+Everything else is unchanged from 0.9.1.1.
