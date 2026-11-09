@@ -1,0 +1,4 @@
+The profile list now populates from your gateway: replies that name profiles in a table, behind a marker or as a plain list are read instead of discarded, and a one-profile gateway is understood.
+Profiles can be renamed by long-pressing a row, and after the address changes the app offers once to rename it to match. The header follows.
+
+Everything else is unchanged from 0.9.1.
