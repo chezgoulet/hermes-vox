@@ -675,8 +675,9 @@ class SettingsActivity : AppCompatActivity() {
         val list = Profiles.decode(prefs.getString(Profiles.PREF_LIST, "").orEmpty())
         val active = Profiles.activeName { prefs.getString(it, "").orEmpty() }
         val profile = Profiles.find(list, active) ?: return
-        if (profile.url == newUrl) return
-        val suggestion = Profiles.suggestName(newUrl)
+        // What matters is whether the label still describes the address, not whether the
+        // registry's stored copy already happens to hold it.
+        val suggestion = Profiles.suggestedLabel(newUrl, profile.name) ?: return
         AlertDialog.Builder(this)
             .setTitle("Address changed")
             .setMessage(
