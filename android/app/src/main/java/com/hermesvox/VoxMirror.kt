@@ -87,6 +87,9 @@ object VoxMirror {
         NO_SOURCE,
         /** The new name already has a document; both were left in place, unmerged. */
         DESTINATION_EXISTS,
+
+        /** The move itself failed; the document is still under the old name. */
+        FAILED,
     }
 
     /**
@@ -100,7 +103,7 @@ object VoxMirror {
         if (!src.exists()) return RenameSlot.NO_SOURCE
         if (src == dst) return RenameSlot.MOVED
         if (dst.exists()) return RenameSlot.DESTINATION_EXISTS
-        return if (src.renameTo(dst)) RenameSlot.MOVED else RenameSlot.NO_SOURCE
+        return if (src.renameTo(dst)) RenameSlot.MOVED else RenameSlot.FAILED
     }
 
     /** Read the mirrored document (null when absent/unreadable). */

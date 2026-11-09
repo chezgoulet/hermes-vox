@@ -704,7 +704,9 @@ class SettingsActivity : AppCompatActivity() {
                     .putString(Profiles.PREF_LIST, Profiles.encode(adopted))
                     .putString(Profiles.PREF_ACTIVE, r.active)
                     .apply()
-                if (moved == VoxMirror.RenameSlot.DESTINATION_EXISTS) {
+                if (moved == VoxMirror.RenameSlot.FAILED) {
+                    Toast.makeText(this, "Renamed. Its VOX.md could not be moved; resync it from the profile.", Toast.LENGTH_LONG).show()
+                } else if (moved == VoxMirror.RenameSlot.DESTINATION_EXISTS) {
                     Toast.makeText(
                         this,
                         "Renamed. The old VOX.md was left in place because the new name already had one.",
