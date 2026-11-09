@@ -1230,8 +1230,10 @@ open class MainActivity : AppCompatActivity() {
         actionLine = show
         // With nothing to act on, the pill rests on the model's name: the header says who
         // you are talking to, the pill says what answers. It is no longer a blank line.
-        status.text = if (show) text else idleStatus()
-        status.visibility = android.view.View.VISIBLE
+        val resting = if (show) text else idleStatus()
+        status.text = resting
+        // The pill can now rest empty, when naming the model would only repeat the title.
+        status.visibility = if (resting.isBlank()) android.view.View.GONE else android.view.View.VISIBLE
         // A real phase/status replaces the models-warning pill: drop its tap
         // handler so phase pills never read as warnings or navigate to the model
         // store by accident (#12/#6).
@@ -1628,11 +1630,16 @@ open class MainActivity : AppCompatActivity() {
     /** The quiet idle word — never "Connected" while the host has told us the profile is gone. */
     private fun idleStatus(): String = when {
         ProfileReach.isMissing() -> ProfileReach.line()
-        // With nothing to act on, the sub-pill names the model that answers — plainly, the
-        // way the catalogue names it. It is not the header's job: that is the agent's name.
-        else -> Header.modelLine(modelLabel.ifBlank {
-            ModelChoices.displayName(prefs.getString("model", "hermes-agent").orEmpty())
-        })
+        // With nothing to act on, the sub-pill names the model that answers — plainly, the way
+        // the catalogue names it. Unless that is the same name the title already carries: the
+        // header names the connection once, and this is the second place it used to appear.
+        else -> {
+            val model = Header.modelLine(modelLabel.ifBlank {
+                ModelChoices.displayName(prefs.getString("model", "hermes-agent").orEmpty())
+            })
+            val title = if (::agentName.isInitialized) agentName.text.toString() else ""
+            if (Header.sameName(model, title)) "" else model
+        }
     }
 
     /** DIALING: reach out to the configured gateway and let the answer move the pill.
@@ -2212,11 +2219,11 @@ open class MainActivity : AppCompatActivity() {
      *  given the same words: one entity, one name. */
     private fun headerLabel(model: String): String {
         val agent = Header.agent(prefs.getString("agent_name", "").orEmpty())
-        val list = profiles.list()
         val active = profiles.activeName()
-        VoiceService.title = Header.callTitle(agent, active, list.size)
+        val name = Header.connection(agent, active)
+        VoiceService.title = Header.callTitle(name)
         modelLabel = ModelChoices.displayName(model)
-        return Profiles.headerLabel(agent, active, list.size)
+        return Profiles.headerLabel(agent, active)
     }
 
     /**
