@@ -27,6 +27,13 @@ class ProfilesAskTest {
     private val now = 1_793_650_000_000L
 
     /** A chat-completions answer whose assistant text is [text]. */
+    /** A reply written on Windows is the same reply; the fence regex must not reject CRLF. */
+    @Test fun aWindowsLineEndedReplyIsStillABlock() {
+        val b = ok("```vox-profiles\r\ndefault=home\r\nprofile=home\r\nprofile=work\r\n```\r\n")
+        assertEquals(listOf("home", "work"), b.served.map { it.name })
+        assertEquals("home", b.default)
+    }
+
     private fun chat(text: String, extra: String = ""): String =
         """{"id":"resp_1","object":"chat.completion","choices":[{"index":0,""" +
             """"message":{"role":"assistant","content":${Json.encode(text)}}$extra}]}"""

@@ -695,8 +695,13 @@ class SettingsActivity : AppCompatActivity() {
                 }
                 val newName = Profiles.find(r.list, suggestion)?.name.orEmpty()
                 val moved = VoxMirror.renameSlot(this, profile.name, newName)
+                // The address changed too: the entry must carry the connection that is now
+                // live, or its name would keep pointing at the address it had before the edit.
+                val live = Profiles.fromPrefs(newName) { prefs.getString(it, "").orEmpty() }
+                    .copy(own = ProfileScope.capture(ScopedPrefs.reader(prefs)))
+                val adopted = Profiles.adoptConnection(r.list, newName, live)
                 prefs.edit()
-                    .putString(Profiles.PREF_LIST, Profiles.encode(r.list))
+                    .putString(Profiles.PREF_LIST, Profiles.encode(adopted))
                     .putString(Profiles.PREF_ACTIVE, r.active)
                     .apply()
                 if (moved == VoxMirror.RenameSlot.DESTINATION_EXISTS) {

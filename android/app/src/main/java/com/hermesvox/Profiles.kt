@@ -126,9 +126,10 @@ object Profiles {
         if (name == current.name) return Rename(list, active, error = RenameError.UNCHANGED)
         if (name.isEmpty()) return Rename(list, active, error = RenameError.BLANK)
         if (name.length > LABEL_MAX) return Rename(list, active, error = RenameError.TOO_LONG)
-        if (name.any { !(it.isLetterOrDigit() || it == ' ' || it == '-' || it == '_') } ||
-            name.none { it.isLetterOrDigit() }
-        ) return Rename(list, active, error = RenameError.BAD_CHARS)
+        fun labelChar(c: Char) = c in 'a'..'z' || c in 'A'..'Z' || c in '0'..'9' ||
+            c == ' ' || c == '-' || c == '_'
+        if (name.any { !labelChar(it) } || name.none { labelChar(it) && it != ' ' && it != '-' && it != '_' })
+            return Rename(list, active, error = RenameError.BAD_CHARS)
         if (list.indices.any { k -> k != i && list[k].name.equals(name, ignoreCase = true) })
             return Rename(list, active, error = RenameError.DUPLICATE)
         val out = list.toMutableList()
@@ -170,6 +171,17 @@ object Profiles {
         val s = suggestName(url)
         return if (s.equals(current.trim(), ignoreCase = true)) null else s
     }
+
+    /**
+     * The registry after [name] takes [live]'s connection as well as its label.
+     *
+     * A rename that follows an address change is not only a label edit: the entry would
+     * otherwise keep the address it had before the edit, and the next discovery merge would
+     * take the name-match branch and never repoint it. The connection fields come from the
+     * live prefs (the values just saved); [live]'s own voice/look are carried by the caller.
+     */
+    fun adoptConnection(list: List<Profile>, name: String, live: Profile): List<Profile> =
+        upsert(list, live.copy(name = name), name)
 
     /** The active profile's name, read from the store. Blank when nothing is active yet. */
     fun activeName(get: (String) -> String): String = get(PREF_ACTIVE).trim()
