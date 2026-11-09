@@ -96,7 +96,10 @@ class ProfilesAskTest {
         assertEquals(listOf("home"), b.served.map { it.name })
         val onlyUnknown = ProfilesAsk.parse("```vox-profiles\nformat=1\nnote=hello\n```")
         assertTrue(onlyUnknown is Parsed.Echoed)
-        assertEquals(Failure.NO_NAMES, (ProfilesAsk.fromChat(200, chat("```vox-profiles\nformat=1\n```")) as Result.Failed).failure)
+        assertEquals(0, (onlyUnknown as Parsed.Echoed).dropped)
+        assertEquals(2, onlyUnknown.seen)
+        // A block that names nothing is its own failure, distinct from a block of bad names.
+        assertEquals(Failure.EMPTY_BLOCK, (ProfilesAsk.fromChat(200, chat("```vox-profiles\nformat=1\n```")) as Result.Failed).failure)
     }
 
     @Test fun illegalNamesAreDroppedAndNeverInvented() {
@@ -112,22 +115,26 @@ class ProfilesAskTest {
             ```
             """.trimIndent()
         )
-        assertEquals(listOf("ok_1"), b.served.map { it.name })
-        assertEquals("", b.default)
-        assertEquals(5, b.dropped)
+        // `Work` is not illegal: Hermes ids are lowercase, so the parser canonicalises it.
+        assertEquals(listOf("work", "ok_1"), b.served.map { it.name })
+        assertEquals("work", b.default)
+        assertEquals(3, b.dropped)                     // a/b, .hidden, empty
 
-        // Nothing survives the charset: that is its own line, not an empty list.
-        val none = ProfilesAsk.fromChat(200, chat("```vox-profiles\nprofile=UPPER\nprofile=../etc\n```"))
-        assertEquals(Failure.NO_NAMES, (none as Result.Failed).failure)
-        assertEquals(ProfilesAsk.FALLBACK_NO_NAMES, ProfilesAsk.line(none))
+        // Nothing survives the charset: that is its own line, with the count that diagnoses it.
+        val none = ProfilesAsk.fromChat(200, chat(
+            "```vox-profiles\nprofile=../etc\nprofile=a/b\nprofile=.hidden\nprofile=\n```"
+        ))
+        assertEquals(Failure.UNUSABLE, (none as Result.Failed).failure)
+        assertEquals(4, none.dropped)
+        assertEquals("the host named 4 profiles, none in a usable form", ProfilesAsk.line(none))
     }
 
     @Test fun theCharsetBoundariesAreTheSpecs() {
         assertEquals(listOf("a"), ok("```vox-profiles\nprofile=a\n```").served.map { it.name })
         assertEquals(listOf("a1-b_2"), ok("```vox-profiles\nprofile=a1-b_2\n```").served.map { it.name })
-        val longest = "a" + "b".repeat(31)                 // 32 chars: the maximum
+        val longest = "a" + "b".repeat(63)                 // 64 chars: the host's maximum
         assertEquals(listOf(longest), ok("```vox-profiles\nprofile=$longest\n```").served.map { it.name })
-        val tooLong = "a" + "b".repeat(32)                 // 33: dropped
+        val tooLong = "a" + "b".repeat(64)                 // 65: dropped
         assertTrue(ProfilesAsk.parse("```vox-profiles\nprofile=$tooLong\n```") is Parsed.Echoed)
         assertTrue(ProfilesAsk.parse("```vox-profiles\nprofile=-lead\n```") is Parsed.Echoed)
 
@@ -163,6 +170,99 @@ class ProfilesAskTest {
         val p = ProfilesAsk.parse("```vox-profiles\n```")
         assertTrue(p is Parsed.Echoed)
         assertEquals(0, (p as Parsed.Echoed).dropped)
+        assertEquals(0, p.seen)
+        val r = ProfilesAsk.fromChat(200, chat("```vox-profiles\n```")) as Result.Failed
+        assertEquals(Failure.EMPTY_BLOCK, r.failure)
+        assertEquals(ProfilesAsk.FALLBACK_EMPTY_BLOCK, ProfilesAsk.line(r))
+    }
+
+    /** A one-profile host may answer with only its default line. */
+    @Test fun aDefaultLineAloneIsTheWholeServedList() {
+        val b = ok("```vox-profiles\ndefault=default\n```")
+        assertEquals(listOf("default"), b.served.map { it.name })
+        assertEquals("default", b.default)
+        assertTrue(b.served.single().isDefault)
+
+        val r = ProfilesAsk.fromChat(200, chat("```vox-profiles\ndefault=default\n```")) as Result.Named
+        assertEquals("1 profile from this host", ProfilesAsk.line(r))
+    }
+
+    /** When no `profile=`/`default=` line exists, a bare line that matches the rule is a name. */
+    @Test fun aBareListIsReadAsNames() {
+        val b = ok("```vox-profiles\nhome\nwork\nlab_2\n```")
+        assertEquals(listOf("home", "work", "lab_2"), b.served.map { it.name })
+        assertEquals("", b.default)
+        assertFalse(b.served.any { it.isDefault })
+    }
+
+    @Test fun bulletsAndTheListMarkerAreTolerated() {
+        val b = ok(
+            """
+            ```vox-profiles
+            - home
+            * work
+            + lab
+            ◆ office
+            ```
+            """.trimIndent()
+        )
+        assertEquals(listOf("home", "work", "lab", "office"), b.served.map { it.name })
+
+        val keyed = ok("```vox-profiles\n- profile=home\n◆ default=home\n```")
+        assertEquals(listOf("home"), keyed.served.map { it.name })
+        assertEquals("home", keyed.default)
+    }
+
+    @Test fun aColonSeparatorIsAccepted() {
+        val b = ok("```vox-profiles\ndefault: home\nprofile: home\nprofile: work\n```")
+        assertEquals(listOf("home", "work"), b.served.map { it.name })
+        assertEquals("home", b.default)
+    }
+
+    @Test fun wrappingQuotesBackticksAndTrailingPunctuationAreStripped() {
+        val b = ok(
+            "```vox-profiles\n" +
+                "default=`home`,\n" +
+                "profile=\"home\";\n" +
+                "profile='work'\n" +
+                "profile=◆lab\n" +
+                "```"
+        )
+        assertEquals(listOf("home", "work", "lab"), b.served.map { it.name })
+        assertEquals("home", b.default)
+    }
+
+    @Test fun uppercaseNamesAreCanonicalisedNotEmptyRejected() {
+        val b = ok("```vox-profiles\ndefault=Home\nprofile=HOME\nprofile=Geek\n```")
+        assertEquals(listOf("home", "geek"), b.served.map { it.name })
+        assertEquals("home", b.default)
+        assertTrue(b.served.first { it.name == "home" }.isDefault)
+    }
+
+    @Test fun slashesAndDotsAreStillRejected() {
+        val p = ProfilesAsk.parse("```vox-profiles\nprofile=a/b\nprofile=.hidden\n```")
+        assertTrue(p is Parsed.Echoed)
+        assertEquals(2, (p as Parsed.Echoed).dropped)
+        val r = ProfilesAsk.fromChat(200, chat("```vox-profiles\nprofile=a/b\nprofile=.hidden\n```")) as Result.Failed
+        assertEquals(Failure.UNUSABLE, r.failure)
+        assertEquals("the host named 2 profiles, none in a usable form", ProfilesAsk.line(r))
+        assertEquals("the host named 1 profile, none in a usable form",
+            ProfilesAsk.line(Result.Failed(Failure.UNUSABLE, 200, dropped = 1)))
+    }
+
+    /** The log can distinguish an empty block from a block of rejected names. */
+    @Test fun aFailureCarriesTheCountsTheLogPrints() {
+        val unusable = ProfilesAsk.fromChat(200, chat(
+            "```vox-profiles\nprofile=a/b\nprofile=.hidden\nformat=1\n```"
+        )) as Result.Failed
+        assertEquals(Failure.UNUSABLE, unusable.failure)
+        assertEquals(2, unusable.dropped)
+        assertEquals(3, unusable.seen)
+
+        val empty = ProfilesAsk.fromChat(200, chat("```vox-profiles\n\nformat=1\n```")) as Result.Failed
+        assertEquals(Failure.EMPTY_BLOCK, empty.failure)
+        assertEquals(0, empty.dropped)
+        assertEquals(1, empty.seen)
     }
 
     /** A default that names a profile this reply does not list names nothing. */
@@ -197,9 +297,13 @@ class ProfilesAskTest {
         val noAnswer = ProfilesAsk.fromChat(-1, "") as Result.Failed
         assertEquals(Failure.NO_BLOCK, noAnswer.failure)
 
-        val lines = listOf(ProfilesAsk.FALLBACK_NO_BLOCK, ProfilesAsk.FALLBACK_NO_NAMES, ProfilesAsk.FALLBACK_TIMEOUT)
+        val lines = listOf(
+            ProfilesAsk.FALLBACK_NO_BLOCK,
+            ProfilesAsk.FALLBACK_EMPTY_BLOCK,
+            ProfilesAsk.FALLBACK_TIMEOUT,
+        )
         assertEquals("this host did not answer with a profile list", lines[0])
-        assertEquals("this host named no usable profiles", lines[1])
+        assertEquals("the host's reply had a block but no profile names", lines[1])
         assertEquals("the host did not answer in time", lines[2])
     }
 
@@ -447,11 +551,13 @@ class ProfilesAskTest {
     private val askText =
         "[[vox:profiles]] This is a question, not a task. Which Hermes profiles does this " +
             "gateway serve to this key? Reply with one fenced vox-profiles block and nothing " +
-            "else — or, if you cannot answer, say plainly that the list cannot be produced. " +
-            "Do not modify this host, its configuration, its profiles, its memories, its " +
-            "sessions or its files. Do not run any command that changes them. If producing " +
-            "the list appears to need a change to the host, do not make it: say what would " +
-            "be needed instead."
+            "else. Inside it: one optional `default=<name>` line and one `profile=<name>` " +
+            "line per profile, including the default. Names are lowercase letters, digits, " +
+            "`-` or `_`, at most 64 characters. No other lines, no commentary, no table. If " +
+            "you cannot answer, say plainly that the list cannot be produced. Do not modify " +
+            "this host, its configuration, its profiles, its memories, its sessions or its " +
+            "files. Do not run any command that changes them. If producing the list appears " +
+            "to need a change to the host, do not make it: say what would be needed instead."
 
     @Test fun theRequestIsOnePlainChatTurnWithTheMarkersExactText() {
         val expected = askText
@@ -484,6 +590,13 @@ class ProfilesAskTest {
         assertTrue(ask, ask.contains(ProfilesAsk.LABEL))
         assertEquals("[[vox:profiles]]", ProfilesAsk.MARKER)
         assertEquals("vox-profiles", ProfilesAsk.LABEL)
+
+        // The shape travels in the ask, because the answering profile may never have been
+        // taught the skill that used to carry it.
+        assertTrue("the ask must name the profile line", ask.contains("profile=<name>"))
+        assertTrue("the ask must name the default line", ask.contains("default=<name>"))
+        assertTrue("the ask must state the host's 64-character ceiling", ask.contains("at most 64 characters"))
+        assertTrue("the ask must rule out commentary", ask.contains("no commentary"))
 
         // It says what it is, in words that cannot be read as a task.
         assertTrue(ask, ask.contains("This is a question, not a task"))

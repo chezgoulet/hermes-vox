@@ -332,7 +332,7 @@ the section's own refusal cannot disagree.
 
 | UI | Key | Default | What it changes | Reference |
 |---|---|---|---|---|
-| Profiles (the commands sheet, under *The agent*; the agent's name on the main screen also opens it) | `profiles`, `profile_active`, `profile_scoped` | the current connection, saved on first open | Saved connections — name, address (`https://host/p/<profile>` for a Hermes profile), key, model, scope, and the profile's own voice and look — one active at a time. It opens as a **sheet on the commands scaffold**: each row is the agent you would be talking to — its name, then the agent name, the model and the voice under it — the active one carries **IN USE**, and a switch closes the sheet and ends a live call first. It is a **picker, not an editor**: profiles are configured on the host, so there is no add row and no edit row and nothing in the sheet writes a profile — a host that serves none says "No profiles yet. Profiles are set up on the host, not on this phone.", and `Refresh from host` is the one action. The list is asked in conversation on connect and on an explicit refresh: the agent answers a `[[vox:profiles]]` turn with one `vox-profiles` block, every name is proved with `/v1/models`, and the proven list is cached — opening the switcher is instant and never waits on a model turn, and a refresh inside 60 s is refused. A refresh during a call waits for the call to end. A profile the host stopped serving is marked unavailable, never deleted. The header and notification name the active one once there are two; the header itself is display only | (android/app/src/main/java/com/hermesvox/MainActivity.kt `agentName.setOnClickListener { profiles.showSwitcher() }`)`) |
+| Profiles (the commands sheet, under *The agent*; the agent's name on the main screen also opens it) | `profiles`, `profile_active`, `profile_scoped` | the current connection, saved on first open | Saved connections — name, address (`https://host/p/<profile>` for a Hermes profile), key, model, scope, and the profile's own voice and look — one active at a time. It opens as a **sheet on the commands scaffold**: each row is the agent you would be talking to — its name, then the agent name, the model and the voice under it — the active one carries **IN USE**, and a switch closes the sheet and ends a live call first. It is a **picker, not a connection editor**: profiles are configured on the host, so there is no add row and no connection edit row — the one write it gains is the local display label, by long-pressing a row to open **Rename profile** (duplicates stay in the dialog as an inline error). A host that serves none says "No profiles yet. Profiles are set up on the host, not on this phone.", and `Refresh from host` is the one action. The list is asked in conversation on connect and on an explicit refresh: the agent answers a `[[vox:profiles]]` turn with one `vox-profiles` block, every name is proved with `/v1/models`, and the proven list is cached — opening the switcher is instant and never waits on a model turn, and a refresh inside 60 s is refused. A refresh during a call waits for the call to end. A profile the host stopped serving is marked unavailable, never deleted. After Settings → Entity saves a changed address, the active profile is offered one rename to match it; *Keep name* leaves it unchanged and nothing is renamed silently. The header and notification name the active one once there are two; the header itself is display only | (android/app/src/main/java/com/hermesvox/MainActivity.kt `agentName.setOnClickListener { profiles.showSwitcher() }`)`) |
 | Test entity connection | — | — | One probe of `/v1/models` (+ optionally `/v1/responses`), reported as ok / warming / key / FAILED | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `testConnectionAsync`) |
 | Client certificate (mTLS) | `mtls_alias_<host>:<port>` | none | A certificate the app presents to a gateway that asks for one, stored per **origin** (host + port) — one device setting, not per profile, and not shown in the profile editor. **Choose** opens Android's own certificate picker; the row then names the certificate's subject and expiry, not the KeyChain alias. Changing the gateway address never carries it to the new host: Save clears it there and the row says *"Address changed — choose the certificate again"* (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `Address changed — choose the certificate again`). The private key stays in KeyChain — only a `PrivateKey` handle is ever used | (android/app/src/main/java/com/hermesvox/core/MtlsConfig.kt `PREF_PREFIX = "mtls_alias_"`) |
 | Entity endpoint | `url` | "" | The gateway base URL; also decides whether the app is "configured" | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `AppSkillInstall.ask(this, s, versionName(), AppSkill.profileOf(prefs.getString("url", "").orEmpty()))`)`) |
@@ -680,7 +680,8 @@ model, nothing is uploaded to the gateway, and the transcript shows only the met
 | Licence acceptance | `model_licence_accepted_<id>` | none | Stores the licence name the user accepted; the name changing asks again | (android/app/src/main/java/com/hermesvox/ModelLicences.kt `model_licence_accepted_`) |
 
 **Profiles, said plainly.** Profiles are made on the host; Vox only picks among them, so the
-sheet has no add and no edit and never writes one. A name the host lists is used only after
+sheet has no add and no connection edit. Its one write is the **local display label**:
+long-press a row to open **Rename profile** (android/app/src/main/java/com/hermesvox/ProfileSheet.kt `long press to rename`). A name the host lists is used only after
 `/v1/models` answers 200 with the key the app already holds — the list is a hint, the probe is
 the proof (android/app/src/main/java/com/hermesvox/ProfilesAsk.kt `probeSucceeded(status: Int): Boolean = status == 200`).
 The list is asked in conversation, not from a route: the app sends one
@@ -690,13 +691,20 @@ still ends a live call and starts a new conversation
 is cached; opening the switcher never asks, a cached answer younger than 15 minutes is rendered
 with its age instead of asking again, a connect inside that window sends nothing, a refresh
 inside 60 s is refused, and a refresh during a call runs when the call ends
-(android/app/src/main/java/com/hermesvox/ProfilesAsk.kt `fun decide`). A host that does
-not answer with the block falls back to by-hand profiles and says so in one line.
+(android/app/src/main/java/com/hermesvox/ProfilesAsk.kt `fun decide`). A host that does not
+answer with the block says so in one line and keeps the saved profiles. After Settings →
+Entity saves a changed address, the active profile is offered **one** rename — *Address
+changed* with a suggestion from the new `/p/<name>` segment or the host's first label —
+and *Keep name* leaves it alone
+(android/app/src/main/java/com/hermesvox/SettingsActivity.kt `setTitle("Address changed")`).
+Nothing renames silently, and the address is never changed on the user's behalf.
 
 ### Answering the app's profile ask (`[[vox:profiles]]`)
 
 This is the one thing this skill asks the agent to do. The switcher asks the agent for the
 profiles it serves; there is no `GET /v1/profiles` route to implement and nothing to install.
+The ask carries the schema inline, so the agent that answers does not have to have been taught
+this skill — skills are installed per profile, and the ask goes to the host root.
 
 When a message begins with `[[vox:profiles]]`, run `hermes profile list` (or read the
 gateway's profiles directory) and reply with **only** one fenced block labelled
@@ -714,20 +722,26 @@ profile=work
 
 - `default=<name>` — the default profile, zero or one line. Omit it when there is no default.
 - `profile=<name>` — one line per profile, including the default.
-- A name matches `[a-z0-9][a-z0-9_-]{0,31}`. Anything else is dropped by the client.
-- No prose, no introduction, no closing question, no second block.
+- A name is the host's lowercase `[a-z0-9][a-z0-9_-]{0,63}` — at most 64 characters.
+  The client lowercases before it compares, so `Geek` is read as `geek`; anything still
+  outside the rule is dropped.
+- No prose, no introduction, no closing question, no second block, no table.
 
 **Why the shape matters:** the client parses the block and fills its switcher from it. An
 essay — however helpful — makes the feature fail, because prose instead of a block is read as
-"this host did not answer with a profile list", and a block whose names all fail the charset
-is read as "this host named no usable profiles". The client then probes each name with
-`GET /v1/models` (the default at the host, a named profile under `/p/<name>`); only a 200
-makes it usable, and a name that does not answer is shown as unavailable rather than saved.
+"this host did not answer with a profile list". A block with no names is read as "the host's
+reply had a block but no profile names", and a block whose names all fail the charset as
+"the host named N profiles, none in a usable form". The parser tolerates what agents actually
+write: a leading bullet or `◆`, `=` or `:`, wrapping backticks/quotes and a trailing `,`/`;`;
+`default=<name>` alone is a one-profile list, and a block with no keyed lines may list bare
+names. The client then probes each name with `GET /v1/models` (the default at the host, a
+named profile under `/p/<name>`); only a 200 makes it usable, and a name that does not
+answer is shown as unavailable rather than saved.
 The exact user turn the app sends is
 (android/app/src/main/java/com/hermesvox/ProfilesAsk.kt `const val ASK`):
 
 ```
-[[vox:profiles]] This is a question, not a task. Which Hermes profiles does this gateway serve to this key? Reply with one fenced vox-profiles block and nothing else — or, if you cannot answer, say plainly that the list cannot be produced. Do not modify this host, its configuration, its profiles, its memories, its sessions or its files. Do not run any command that changes them. If producing the list appears to need a change to the host, do not make it: say what would be needed instead.
+[[vox:profiles]] This is a question, not a task. Which Hermes profiles does this gateway serve to this key? Reply with one fenced vox-profiles block and nothing else. Inside it: one optional `default=<name>` line and one `profile=<name>` line per profile, including the default. Names are lowercase letters, digits, `-` or `_`, at most 64 characters. No other lines, no commentary, no table. If you cannot answer, say plainly that the list cannot be produced. Do not modify this host, its configuration, its profiles, its memories, its sessions or its files. Do not run any command that changes them. If producing the list appears to need a change to the host, do not make it: say what would be needed instead.
 ```
 
 The parser accepts one label and one shape
@@ -822,7 +836,7 @@ add it with a reference; if it contradicts a row here, the code wins.
 | `event=harness` | Debug builds only: a test intent set ringer mode | — | (android/app/src/debug/java/com/hermesvox/DebugHarnessActivity.kt `harness ringer=`) |
 | `event=res` | Every 10 s of a call: the app's resident memory, the phone's available memory, low-memory flag, thermal state | `low=true`, `availMb` under ~1000, or `thermal=severe` and above — the phone is close to killing something | (android/app/src/main/java/com/hermesvox/ResourceProbe.kt `fun line(): String = "event=res rssMb=${mb(rssKb)} availMb=${mb(availKb)} totalMb=${mb(totalKb)} " +`) |
 | `event=res-summary` | At hang-up: the call's peak RSS, lowest available memory, thermal start → end | A peak that grows release over release (docs/BASELINE.md) | (android/app/src/main/java/com/hermesvox/ResourceProbe.kt `* event=res-summary peakRssMb=… minAvailMb=… thermalStart=… thermalEnd=… samples=… ms=…`) |
-| `event=profiles-ask` | The host was asked for its profiles, on connect or on an explicit refresh. `kind=` is `connect`/`refresh`, `source=` is `fast` (the opportunistic `GET /v1/profiles` route), `chat` (the conversational ask) or `none` (it failed), `status=` its HTTP code (`-1` = no answer or the 45 s chat budget expiring), `ms=` the whole ask including probes, `fast=` that route's status, `added=` profiles new to this phone, `unavailable=` saved profiles this host did not prove (kept, marked in the switcher), `dropped=` names the agent wrote outside the charset | A steady `fast=404` is normal — the route does not exist and `source=chat` carried the list; `source=none` means the agent's answer failed (read `status=` and the line in the switcher); `added=0 unavailable=0` after a profile was created on the gateway = the device is on another host or key | (android/app/src/main/java/com/hermesvox/ProfileDialogs.kt `event=profiles-ask`) |
+| `event=profiles-ask` | The host was asked for its profiles, on connect or on an explicit refresh. `kind=` is `connect`/`refresh`, `source=` is `fast` (the opportunistic `GET /v1/profiles` route), `chat` (the conversational ask) or `none` (it failed), `status=` its HTTP code (`-1` = no answer or the 45 s chat budget expiring), `ms=` the whole ask including probes, `fast=` that route's status, `answered_by=root` or `profile` (the root ask was retried once at the active profile's own path after a 401/404), `added=` profiles new to this phone, `unavailable=` saved profiles this host did not prove (kept, marked in the switcher), `dropped=` names the agent wrote outside the charset, `seen=` non-empty content lines in the labelled block | A steady `fast=404` is normal — the route does not exist and `source=chat` carried the list; `answered_by=profile` means the root rejected this profile's key, not that the host failed; `source=none` means the agent's answer failed (read `status=`, `dropped=`, `seen=` and the line in the switcher); `added=0 unavailable=0` after a profile was created on the gateway = the device is on another host or key | (android/app/src/main/java/com/hermesvox/ProfileDialogs.kt `event=profiles-ask`) |
 
 ### B. Mic, VAD, STT
 

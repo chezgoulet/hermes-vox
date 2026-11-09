@@ -117,4 +117,27 @@ class VoxMirrorTest {
         VoxMirror.file(r, "home").writeText("   ")
         assertNull(VoxMirror.read(r, "home"))
     }
+
+    @Test fun renamingASlotMovesTheDocumentIntact() {
+        val r = root()
+        assertTrue(VoxMirror.write(r, "home", cinder))
+        assertEquals(VoxMirror.RenameSlot.MOVED, VoxMirror.renameSlot(r, "home", "House"))
+        assertEquals(cinder, VoxMirror.read(r, "House"))
+        assertNull(VoxMirror.read(r, "home"))
+    }
+
+    @Test fun renamingASlotWithNoSourceTouchesNothing() {
+        val r = root()
+        assertEquals(VoxMirror.RenameSlot.NO_SOURCE, VoxMirror.renameSlot(r, "home", "House"))
+        assertFalse(VoxMirror.file(r, "House").exists())
+    }
+
+    @Test fun renamingASlotOntoAnExistingDocumentLeavesBoth() {
+        val r = root()
+        assertTrue(VoxMirror.write(r, "home", cinder))
+        assertTrue(VoxMirror.write(r, "House", "the destination document"))
+        assertEquals(VoxMirror.RenameSlot.DESTINATION_EXISTS, VoxMirror.renameSlot(r, "home", "House"))
+        assertEquals(cinder, VoxMirror.read(r, "home"))
+        assertEquals("the destination document", VoxMirror.read(r, "House"))
+    }
 }

@@ -32,6 +32,9 @@ and the profile switcher are on for every install.
 `Presence` remains the feature's public name in copy and release notes. "Alpha Features" is the
 gate, not the name. "Enhanced Realtime" is retired as vocabulary.
 
+`0.9.1.1` is the patch cut on 0.9.1: the profile list a gateway returns is read in the shapes an
+agent actually writes, and a profile's local label can be corrected after its address changes.
+
 ## 0.9.1 — the release in acceptance
 
 Everything in flight, plus everything discovered until the owner is satisfied.

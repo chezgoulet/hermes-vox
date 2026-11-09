@@ -1,6 +1,8 @@
 package com.hermesvox
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -57,5 +59,70 @@ class ProfilesTest {
         // The registry stores what SecureStore produced; it does not touch it.
         val json = Profiles.encode(listOf(work))
         assertTrue(json.contains("\"key\":\"enc:bbb\""))
+    }
+
+    @Test fun aRenameChangesOnlyTheLabel() {
+        val list = listOf(home, work)
+        val r = Profiles.rename(list, "work", "Office")
+        assertTrue(r.changed)
+        assertNull(r.error)
+        assertEquals(listOf("home", "Office"), r.list.map { it.name })
+        // Every connection field is byte-identical; only the label moved.
+        assertEquals(work.copy(name = "Office"), Profiles.find(r.list, "office"))
+    }
+
+    @Test fun renamingTheActiveProfileMovesTheActiveName() {
+        val r = Profiles.rename(listOf(home, work), "work", "Office", active = "WORK")
+        assertTrue(r.changed)
+        assertEquals("Office", r.active)
+        // Renaming a different profile leaves the active name alone.
+        val other = Profiles.rename(listOf(home, work), "home", "House", active = "work")
+        assertTrue(other.changed)
+        assertEquals("work", other.active)
+    }
+
+    @Test fun aRenameRejectsADuplicateCaseInsensitivelyAndSaysSo() {
+        val r = Profiles.rename(listOf(home, work), "work", "HOME")
+        assertFalse(r.changed)
+        assertEquals(Profiles.RenameError.DUPLICATE, r.error)
+        assertEquals(listOf(home, work), r.list)
+    }
+
+    @Test fun aRenameRejectsABlankOrInvalidLabelAndSaysSo() {
+        assertEquals(Profiles.RenameError.BLANK,
+            Profiles.rename(listOf(home), "home", "   ").error)
+        assertEquals(Profiles.RenameError.BAD_CHARS,
+            Profiles.rename(listOf(home), "home", "work/2").error)
+        assertEquals(Profiles.RenameError.BAD_CHARS,
+            Profiles.rename(listOf(home), "home", "!!").error)
+        assertEquals(Profiles.RenameError.TOO_LONG,
+            Profiles.rename(listOf(home), "home", "a".repeat(Profiles.LABEL_MAX + 1)).error)
+    }
+
+    @Test fun anUnknownOrNoOpRenameChangesNothing() {
+        val list = listOf(home, work)
+        val unknown = Profiles.rename(list, "ghost", "Office")
+        assertFalse(unknown.changed)
+        assertEquals(Profiles.RenameError.UNKNOWN, unknown.error)
+        assertEquals(list, unknown.list)
+
+        val noop = Profiles.rename(list, "home", "home")
+        assertFalse(noop.changed)
+        assertEquals(Profiles.RenameError.UNCHANGED, noop.error)
+        assertEquals(list, noop.list)
+    }
+
+    @Test fun aRenameIsOfferedOnlyWhenTheLabelDoesNotMatchTheAddress() {
+        assertEquals("work", Profiles.suggestedLabel("https://gw.example/p/work", "Office"))
+        assertEquals("gw", Profiles.suggestedLabel("https://gw.example", "Vox Test"))
+        assertNull(Profiles.suggestedLabel("https://gw.example/p/work", "Work"))
+        assertNull(Profiles.suggestedLabel("https://gw.example/p/work", " work "))
+    }
+
+    @Test fun anAddressSuggestsItsProfileSegmentOrHostLabel() {
+        assertEquals("work", Profiles.suggestName("https://gw.example/p/work"))
+        assertEquals("gw", Profiles.suggestName("https://gw.example"))
+        assertEquals("hermes", Profiles.suggestName("https://hermes.example.com:8642/v1/models"))
+        assertEquals("profile", Profiles.suggestName(""))
     }
 }

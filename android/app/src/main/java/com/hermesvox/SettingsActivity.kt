@@ -651,6 +651,7 @@ class SettingsActivity : AppCompatActivity() {
                     MainActivity.onEntitySaved()
                     refreshEntityVal()
                     dlg.dismiss()
+                    offerRenameAfterAddressChange(initialUrl, u)
                 }
             }
             dlg.show()
@@ -661,6 +662,53 @@ class SettingsActivity : AppCompatActivity() {
         refreshEntityVal()
         bindVoxRow()
         bindAgentModel()
+    }
+
+    /**
+     * The address is the identity; the saved name is only a local label. After an address
+     * change, offer to correct that label — never silently, and never by changing the address
+     * on the user's behalf. The suggestion is the new `/p/<name>` segment, or the host's first
+     * label when the address names no profile. "Keep name" leaves everything as it was.
+     */
+    private fun offerRenameAfterAddressChange(oldUrl: String, newUrl: String) {
+        if (newUrl == oldUrl.trim()) return
+        val list = Profiles.decode(prefs.getString(Profiles.PREF_LIST, "").orEmpty())
+        val active = Profiles.activeName { prefs.getString(it, "").orEmpty() }
+        val profile = Profiles.find(list, active) ?: return
+        // What matters is whether the label still describes the address, not whether the
+        // registry's stored copy already happens to hold it.
+        val suggestion = Profiles.suggestedLabel(newUrl, profile.name) ?: return
+        AlertDialog.Builder(this)
+            .setTitle("Address changed")
+            .setMessage(
+                "This profile is still called «${profile.name}». Rename it to match the new address?"
+            )
+            .setPositiveButton("Rename") { _, _ ->
+                val r = Profiles.rename(list, profile.name, suggestion, active)
+                if (!r.changed) {
+                    Toast.makeText(
+                        this,
+                        "A profile is already called «$suggestion»; the name was left unchanged.",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                    return@setPositiveButton
+                }
+                val newName = Profiles.find(r.list, suggestion)?.name.orEmpty()
+                val moved = VoxMirror.renameSlot(this, profile.name, newName)
+                prefs.edit()
+                    .putString(Profiles.PREF_LIST, Profiles.encode(r.list))
+                    .putString(Profiles.PREF_ACTIVE, r.active)
+                    .apply()
+                if (moved == VoxMirror.RenameSlot.DESTINATION_EXISTS) {
+                    Toast.makeText(
+                        this,
+                        "Renamed. The old VOX.md was left in place because the new name already had one.",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
+            }
+            .setNegativeButton("Keep name", null)
+            .show()
     }
 
     /**

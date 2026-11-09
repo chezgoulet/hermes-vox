@@ -1,6 +1,9 @@
 package com.hermesvox
 
+import android.app.AlertDialog
 import android.content.SharedPreferences
+import android.text.InputType
+import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.hermesvox.core.ProfileReach
@@ -16,10 +19,12 @@ import kotlin.concurrent.thread
  * The profile switcher (#174): list → pick → done. Opened from **Profiles** in the commands
  * sheet, where the active profile is shown.
  *
- * **It picks; it does not write.** Profiles are configured on the host and Vox chooses among
- * them, so there is no add and no edit here — the sheet renders the registry, marks the one in
- * use, and a tap switches. The connection form (Settings → Entity, and first run) is a separate
- * door and still writes the one connection the app holds.
+ * **It picks; its one write is the local label.** Profiles are configured on the host and Vox
+ * chooses among them, so there is no add and no connection editor here — the sheet renders the
+ * registry, marks the one in use, and a tap switches. A long-press renames the saved profile's
+ * display label (the address carries the identity), because a label that no longer matches a
+ * changed address is the user's to correct. The connection form (Settings → Entity, and first
+ * run) is a separate door and still writes the one connection the app holds.
  *
  * #384: the list comes from the agent, asked in conversation (SPEC-conversational-bridge §A).
  * [refreshFromHost] tries `GET <base>/v1/profiles` first (the #382 fast path) and otherwise
@@ -104,9 +109,70 @@ class ProfileDialogs(
             note = { message() },
             onSwitch = { p -> if (!p.name.equals(activeName(), ignoreCase = true)) onSwitch(p) },
             onRefresh = { refreshFromHost(ProfilesAsk.AskKind.REFRESH) },
+            onRename = { p -> renameProfile(p) },
         )
         open = sheet
         sheet.show()
+    }
+
+    /**
+     * Rename the saved profile's local label. Long-press in the sheet opens one field
+     * pre-filled with the current name; a duplicate or an invalid label stays in the dialog
+     * as an inline error. The address, key, model, agent name, scope, provider and own values
+     * are not touched, and the active pref is updated in the same write when the active
+     * profile is the one renamed.
+     */
+    private fun renameProfile(p: Profiles.Profile) {
+        val field = EditText(activity).apply {
+            setText(p.name)
+            inputType = InputType.TYPE_CLASS_TEXT
+            setSelectAllOnFocus(true)
+            setSingleLine()
+        }
+        val pad = (16 * activity.resources.displayMetrics.density).toInt()
+        val wrap = android.widget.FrameLayout(activity).apply {
+            setPadding(pad, pad / 2, pad, 0)
+            addView(field)
+        }
+        val dlg = AlertDialog.Builder(activity)
+            .setTitle("Rename profile")
+            .setView(wrap)
+            .setPositiveButton("Rename", null)
+            .setNegativeButton("Cancel", null)
+            .create()
+        dlg.setOnShowListener {
+            dlg.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener {
+                val to = field.text.toString().trim()
+                val r = Profiles.rename(list(), p.name, to, activeName())
+                if (!r.changed) {
+                    field.error = renameError(r.error)
+                    return@setOnClickListener
+                }
+                val newName = Profiles.find(r.list, to)?.name.orEmpty()
+                val moved = VoxMirror.renameSlot(activity, p.name, newName)
+                prefs.edit()
+                    .putString(Profiles.PREF_LIST, Profiles.encode(r.list))
+                    .putString(Profiles.PREF_ACTIVE, r.active)
+                    .apply()
+                dlg.dismiss()
+                onRegistryChanged()
+                renderSwitcher()
+                if (moved == VoxMirror.RenameSlot.DESTINATION_EXISTS) {
+                    toast("Renamed. The old VOX.md was left in place because the new name already had one.")
+                }
+            }
+        }
+        dlg.show()
+    }
+
+    private fun renameError(error: Profiles.RenameError?): String = when (error) {
+        Profiles.RenameError.UNKNOWN -> "That profile is no longer saved"
+        Profiles.RenameError.UNCHANGED -> "That is already the name"
+        Profiles.RenameError.BLANK -> "Enter a name"
+        Profiles.RenameError.TOO_LONG -> "Use ${Profiles.LABEL_MAX} characters or fewer"
+        Profiles.RenameError.BAD_CHARS -> "Use letters, digits, spaces, - or _"
+        Profiles.RenameError.DUPLICATE -> "That name is already used"
+        null -> "That name cannot be used"
     }
 
     /** The one line under the list: freshness, a partial refresh, or a stated failure. */
@@ -149,7 +215,7 @@ class ProfileDialogs(
             // Nothing to authenticate with: the host was never asked, so it cannot be said
             // to have listed anything. Say the honest line and do not stamp the cache.
             settle(ProfilesAsk.Result.Failed(ProfilesAsk.Failure.NO_BLOCK, -1), base, stored, "", 0L,
-                emptyMap(), -1, kind, stamp = false)
+                emptyMap(), -1, kind, answeredBy = "none", stamp = false)
             return
         }
         asking = true
@@ -163,10 +229,12 @@ class ProfileDialogs(
                 val (fastCode, fastBody) = try { fetch(base, key, scope) } catch (_: Throwable) { -1 to "" }
                 // 2. The route comes first, always. Only the Step.Ask branch may send the
                 //    conversational turn: a fast-path answer suppresses it entirely.
+                var answeredBy = "root"
                 val result: ProfilesAsk.Result = when (val step = ProfilesAsk.step(fastCode, fastBody)) {
                     is ProfilesAsk.Step.Answered -> step.result
                     ProfilesAsk.Step.Ask -> {
                         val r = ask(base, key, model)
+                        answeredBy = r.answeredBy
                         ProfilesAsk.fromChat(r.code, r.body, r.timedOut)
                     }
                 }
@@ -176,7 +244,7 @@ class ProfileDialogs(
                 val elapsed = System.currentTimeMillis() - started
                 activity.runOnUiThread {
                     asking = false
-                    settle(result, base, stored, model, elapsed, reachable, fastCode, kind)
+                    settle(result, base, stored, model, elapsed, reachable, fastCode, kind, answeredBy = answeredBy)
                 }
             } catch (_: Throwable) {
                 // An unexpected failure must not wedge every later ask on `asking`.
@@ -202,6 +270,7 @@ class ProfileDialogs(
         reachable: Map<String, Boolean>,
         fastCode: Int,
         kind: ProfilesAsk.AskKind,
+        answeredBy: String = "root",
         stamp: Boolean = true,
     ) {
         // The user may have switched hosts while the ask was out. That answer describes a
@@ -238,7 +307,8 @@ class ProfileDialogs(
         VoxLog.d(
             "event=profiles-ask kind=${kind.name.lowercase()} " +
                 "source=${sourceOf(result)} status=${statusOf(result)} ms=$elapsedMs fast=$fastCode " +
-                "added=$added unavailable=$unavailable dropped=${droppedOf(result)}"
+                "answered_by=$answeredBy added=$added unavailable=$unavailable " +
+                "dropped=${droppedOf(result)} seen=${seenOf(result)}"
         )
         if (activity.isFinishing || activity.isDestroyed) return
         val shown = open
@@ -263,8 +333,15 @@ class ProfileDialogs(
         is ProfilesAsk.Result.Failed -> a.code.toString()
     }
 
-    private fun droppedOf(a: ProfilesAsk.Result): Int =
-        (a as? ProfilesAsk.Result.Named)?.dropped ?: 0
+    private fun droppedOf(a: ProfilesAsk.Result): Int = when (a) {
+        is ProfilesAsk.Result.Named -> a.dropped
+        is ProfilesAsk.Result.Failed -> a.dropped
+    }
+
+    private fun seenOf(a: ProfilesAsk.Result): Int = when (a) {
+        is ProfilesAsk.Result.Named -> a.seen
+        is ProfilesAsk.Result.Failed -> a.seen
+    }
 
     /** `GET <base>/v1/profiles` with this connection's own key: status and body, or -1. */
     private fun fetch(base: String, key: String, scope: String): Pair<Int, String> = try {
@@ -284,7 +361,13 @@ class ProfileDialogs(
         } finally { c.disconnect() }
     } catch (_: Throwable) { -1 to "" }
 
-    private data class Chat(val code: Int, val body: String, val timedOut: Boolean)
+    private data class Chat(
+        val code: Int,
+        val body: String,
+        val timedOut: Boolean,
+        /** Which base answered: the host root or the active profile's own path. */
+        val answeredBy: String = "root",
+    )
 
     /**
      * `POST <base>/v1/chat/completions`: the ask as a plain OpenAI-shaped turn, on the
@@ -292,12 +375,30 @@ class ProfileDialogs(
      * `VoiceController.sendText` — that speaks the reply and puts it in the call transcript,
      * which for a profile list is both wrong and noisy.
      *
-     * `{base}` is the connection with any `/p/<profile>` suffix stripped: the ask goes to
-     * the host, not to a profile. The session scope is deliberately not sent: this is not a
-     * conversation, and it must not write into the user's memory scope.
+     * The first attempt strips any `/p/<profile>` suffix and asks the host root. Hermes
+     * resolves the API key per profile, so a profile that carries its own key makes the root
+     * answer 401 (or a gateway may answer 404); either is retried **once** at the active
+     * connection's own path, the un-stripped base. The #453 prohibition makes that turn
+     * inert, so asking the profile is safe. The session scope is deliberately not sent: this
+     * is not a conversation, and it must not write into the user's memory scope.
      */
-    private fun ask(base: String, key: String, model: String): Chat = try {
-        val c = URL(HostProfiles.rootBase(base).trimEnd('/') + ProfilesAsk.PATH).openConnection() as HttpURLConnection
+    private fun ask(base: String, key: String, model: String): Chat {
+        val root = HostProfiles.rootBase(base)
+        val first = post(root, base, key, model, "root")
+        if (first.code != 401 && first.code != 404) return first
+        val own = HostProfiles.address(base)
+        if (own.isBlank() || own == root) return first
+        return post(own, base, key, model, "profile")
+    }
+
+    private fun post(
+        urlBase: String,
+        observedBase: String,
+        key: String,
+        model: String,
+        answeredBy: String,
+    ): Chat = try {
+        val c = URL(urlBase.trimEnd('/') + ProfilesAsk.PATH).openConnection() as HttpURLConnection
         try {
             c.requestMethod = "POST"
             c.connectTimeout = ProfilesAsk.TIMEOUT_MS
@@ -313,13 +414,13 @@ class ProfileDialogs(
             val code = c.responseCode
             val stream = if (code in 200..299) c.inputStream else c.errorStream
             val text = stream?.use { readAtMost(it, ProfilesAsk.BODY_MAX) }.orEmpty()
-            ProfileReach.observe(code, text, base)
-            Chat(code, text, false)
+            ProfileReach.observe(code, text, observedBase)
+            Chat(code, text, false, answeredBy)
         } finally { c.disconnect() }
     } catch (_: SocketTimeoutException) {
-        Chat(-1, "", true)
+        Chat(-1, "", true, answeredBy)
     } catch (_: Throwable) {
-        Chat(-1, "", false)
+        Chat(-1, "", false, answeredBy)
     }
 
     /**

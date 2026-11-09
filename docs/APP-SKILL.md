@@ -43,9 +43,11 @@ Three things in it are contracts rather than prose:
   listening wake word, a cloud account, a second brain on the phone, a full-duplex call.
 - **The profile ask.** The app's profile switcher asks the agent for the profiles it serves by
   sending one `[[vox:profiles]]` turn; the agent answers with **only** one fenced `vox-profiles`
-  block. The settings map teaches that shape, because prose instead of a block is read as "this host did
-  not answer", and a block whose names fail the charset is read as "no usable profiles". The ask
-  is a question, never a request to change the host.
+  block. The ask states that shape inline (the answering profile may never have been taught
+  this skill), because prose instead of a block is read as "this host did not answer", a block
+  with no names is read as "had a block but no profile names", and a block whose names all fail
+  the charset is read as "named N profiles, none in a usable form". The ask is a question,
+  never a request to change the host.
 - **The diagnostic block** (`vox-diag`) is the one thing the skill points a support conversation
   at: build, preset, device, mind side, model, counters — no transcript, key, URL or hostname.
 

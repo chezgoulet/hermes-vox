@@ -113,3 +113,17 @@ One switch, above the block in Settings
 - PierreCsn — per-origin mTLS
 - PierreCsn — the streaming TTS diagnosis
 - blueorignal — issues that shaped the release: audio cues, quiet calls, scrollback, /new mid-call, Bluetooth mic
+
+## The shipped artifact
+
+- **Tag:** `v0.9.1`, cut from `main` at `585c430`
+- **APK:** `hermes-vox-0.9.1.apk`, 81,344,620 bytes
+- **SHA-256:** `344c94cdc17cce906c940bf7e3cc8a98e41d74c83a4445ba880fd15973ebc88f`
+- **Stamp:** `versionCode 147`, `versionName 0.9.1` (read from the APK with `aapt2 dump badging`)
+- **Signer:** `CN=Hermes Vox, OU=ChezGoulet, O=ChezGoulet, L=Windsor, ST=VT, C=US`, certificate
+  SHA-256 `8be7feed8a6135d3d2df8fd51598517dabd4b14ea16a1a02b00c10ea4dcbbb19` — the same key
+  0.9.0.2 was signed with, so it installs over an existing copy as an upgrade
+- **Reproducible:** two clean checkouts on separate runners produced identical payloads
+  (`release-build` run 42392078374); the verdict is that run's own report, not a claim in prose
+- **Installed on a device:** over the previous build, launched, `MainActivity` resumed, nothing
+  fatal in the launch window

@@ -331,6 +331,10 @@ class SettingsHintsTest {
             "PresenceCadence.PREF",
             // T7: Settings → Entity reads and writes the host-adopted entity name.
             "Profiles.K_AGENT",
+            // The address-change prompt may rename the active profile's local label in the
+            // same write that updates the active name. Added deliberately with that prompt.
+            "Profiles.PREF_LIST",
+            "Profiles.PREF_ACTIVE",
             "SemanticEndpoint.KEY",
             "SemanticEndpoint.KEY_EAGERNESS",
             "SessionScope.PREF",

@@ -109,6 +109,21 @@ internal object ReleaseNotes {
             ),
         ),
         ReleaseNote(
+            versionCode = 148,
+            versionName = "0.9.1.1",
+            title = "The profile fix",
+            bullets = listOf(
+                "Profiles now populate from the gateway. The app asks for the list and states the shape it expects, and a reply that names the profiles in a table, behind a marker or as a bare list is read rather than discarded.",
+                "A gateway that serves only its default profile — or answers with just the default line — now produces that profile instead of \"no usable profiles\".",
+                "When a list cannot be used, the line says which failure it was: no block, a block with no names, names that did not fit the rule, or no answer. The count of rejected names is logged.",
+                "If the host root rejects the active profile's key, the ask is retried against the profile itself, so a per-profile key no longer looks like a host that will not answer.",
+                "Profiles can be renamed: long-press a row in the Profiles sheet. The address carries the identity; the name is your label.",
+                "After Settings changes the address, the app offers once to rename the profile to match it, and never renames silently.",
+                "Names up to 64 characters are accepted, matching the host's own rule.",
+            ),
+        ),
+
+        ReleaseNote(
             versionCode = 147,
             versionName = "0.9.1",
             title = "The daylight release",
