@@ -199,7 +199,12 @@ object HostProfiles {
      *  `https://host/p/<name>` — the addressing rule the registry already documents. */
     fun urlFor(base: String, name: String, isDefault: Boolean): String {
         val b = rootBase(base)
-        return if (b.isBlank()) "" else if (isDefault) b else "$b/p/$name"
+        if (b.isBlank()) return ""
+        // The host root is the built-in `default` profile, and only that name. A block that
+        // says `default=none` must be probed at /p/none — probing the root would return 200
+        // for any working gateway and turn a word the agent made up into a saved profile.
+        val atRoot = isDefault && name.equals("default", ignoreCase = true)
+        return if (atRoot) b else "$b/p/$name"
     }
 
     /** One registry entry for a served profile. The name is display only; scope and provider

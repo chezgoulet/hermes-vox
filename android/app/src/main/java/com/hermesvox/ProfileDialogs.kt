@@ -157,7 +157,9 @@ class ProfileDialogs(
                 dlg.dismiss()
                 onRegistryChanged()
                 renderSwitcher()
-                if (moved == VoxMirror.RenameSlot.DESTINATION_EXISTS) {
+                if (moved == VoxMirror.RenameSlot.FAILED) {
+                    toast("Renamed. Its VOX.md could not be moved; resync it from the profile.")
+                } else if (moved == VoxMirror.RenameSlot.DESTINATION_EXISTS) {
                     toast("Renamed. The old VOX.md was left in place because the new name already had one.")
                 }
             }

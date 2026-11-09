@@ -33,6 +33,17 @@ class HostProfilesTest {
         ]}
     """.trimIndent()
 
+    /** A listing whose default is the built-in `default` — the only name that answers at the
+     *  host root. The shared fixture calls its default `home`, which is a named profile now. */
+    private val servedAtRoot = """
+        {"object":"list","default":"default",
+         "profiles":[
+          {"name":"default","default":true},
+          {"name":"work","default":false},
+          {"name":"lab"}
+        ]}
+    """.trimIndent()
+
     private fun advertised(body: String = served): Answer.Advertised =
         HostProfiles.answer(200, body) as Answer.Advertised
 
@@ -119,7 +130,10 @@ class HostProfilesTest {
     }
 
     @Test fun theDefaultProfileAnswersAtTheHostItself() {
-        assertEquals(base, HostProfiles.urlFor(base, "home", isDefault = true))
+        // The root is the built-in `default` profile. A name the reply merely *calls* default
+        // is still a named profile: probing it at the root would let `default=none` pass.
+        assertEquals(base, HostProfiles.urlFor(base, "default", isDefault = true))
+        assertEquals("$base/p/home", HostProfiles.urlFor(base, "home", isDefault = true))
         assertEquals("$base/p/work", HostProfiles.urlFor(base, "work", isDefault = false))
         // Asking through a named profile still expands to the right host base.
         assertEquals("$base/p/lab", HostProfiles.urlFor("$base/p/work", "lab", isDefault = false))
@@ -169,7 +183,7 @@ class HostProfilesTest {
      *  it must not be added twice, and the host's answer must not call it unavailable. */
     @Test fun aSavedUrlWithAnEndpointIsStillTheSameConnection() {
         val saved = Profiles.Profile("Hermes", "$base/v1/models", "enc:aaa", agentName = "Hermes")
-        val m = HostProfiles.merge(listOf(saved), base, "enc:aaa", advertised())
+        val m = HostProfiles.merge(listOf(saved), base, "enc:aaa", advertised(servedAtRoot))
         assertTrue(m.unavailable.isEmpty())
         assertEquals(listOf("Hermes", "work", "lab"), m.list.map { it.name })
         // The app compares addresses, not spellings.
@@ -194,7 +208,7 @@ class HostProfilesTest {
         // The seeded first profile is named after the agent, and addresses the host root —
         // exactly where the host's default profile answers.
         val seeded = Profiles.Profile("Hermes", base, "enc:aaa", agentName = "Hermes")
-        val m = HostProfiles.merge(listOf(seeded), base, "enc:aaa", advertised())
+        val m = HostProfiles.merge(listOf(seeded), base, "enc:aaa", advertised(servedAtRoot))
         assertEquals(listOf("Hermes", "work", "lab"), m.list.map { it.name })
         assertTrue(m.unavailable.isEmpty())
     }
