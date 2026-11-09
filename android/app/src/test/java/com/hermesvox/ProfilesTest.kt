@@ -112,6 +112,13 @@ class ProfilesTest {
         assertEquals(list, noop.list)
     }
 
+    @Test fun aRenameIsOfferedOnlyWhenTheLabelDoesNotMatchTheAddress() {
+        assertEquals("work", Profiles.suggestedLabel("https://gw.example/p/work", "Office"))
+        assertEquals("gw", Profiles.suggestedLabel("https://gw.example", "Vox Test"))
+        assertNull(Profiles.suggestedLabel("https://gw.example/p/work", "Work"))
+        assertNull(Profiles.suggestedLabel("https://gw.example/p/work", " work "))
+    }
+
     @Test fun anAddressSuggestsItsProfileSegmentOrHostLabel() {
         assertEquals("work", Profiles.suggestName("https://gw.example/p/work"))
         assertEquals("gw", Profiles.suggestName("https://gw.example"))

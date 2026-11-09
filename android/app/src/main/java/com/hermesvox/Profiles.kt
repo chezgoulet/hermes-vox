@@ -160,6 +160,17 @@ object Profiles {
         return if (cleaned.any { it.isLetterOrDigit() }) cleaned else "profile"
     }
 
+    /**
+     * The label to offer after an address change, or null when the current label already
+     * matches what the new address names. The decision is pure so the prompt can neither fire
+     * on a label that is already honest nor stay silent on one that is not — comparing the
+     * registry's *stored address* to the new one answered the wrong question.
+     */
+    fun suggestedLabel(url: String, current: String): String? {
+        val s = suggestName(url)
+        return if (s.equals(current.trim(), ignoreCase = true)) null else s
+    }
+
     /** The active profile's name, read from the store. Blank when nothing is active yet. */
     fun activeName(get: (String) -> String): String = get(PREF_ACTIVE).trim()
 
