@@ -3551,7 +3551,14 @@ open class MainActivity : AppCompatActivity() {
     private fun updateStreamVisibility() {
         stream.visibility = if (prefs.getBoolean("dev_console", false)) View.VISIBLE else View.GONE
     }
-    override fun onResume() { super.onResume(); runOnUiThread { answerPendingApproval(); updateStreamVisibility(); handleModeUi(); applyParticlePrefs(); applyCommandIcon(); resumeLiveCallIfAny(); applyKeepScreenOn(); refreshModelsGate(); maybeShowCoachMarks(); maybeRefetchResumed() } }
+    override fun onResume() {
+        super.onResume()
+        // The profile registry can move while this activity is covered — Settings renames the
+        // active label after an address change, and a rename must not leave the header showing
+        // the old one. Re-reading costs one pref read and never switches a profile.
+        refreshHeaderFromRegistry()
+        runOnUiThread { answerPendingApproval(); updateStreamVisibility(); handleModeUi(); applyParticlePrefs(); applyCommandIcon(); resumeLiveCallIfAny(); applyKeepScreenOn(); refreshModelsGate(); maybeShowCoachMarks(); maybeRefetchResumed() }
+    }
 
     /**
      * #437 §5: a resumed session may be written by another surface while the phone is in a
