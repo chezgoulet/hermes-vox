@@ -49,11 +49,15 @@ object Profiles {
     const val K_PROVIDER = "provider"
 
     /**
-     * The longest saved name. #384: the profile list comes from the host, whose names follow
-     * the spec's `[a-z0-9][a-z0-9_-]{0,31}` — 32 characters. A smaller UI cap would silently
-     * skip a name the host legitimately serves, so the registry's limit is the spec's.
+     * The longest saved host name. #384: the profile list comes from the host, whose names
+     * follow Hermes' own `[a-z0-9][a-z0-9_-]{0,63}` — 64 characters. A smaller UI cap would
+     * silently skip a name the host legitimately serves, so the registry's limit is the
+     * host's own rule.
      */
-    const val NAME_MAX = 32
+    const val NAME_MAX = 64
+
+    /** The longest display label a local rename may carry (a label is not a host id). */
+    const val LABEL_MAX = 32
 
     /**
      * One saved connection. [keyEnc] is the stored (encrypted) key, never the plain one.
@@ -99,6 +103,62 @@ object Profiles {
 
     fun find(list: List<Profile>, name: String): Profile? =
         list.firstOrNull { it.name.equals(name, ignoreCase = true) }
+
+    /** Why a [rename] did not happen; null means it did. */
+    enum class RenameError { UNKNOWN, UNCHANGED, BLANK, TOO_LONG, BAD_CHARS, DUPLICATE }
+
+    /**
+     * The registry after renaming [from] to [to], plus the active name after the same edit.
+     *
+     * The name is the user's label, not the host's id: a display label may carry capitals and
+     * spaces, is 1–32 characters of letters/digits/space/`-`/`_` with at least one
+     * alphanumeric, and must be unique against the other entries case-insensitively. A
+     * rename touches **only** the name; the connection ([Profile.url], [Profile.keyEnc],
+     * model, agent name, scope, provider and own values) is copied byte for byte. Unknown
+     * names, and a label identical to the current one, return the list unchanged with a
+     * reason. Renaming the active profile moves [active] with it.
+     */
+    fun rename(list: List<Profile>, from: String, to: String, active: String = ""): Rename {
+        val i = list.indexOfFirst { it.name.equals(from.trim(), ignoreCase = true) }
+        if (i < 0) return Rename(list, active, error = RenameError.UNKNOWN)
+        val current = list[i]
+        val name = to.trim()
+        if (name == current.name) return Rename(list, active, error = RenameError.UNCHANGED)
+        if (name.isEmpty()) return Rename(list, active, error = RenameError.BLANK)
+        if (name.length > LABEL_MAX) return Rename(list, active, error = RenameError.TOO_LONG)
+        if (name.any { !(it.isLetterOrDigit() || it == ' ' || it == '-' || it == '_') } ||
+            name.none { it.isLetterOrDigit() }
+        ) return Rename(list, active, error = RenameError.BAD_CHARS)
+        if (list.indices.any { k -> k != i && list[k].name.equals(name, ignoreCase = true) })
+            return Rename(list, active, error = RenameError.DUPLICATE)
+        val out = list.toMutableList()
+        out[i] = current.copy(name = name)
+        val newActive = if (active.equals(current.name, ignoreCase = true)) name else active
+        return Rename(out, newActive, changed = true)
+    }
+
+    /** The outcome of [rename]: the list and active name to save, or why nothing changed. */
+    data class Rename(
+        val list: List<Profile>,
+        val active: String,
+        val changed: Boolean = false,
+        val error: RenameError? = null,
+    )
+
+    /**
+     * A pre-filled label for a changed address: its `/p/<name>` segment when it has one,
+     * otherwise the host's first label, normalised to the display-label rules. Never blank.
+     */
+    fun suggestName(url: String): String {
+        val address = HostProfiles.address(url)
+        val segment = Regex("/p/([^/]+)$").find(address)?.groupValues?.get(1)
+        val raw = segment ?: address.substringAfter("://", address)
+            .substringBefore('/').substringBefore(':').substringBefore('.')
+        val cleaned = raw.lowercase().map {
+            if (it.isLetterOrDigit() || it == '-' || it == '_') it else ' '
+        }.joinToString("").trim().replace(Regex("\\s+"), " ").take(LABEL_MAX).trim()
+        return if (cleaned.any { it.isLetterOrDigit() }) cleaned else "profile"
+    }
 
     /** The active profile's name, read from the store. Blank when nothing is active yet. */
     fun activeName(get: (String) -> String): String = get(PREF_ACTIVE).trim()

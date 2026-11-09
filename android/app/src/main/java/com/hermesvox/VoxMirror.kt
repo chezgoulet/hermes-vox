@@ -50,7 +50,7 @@ object VoxMirror {
      * The directory component a profile name gets.
      *
      * `[A-Za-z0-9_-]` passes through (the host's profile spec is
-     * `[a-z0-9][a-z0-9_-]{0,31}`, so a real profile keeps its own readable name); every
+     * `[a-z0-9][a-z0-9_-]{0,63}`, so a real profile keeps its own readable name); every
      * other UTF-8 byte becomes `%XX`. That makes the mapping injective — a literal `%` is
      * always escaped — and it keeps separators, leading dots and dot-only components out of
      * the path. A name long enough to overrun a filesystem component folds to
@@ -78,6 +78,30 @@ object VoxMirror {
 
     /** The pre-profile, device-wide mirror (`root/vox/VOX.md`) — read only by [migrate]. */
     fun legacyFile(root: File): File = File(File(root, DIR), NAME)
+
+    /** What [renameSlot] did, so the caller can tell a move from a conflict. */
+    enum class RenameSlot {
+        /** The source slot now lives under the new name. */
+        MOVED,
+        /** There was no document under the old name; nothing was touched. */
+        NO_SOURCE,
+        /** The new name already has a document; both were left in place, unmerged. */
+        DESTINATION_EXISTS,
+    }
+
+    /**
+     * Move [from]'s mirror directory to [to]'s slot. A rename is a name change, not a
+     * document merge: an existing destination is never overwritten, and no document is
+     * ever deleted. The caller reports a conflict rather than merging silently.
+     */
+    fun renameSlot(root: File, from: String, to: String): RenameSlot {
+        val src = File(File(root, DIR), dirName(from))
+        val dst = File(File(root, DIR), dirName(to))
+        if (!src.exists()) return RenameSlot.NO_SOURCE
+        if (src == dst) return RenameSlot.MOVED
+        if (dst.exists()) return RenameSlot.DESTINATION_EXISTS
+        return if (src.renameTo(dst)) RenameSlot.MOVED else RenameSlot.NO_SOURCE
+    }
 
     /** Read the mirrored document (null when absent/unreadable). */
     fun read(root: File, profile: String): String? = try {
@@ -153,4 +177,8 @@ object VoxMirror {
 
     /** Migrate the old device-wide file into the active profile's slot (once). */
     fun migrate(ctx: Context): Migration = migrate(ctx.filesDir, activeProfile(ctx))
+
+    /** Move a renamed profile's mirror to its new slot; see the pure [renameSlot]. */
+    fun renameSlot(ctx: Context, from: String, to: String): RenameSlot =
+        renameSlot(ctx.filesDir, from, to)
 }
