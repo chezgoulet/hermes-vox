@@ -34,6 +34,8 @@ gate, not the name. "Enhanced Realtime" is retired as vocabulary.
 
 `0.9.1.1` is the patch cut on 0.9.1: the profile list a gateway returns is read in the shapes an
 agent actually writes, and a profile's local label can be corrected after its address changes.
+`0.9.1.2` corrects that patch's default rule: only the built-in `default` answers at the host
+root, so a name the gateway does not serve is reported rather than saved.
 
 ## 0.9.1 — the release in acceptance
 
