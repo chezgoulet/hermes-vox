@@ -19,9 +19,11 @@ class HeaderSwitchesTest {
 
     @Test fun aProfileSwitchKeepsTheProfileAndASessionSwitchNamesTheSession() {
         // The profile's name survives in the title once there is a choice...
-        assertEquals("HERMES · WORK", Profiles.headerLabel("Hermes", "work", 2))
+        assertEquals("WORK", Profiles.headerLabel("Hermes", "work"))
         // ...and the call screen uses the same words, in the same order.
-        assertEquals("Hermes · work", Header.callTitle("Hermes", "work", 2))
+        assertEquals("work", Header.callTitle(Header.connection("Hermes", "work")))
+        // The built-in connection is the agent, named once.
+        assertEquals("HERMES", Profiles.headerLabel("Hermes", "default"))
         // A session switch is announced with the session's own title.
         val notice = HeaderNotice()
         assertTrue(notice.arm("Trail conditions", 0L))

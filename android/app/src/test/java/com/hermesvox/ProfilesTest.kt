@@ -50,9 +50,12 @@ class ProfilesTest {
         assertEquals(listOf("home", "office"), list.map { it.name })
     }
 
-    @Test fun theHeaderNamesTheProfileOnlyWhenThereIsAChoice() {
-        assertEquals("HERMES", Profiles.headerLabel("Hermes", "home", 1))
-        assertEquals("HERMES · WORK", Profiles.headerLabel("Hermes", "work", 2))
+    @Test fun theHeaderNamesTheConnectionOnce() {
+        // A named profile is its own label — the agent's name is not prefixed to it.
+        assertEquals("HOME", Profiles.headerLabel("Hermes", "home"))
+        // The built-in connection is the agent, and the word "default" is never shown.
+        assertEquals("HERMES", Profiles.headerLabel("Hermes", "default"))
+        assertEquals("HERMES", Profiles.headerLabel("Hermes", ""))
     }
 
     @Test fun theKeyIsNeverDecodedOrRewritten() {
