@@ -24,10 +24,12 @@ import androidx.core.content.ContextCompat
  * choice is informed without opening Settings. The active one carries the same **IN USE** chip
  * the model switcher uses, and the rows are the same row grammar (title, one line, a chip).
  *
- * **It is a picker, not an editor.** Profiles are configured on the host; Vox picks among them.
- * There is no add row and no edit row, and nothing here writes a profile. A host that served
- * none says so ([NO_PROFILES]) instead of offering to create one, and **Refresh from host** is
- * the one action: it asks the agent again and repaints this sheet where the person is looking.
+ * **It is a picker, not a connection editor.** Profiles are configured on the host; Vox picks
+ * among them. There is no add row and no connection edit row; the one write it gains is the
+ * local display label — a long-press opens **Rename profile**, because the name is the user's
+ * label while the address carries the identity. A host that served none says so ([NO_PROFILES])
+ * instead of offering to create one, and **Refresh from host** is the one action: it asks the
+ * agent again and repaints this sheet where the person is looking.
  *
  * Switching is the caller's job ([ProfileDialogs] → `MainActivity.switchProfile`): a switch
  * ends a live call before the new session is built, and this sheet closes on the tap.
@@ -40,6 +42,8 @@ class ProfileSheet(
     private val note: () -> String?,
     private val onSwitch: (Profiles.Profile) -> Unit,
     private val onRefresh: () -> Unit,
+    /** Long-press a row: rename the local label. The only write this sheet has. */
+    private val onRename: (Profiles.Profile) -> Unit,
 ) {
     /** One profile as the sheet shows it. */
     data class Row(
@@ -125,8 +129,10 @@ class ProfileSheet(
             description = listOf(
                 p.name, detail, if (r.active) "in use" else null,
                 if (r.active) "the profile you are talking to" else "switch to this profile",
+                "long press to rename",
             ).filterNotNull().joinToString(", "),
             dim = r.unavailable,
+            onLongPress = { onRename(p) },
         ) {
             if (r.active) { dismiss(); return@row }
             dismiss()
@@ -145,6 +151,7 @@ class ProfileSheet(
         chip: String?,
         description: String,
         dim: Boolean,
+        onLongPress: (() -> Unit)? = null,
         onTap: () -> Unit,
     ): View {
         val r = LinearLayout(act).apply {
@@ -157,6 +164,7 @@ class ProfileSheet(
             contentDescription = description
             if (dim) alpha = 0.6f
             setOnClickListener { onTap() }
+            onLongPress?.let { rename -> setOnLongClickListener { rename(); true } }
         }
         val text = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         text.addView(TextView(act, null, 0, R.style.HvRowTitle).apply {

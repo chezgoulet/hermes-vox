@@ -1,6 +1,9 @@
 package com.hermesvox
 
+import android.app.AlertDialog
 import android.content.SharedPreferences
+import android.text.InputType
+import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.hermesvox.core.ProfileReach
@@ -16,10 +19,12 @@ import kotlin.concurrent.thread
  * The profile switcher (#174): list → pick → done. Opened from **Profiles** in the commands
  * sheet, where the active profile is shown.
  *
- * **It picks; it does not write.** Profiles are configured on the host and Vox chooses among
- * them, so there is no add and no edit here — the sheet renders the registry, marks the one in
- * use, and a tap switches. The connection form (Settings → Entity, and first run) is a separate
- * door and still writes the one connection the app holds.
+ * **It picks; its one write is the local label.** Profiles are configured on the host and Vox
+ * chooses among them, so there is no add and no connection editor here — the sheet renders the
+ * registry, marks the one in use, and a tap switches. A long-press renames the saved profile's
+ * display label (the address carries the identity), because a label that no longer matches a
+ * changed address is the user's to correct. The connection form (Settings → Entity, and first
+ * run) is a separate door and still writes the one connection the app holds.
  *
  * #384: the list comes from the agent, asked in conversation (SPEC-conversational-bridge §A).
  * [refreshFromHost] tries `GET <base>/v1/profiles` first (the #382 fast path) and otherwise
@@ -104,9 +109,70 @@ class ProfileDialogs(
             note = { message() },
             onSwitch = { p -> if (!p.name.equals(activeName(), ignoreCase = true)) onSwitch(p) },
             onRefresh = { refreshFromHost(ProfilesAsk.AskKind.REFRESH) },
+            onRename = { p -> renameProfile(p) },
         )
         open = sheet
         sheet.show()
+    }
+
+    /**
+     * Rename the saved profile's local label. Long-press in the sheet opens one field
+     * pre-filled with the current name; a duplicate or an invalid label stays in the dialog
+     * as an inline error. The address, key, model, agent name, scope, provider and own values
+     * are not touched, and the active pref is updated in the same write when the active
+     * profile is the one renamed.
+     */
+    private fun renameProfile(p: Profiles.Profile) {
+        val field = EditText(activity).apply {
+            setText(p.name)
+            inputType = InputType.TYPE_CLASS_TEXT
+            setSelectAllOnFocus(true)
+            setSingleLine()
+        }
+        val pad = (16 * activity.resources.displayMetrics.density).toInt()
+        val wrap = android.widget.FrameLayout(activity).apply {
+            setPadding(pad, pad / 2, pad, 0)
+            addView(field)
+        }
+        val dlg = AlertDialog.Builder(activity)
+            .setTitle("Rename profile")
+            .setView(wrap)
+            .setPositiveButton("Rename", null)
+            .setNegativeButton("Cancel", null)
+            .create()
+        dlg.setOnShowListener {
+            dlg.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener {
+                val to = field.text.toString().trim()
+                val r = Profiles.rename(list(), p.name, to, activeName())
+                if (!r.changed) {
+                    field.error = renameError(r.error)
+                    return@setOnClickListener
+                }
+                val newName = Profiles.find(r.list, to)?.name.orEmpty()
+                val moved = VoxMirror.renameSlot(activity, p.name, newName)
+                prefs.edit()
+                    .putString(Profiles.PREF_LIST, Profiles.encode(r.list))
+                    .putString(Profiles.PREF_ACTIVE, r.active)
+                    .apply()
+                dlg.dismiss()
+                onRegistryChanged()
+                renderSwitcher()
+                if (moved == VoxMirror.RenameSlot.DESTINATION_EXISTS) {
+                    toast("Renamed. The old VOX.md was left in place because the new name already had one.")
+                }
+            }
+        }
+        dlg.show()
+    }
+
+    private fun renameError(error: Profiles.RenameError?): String = when (error) {
+        Profiles.RenameError.UNKNOWN -> "That profile is no longer saved"
+        Profiles.RenameError.UNCHANGED -> "That is already the name"
+        Profiles.RenameError.BLANK -> "Enter a name"
+        Profiles.RenameError.TOO_LONG -> "Use ${Profiles.LABEL_MAX} characters or fewer"
+        Profiles.RenameError.BAD_CHARS -> "Use letters, digits, spaces, - or _"
+        Profiles.RenameError.DUPLICATE -> "That name is already used"
+        null -> "That name cannot be used"
     }
 
     /** The one line under the list: freshness, a partial refresh, or a stated failure. */
