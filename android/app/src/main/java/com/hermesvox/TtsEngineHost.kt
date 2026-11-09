@@ -58,8 +58,6 @@ internal class TtsEngineHost(
     }
 
     companion object {
-        /** Re-warm attempts per call. A second warm failure degrades instead of trying
-         *  the same engine again. */
         /**
          * #549: failures of the output path rather than of the engine. A track that could not
          * be built is retried on the next utterance; it must not spend the one re-warm or the
@@ -68,6 +66,8 @@ internal class TtsEngineHost(
          */
         val NOT_THE_ENGINE = setOf("track-unavailable")
 
+        /** Re-warm attempts per call. A second warm failure degrades instead of trying
+         *  the same engine again. */
         const val MAX_REWARMS = 1
         /** Degradations per call (system ⇄ local). After this the leg states its reason. */
         const val MAX_DEGRADATIONS = 1
