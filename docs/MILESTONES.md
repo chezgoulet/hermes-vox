@@ -86,58 +86,45 @@ Presence it stays off, with one line saying why and where to turn it on.
 #179 (co-residency), #165 (store rail), #249 (render budget). Done in 0.9.1 if achievable;
 otherwise they close in whatever release closes them.
 
-## 0.9.1.x — the point releases that finish 0.9.1
+## 0.9.1.3 — the rest of 0.9.1, in one cut
 
-Set 2026-11-09 by the owner. The remaining 0.9.1 work ships as point releases, cut from `main`
-by `docs/RELEASE-PROCESS.md`; `versionCode` rises by one per cut. **0.9.2 does not open until
-0.9.1 is signed off** — its headline, Presence on by default, rests on mechanisms that are not
-proven yet.
+Set 2026-11-09 by the owner: **one release, not a train of patches.** The work still owed to 0.9.1
+lands on `testing` as it is ready, and 0.9.1.3 is cut when the batch is coherent — not once per
+item. `versionCode` 150. 0.9.2 stays closed until 0.9.1 is signed off.
 
-Each patch below is a scope and a gate, not a promise of a date. A patch is cut when its gate
-is met, and the order can change if a regression arrives — one already has.
+**In the batch.**
 
-**0.9.1.3 — the voice leg.** #538 is a report against 0.9.1: Supersonic stops, the system voice
-takes over, and the being shows a working state while the gateway runs nothing. The bounded
-fallback that replaces a voice that will not warm is itself new in 0.9.1 (#373, #499), so the
-first question is why the local engine is dropped on a device that carried it before, and the
-second is why the call keeps a working state with no run behind it. #373 and #496 belong to the
-same investigation. *Gate: the reporter's diagnostic block and a logcat capture name the failing
-engine and the moment; a Supersonic install runs a long call with no silent downgrade; an
-engine that is replaced says which one speaks and why.*
+*The voice leg.* #538 (Supersonic demoted, then speech off until `/new`), with #373 and #496 in
+the same investigation. First defect already merged: #549 — an `AudioTrack` that could not be
+built was counted as a dead engine, and spent a one-shot recovery budget.
 
-**0.9.1.4 — how a connection is named.** The header names the connection once: **Hermes-Agent**
-for the built-in default, the profile's label for anything else, and the status pill never
-repeats it. Two gaps #174 exposed: a saved row cannot be removed, and a host-side rename leaves
-the old row until a refresh. *Gate: two profiles, a switch, a rename and a deletion are each
-visible on the main screen and in the sheet, with no stale row and no repeated name.*
+*How a connection is named.* The header names the connection once: **Hermes-Agent** for the
+built-in default, the profile's own label otherwise, and the status pill never repeats it. Two
+gaps #174 exposed: a saved row cannot be removed, and a host-side rename leaves a stale row.
 
-**0.9.1.5 — the route that can approve.** #404 flips the turn stream to `/v1/runs` and proves it
-on a device; #376 and #282 are the acceptance items that never passed, because no approval could
-reach the phone on the route in use; #533 is the same gap in the profile ask. *Gate: an approval
-raised by a tool call during an ordinary turn reaches the phone and is answered by voice and by
-touch; a denial stops the run; a timeout resolves to no.*
+*The route that can approve.* #404 flips the turn stream to `/v1/runs`; #376 and #282 are the
+acceptance items that never passed because no approval could reach the phone on the route in use;
+#533 is the same gap in the profile ask.
 
-**0.9.1.6 — continuous listening.** #228 keeps the mic open for the call; #229 replaces the
-silence threshold with a judgement and a preset; #223 fills the transcript that the readable
-layout leaves blank; #242 classifies an overlap and #217 gives the ear an instrument. This is the
-substance Presence on by default needs. *Gate: a call in which the mic never reopens per turn,
-the end of a turn is decided by the endpointer, the transcript is readable, and one long run is
-summarised from the log.*
+*Continuous listening.* #228 and #229 — the mechanics the rest of Presence rests on, and the one
+item in the batch that is a feature rather than a repair. The behaviours built on them (#217,
+#223, #242, #245) are not built again here; they need the owner's ear.
 
-**0.9.1.7 — the measurements and the leftovers.** #405 (the talk-heavy soak, since the numbers so
-far come from a silent room), #249 (the render budget against its gate), #209 (the per-release
-baseline), #202 (truncation after a barge-in) and whatever #413's second review left declined
-without a reason. *Gate: each number is recorded against this build, and every declined finding
-says why it was declined.*
+*The leftovers.* #405, #249, #209, #202, and whatever #413 left declined without a reason.
 
-**Not in the train, because it is not code.** #165's F-Droid listing is a merge request in
-somebody else's queue. The acceptance run (#375) and the Presence behaviours already merged but
-never heard (#217, #223, #242, #245) need the owner's ear and a device, not a lane. The 0.9.0.3
-upgrade path (G3) needs a decision about the test device before it needs a build.
+**Gate for the cut.** The standing checklist in `docs/RELEASE-PROCESS.md`, plus: a Supersonic
+install runs a long call with no silent downgrade; an approval raised by a tool call during an
+ordinary turn is answered by voice and by touch, and a denial stops the run; the header names one
+connection once; and every number quoted in the release note was measured on this build.
+
+**Not in the batch, because it is not code.** #165's F-Droid listing is a merge request in
+somebody else's queue. The acceptance run (#375) and the Presence behaviours (#217, #223, #242, #245) need the owner's
+ear and a device before anything is built on top of them. The 0.9.0.3 upgrade path
+(G3) needs a decision about the test device before it needs a build.
 
 ## 0.9.2 — the gate opens, and whatever we have learned by then
 
-**Not open.** The train above runs first; this milestone opens when 0.9.1 is signed off.
+**Not open.** 0.9.1.3 ships first; this milestone opens when 0.9.1 is signed off.
 
 A living milestone, not a promise. What it holds today:
 
