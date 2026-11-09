@@ -66,6 +66,14 @@ jobs:
                   sys.exit(2)
               return json.loads(done.stdout) if done.stdout.strip() else {}
 
+          # The House's own agent accounts act for the copyright holder and never sign on their
+          # own behalf. This list is the explicit, auditable exception; the association and
+          # same-repo rules below cover everyone else with write access.
+          exempt_accounts = {"robot-chezgoulet", "dev-chezgoulet"}
+          if author.lower() in exempt_accounts:
+              print(f"cla: {author} is a House agent account; no signature required.")
+              sys.exit(0)
+
           # Exempt: a branch in this repository (only write access can open one), a maintainer, or a
           # bot. A fork pull request is what the agreement is for, and it still has to sign.
           if same_repo or association in ("OWNER", "MEMBER", "COLLABORATOR") or user_type == "Bot":
