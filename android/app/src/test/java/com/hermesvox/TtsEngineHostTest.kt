@@ -27,6 +27,8 @@ class TtsEngineHostTest {
         private val endAt: (Int) -> TtsEnd = { end },
         /** When set, this fake reports through the interface's default (SPOKEN). */
         private val plain: Boolean = false,
+        /** The failure code per utterance, when the test needs one that is not the engine's. */
+        private val codeFor: (Int) -> String? = { null },
     ) : VoxTts {
         var inits = 0
         var shutdowns = 0
@@ -40,8 +42,9 @@ class TtsEngineHostTest {
         override fun speakReporting(text: String, onDone: (TtsOutcome) -> Unit) {
             if (plain) return super.speakReporting(text, onDone)
             val out = endAt(spoken)
+            val code = codeFor(spoken) ?: "fake-$out"
             spoken++; lastText = text
-            onDone(TtsOutcome(out, "fake-$out"))
+            onDone(TtsOutcome(out, code))
         }
         override fun stop() {}
         override fun shutdown() { shutdowns++ }
@@ -257,6 +260,34 @@ class TtsEngineHostTest {
         assertTrue(h.speak("and again") {})
         assertEquals("no third attempt happens", 3, built.size)
         assertEquals("the degraded engine is the one speaking", "and again", built[2].lastText)
+    }
+
+    // ---- #549: the output path is not the engine ----------------------------
+
+    /**
+     * A track that could not be built is a failure of the audio path, not of the voice. It is
+     * retried on the next utterance and it must not spend the one re-warm or the one
+     * degradation — the old behaviour demoted a working voice, and a second such failure
+     * reached the terminal state, which is the reported "spoken replies are off until /new".
+     */
+    @Test fun a_track_that_never_played_is_retried_and_costs_the_voice_nothing() {
+        val built = ArrayList<Fake>()
+        val h = host { token ->
+            Fake(
+                token,
+                end = TtsEnd.FAILED,
+                codeFor = { n -> if (token == "piper" && n < 3) "track-unavailable" else null },
+            ).also { built += it }
+        }
+        h.ensure()
+
+        repeat(3) { i -> assertTrue("the turn still runs", h.speak("line $i") {}) }
+
+        assertEquals("no re-warm, no degradation: the same engine", listOf("piper"), built.map { it.token })
+        assertTrue("no degradation was logged", warns.none { it.startsWith("event=tts-degrade") })
+        assertTrue("the steady-off state was not reached", warns.none { it.contains("tts-unavailable") })
+        assertEquals("each failure was named", 3, warns.count { it.contains("code=track-unavailable") })
+        assertTrue("the skip was logged", debugs.any { it.contains("reason=track-unavailable") })
     }
 
     @Test fun a_successful_rewarm_clears_the_status_line() {

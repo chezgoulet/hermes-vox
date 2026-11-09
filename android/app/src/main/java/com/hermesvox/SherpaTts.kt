@@ -306,11 +306,18 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
                 val sr = audio.sampleRate
                 VoxLog.d("${voice.modelId} generated ${samples.size} samples @ ${sr}Hz (text ${text.length} chars)")
                 VoxLog.d("event=tts-speak engine=${voice.modelId} reason=one-shot chars=${text.length}")
-                play(samples, sr, token, text, onStart)
+                val played = play(samples, sr, token, text, onStart)
                 // #373: a fence bump during play means the utterance was cut (barge, hush,
                 // hang-up, or a newer utterance) — not that the engine failed.
-                onDone(if (streamFence.stopEpoch != token) TtsOutcome(TtsEnd.INTERRUPTED, "stopped")
-                    else TtsOutcome(TtsEnd.SPOKEN))
+                // #549: a play that never wrote a sample is a failure of the output path, not
+                // a success. It carries its own code so the host can tell it from engine death.
+                onDone(
+                    when {
+                        streamFence.stopEpoch != token -> TtsOutcome(TtsEnd.INTERRUPTED, "stopped")
+                        !played -> TtsOutcome(TtsEnd.FAILED, "track-unavailable")
+                        else -> TtsOutcome(TtsEnd.SPOKEN)
+                    }
+                )
             } catch (e: Throwable) {
                 VoxLog.e("${voice.modelId} speak: ${e.message}")
                 onDone(TtsOutcome(TtsEnd.FAILED, e.message ?: e::class.java.simpleName))
@@ -340,7 +347,7 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
      *  onAudioSegment so the speech-locked transcript can pace one-shot replies with the
      *  SAME cursor as streamed ones (a single segment — no special case). */
     private fun play(samples: FloatArray, sr: Int, cancelToken: Long = -1L, text: String = "",
-                     onStart: (() -> Unit)? = null) {
+                     onStart: (() -> Unit)? = null): Boolean {
         var at = 0
         try {
             val t: AudioTrack
@@ -349,9 +356,14 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
                 // Nothing is built and the fence is NOT re-opened.
                 if (cancelToken >= 0L && streamFence.stopEpoch != cancelToken) {
                     VoxLog.d("event=tts-speak-drop reason=stopped-during-synth samples=${samples.size}")
-                    return
+                    return false
                 }
-                val built = buildStreamTrack(sr) ?: return
+                // #549: no track means nothing could be played. Say so and answer honestly —
+                // returning normally here made "did not speak" indistinguishable from "spoke".
+                val built = buildStreamTrack(sr) ?: run {
+                    VoxLog.w("event=tts-fail reason=track-unavailable sr=$sr chunk=${samples.size}")
+                    return false
+                }
                 streamFence.start()          // open the fence for THIS utterance
                 streamTrack = built          // stop()/hush/call-end can now reach it
                 streamWritten = 0
@@ -370,7 +382,7 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
                 while (at < samples.size) {
                     if (!streamFence.allowed) {        // stop between sub-writes -> exit fast
                         VoxLog.d("event=tts-speak-cut at=$at of=${samples.size}")
-                        return
+                        return false
                     }
                     val n = minOf(twoSec, samples.size - at)
                     // D30: the first write is the first audible sample — the start witness.
@@ -385,8 +397,10 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
             // wait is the fence-aware one: a stop skips it and the track is already gone.
             finishStreaming()
             VoxLog.d("${voice.modelId} played $at samples")
+            return true
         } catch (e: Throwable) {
             VoxLog.e("${voice.modelId} play: ${e.message}")
+            return false
         }
     }
 
@@ -404,7 +418,6 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
             }
             VoxLog.d("${voice.modelId} gen ${samples.size} samples @${audio.sampleRate}Hz (${text.length} ch)")
             play(samples, audio.sampleRate, token, text)
-            true
         } catch (e: Throwable) { VoxLog.e("${voice.modelId} speakBlocking: ${e.message}"); false }
     }
 
