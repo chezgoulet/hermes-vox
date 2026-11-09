@@ -119,6 +119,31 @@ class ProfilesTest {
         assertNull(Profiles.suggestedLabel("https://gw.example/p/work", " work "))
     }
 
+    /** The label's promise is ASCII: a homoglyph label must not be accepted. */
+    @Test fun aRenameRejectsANonAsciiLabel() {
+        assertEquals(Profiles.RenameError.BAD_CHARS,
+            Profiles.rename(listOf(home), "home", "\u03a9mega").error)
+        assertEquals(Profiles.RenameError.BAD_CHARS,
+            Profiles.rename(listOf(home), "home", "caf\u00e9").error)
+    }
+
+    /** After an address change the entry carries the live connection, not its old one. */
+    @Test fun anAdoptedConnectionCarriesTheNewAddress() {
+        val renamed = Profiles.rename(listOf(home, work), "work", "Office").list
+        val live = work.copy(
+            name = "Office",
+            url = "https://new.example/p/office",
+            keyEnc = "enc:new",
+            own = mapOf("tts_voice" to "bright"),
+        )
+        val out = Profiles.adoptConnection(renamed, "Office", live)
+        assertEquals(2, out.size)                      // replaced, never appended
+        val got = Profiles.find(out, "office")!!
+        assertEquals("https://new.example/p/office", got.url)
+        assertEquals("enc:new", got.keyEnc)
+        assertEquals("bright", got.own["tts_voice"])
+    }
+
     @Test fun anAddressSuggestsItsProfileSegmentOrHostLabel() {
         assertEquals("work", Profiles.suggestName("https://gw.example/p/work"))
         assertEquals("gw", Profiles.suggestName("https://gw.example"))

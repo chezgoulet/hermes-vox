@@ -215,7 +215,8 @@ object ProfilesAsk {
      */
     fun parse(text: String): Parsed {
         val blocks = mutableListOf<List<String>>()
-        val lines = text.split('\n')
+        // An agent on any platform may end its lines with CRLF; the block is the same block.
+        val lines = text.replace("\r\n", "\n").replace('\r', '\n').split('\n')
         var i = 0
         while (i < lines.size) {
             if (!OPEN.matches(lines[i])) { i++; continue }
