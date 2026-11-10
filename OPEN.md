@@ -1,4 +1,65 @@
-# #538 — open questions (revised 2026-11-10)
+# #538 — open questions (revised 2026-11-10, after the reporter's log)
+
+## What to ask the reporter next
+
+The log settled the 0.9.1 hang: a reply under 4 s never starts playing, and the turn waits
+124 s (`FINDINGS.md`, *The reporter's log*). These three asks confirm the fix and separate what
+is left. All the lines are `d`/`w`, so they are in "Send full Hermes Vox log", and on this
+build every line carries its date.
+
+### 1. Run the fixed build and ask a few short questions
+
+> "Install the build from this branch. In one call, ask three or four questions with one-line
+> answers ('what time is it?', 'yes or no: …'). Then send the full log."
+
+| Line | Reads as |
+|---|---|
+| `event=tts-track … startFrames=11025` (44.1 kHz voice) | The start threshold took (API 31+). |
+| `event=tts-drain result=played … waitedMs=<a few thousand>` after each short reply, then `tts-retire` and `gate-release … reason=stream-done` | **D is fixed on their device.** |
+| `event=tts-track … startFrames=default` + `event=tts-drain result=forced` | API < 31, or the threshold call failed. The backstop worked; ask for the Android version. |
+| "working" still held with `tts-drain result=played` | **Not D.** Read the turn's `stream-stall` / `wait-silent` lines. A turn silent for 60 s must now write `wait-silent`; if it does not, the ladder is next. |
+
+### 2. On 0.9.1, did they *hear* the short answers?
+
+> "When the screen sat on 'working' after a short answer, had you heard the answer spoken?"
+
+The log cannot say what was audible. A head that never moved (`reveal-hold … samples` above
+`of`) implies the reply was never rendered. "No, I never heard it" confirms that, and closes
+the first report's "TTS does not work" on the same mechanism. "Yes, I heard it" means the
+head counter, not the audio, was stuck. The fix holds either way, but the explanation of the
+first report would change.
+
+### 3. The gateway's own log for one dated episode
+
+> "With the fixed build, if a turn still hangs, note the time and send the gateway's log
+> (Hermes and llama.cpp) for those two minutes."
+
+| Gateway shows | Phone line it matches | Reads as |
+|---|---|---|
+| The response completed in seconds | `turn done: gen=N … err=` at the same time | A phone-side wait (D or a new one). |
+| The request arrived, the model never produced a token | `stream-stall` ×n → `wait-silent` at 60 s | A silent run (S). The tunnel is not at fault. |
+| No request at all | `connection lost (no data …)` at 60 s, or `run-admit … result=lost` | The tunnel / the path (S, H1). |
+
+## Still undecided
+
+- **First trigger of the voice cascade (link 1).** None of the 8 `stream-synth` failures in the
+  log has a SherpaTts cause line, so it was one of 0.9.1's unlogged `false` returns: a closed
+  fence, no engine, or null samples. This branch's adopt/CUT patch blames none of those. A log
+  from this build with `tts-stream-adopt` or `tts-drop reason=cut|no_engine` would name it.
+- **The old build's 45 silent turns** (25 `connection lost` at 60 s, 19 budget ends at 120 s,
+  plus one at 72 s). None appear on 0.9.1 in this file. Ask 3 separates tunnel from run, if
+  they recur.
+- **`turn-abandon gen=5 route=runs reason=budget run=- elapsedMs=0`** (one line, new block). A
+  typed turn submitted the instant the previous reply retired, with its budget already expired
+  at 0 ms. It is unexplained, and it is the only instance.
+- **The poll-abort fallthrough** (`VoiceController.kt:2663` → `:2833`) mislabels an abort as
+  `err=timeout`. Cosmetic; see `DECISIONS.md` 27.
+
+---
+
+*The questions below were written from the report's text, before the log arrived. Ask 1
+above replaces their item 2; items 1 and 3 still read correctly on this build.*
+
 
 The reporter can't capture logcat (no root), but they can send the app's own log: **Settings →
 About & Diagnostics → the log row → Send full Hermes Vox log**. That file receives

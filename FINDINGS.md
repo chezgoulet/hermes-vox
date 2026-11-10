@@ -1,8 +1,11 @@
 # #538 — findings
 
-> **Superseded in part (2026-11-10).** The reporter's second report moved several probabilities
-> below — link 2 is now 0.1 for this reporter, link 1 is 0.45. Read *Revision after the
-> 2026-11-10 report* at the end before relying on any number in the original sections.
+> **Superseded (2026-11-10, twice).** The reporter's *log* replaces the hang analysis. Read the
+> last section, *The reporter's log, 2026-11-10*, first. The 0.9.1 hang is a short reply's
+> drain: under 4 s of audio never starts on the 4 s track, and the turn waits 124 s.
+> Link 1 is confirmed by the log (0.8). Link 2 and the brief's defects 1–2 are not the cause.
+> The *Revision after the 2026-11-10 report* section was written from the report's text alone,
+> and its H1/H2/ladder estimates are superseded.
 
 Branch `investigate/538-voice`, cut from `testing` at `f199b75b`. Line references marked
 `@f199b75b` are to the code as it was reported against (0.9.1 behaviour, plus #549). Unmarked
@@ -351,3 +354,147 @@ I did not trace what those counters cover and give them no weight.
   no code link (`CallQuiet.kt:77` only).
 - **Whether the first report's voice demotion and the second report's silent turns share a
   cause.** I now treat them as separate, joined only by "the same user, the same weeks".
+
+---
+
+## The reporter's log, 2026-11-10
+
+> **This section supersedes the hang analysis above** (sections C and *Revision after the
+> 2026-11-10 report*, including H1/H2/H3). Those were inferred from code. This one is
+> counted from the reporter's own export. Branch `fix/stream-liveness`, cut from `testing` at
+> `c5cda998`. References marked `@c5cda998` are to 0.9.1-era code as the reporter ran it.
+> Unmarked references are to this branch.
+
+### First: the file is two builds, not one
+
+The export (58,873 lines; it lives outside the repo, in `../evidence/`, with its README at
+`../evidence/evidence-README.md`) has no date on any line. It does, however, change *format*
+partway through, and that splits it reliably:
+
+| Block | Lines | `startStream ->` shape | Turns | Build |
+|---|---|---|---|---|
+| old | 39–48812 | `startStream -> <sid> voiceTurn=…` | 942 | older than #240 (`93759a84`, 2026-10-21): 0 `event=reply-end` lines, against 122 in the new block |
+| new | 48934–58860 | `startStream -> <sid> spoken=… presence=… reasoning=…` | 126 | at or after `286cf4aa` (2026-11-05). It writes `reveal-hold` and the voice ladder lines, so it is the 0.9.1 line |
+
+The new block is the build the reporter runs now, and it is the block the export was "captured
+while in a hang" from. **Almost every count in the brief comes from the old block.**
+
+### The brief's counts, and what each one means
+
+| Pattern | Old | New | Meaning |
+|---|---|---|---|
+| `wait-prompt` / `wait-silent` / `stream-silent` | 0 | 0 | Old: **the code to ask did not exist** (`ae911b8e`, 2026-11-06, added it). New: the question was **never due**. The longest silent wait for a first event in the new block is 50 s, so `idle` never reached `TurnWait.SILENT_STREAM_MS` = 60 s (`TurnWait.kt:54`). The 15 s / 40 s check-ins did fire (`event=wait-line` × 18). "Never asked" is therefore **not evidence of a defect** in the ladder. The log does not exercise it. |
+| `turn-timeout` | 49 | 0 | Old block only. 19 are real `outcome=turn-timeout` budget ends at 120 s (8 with no text at all, 11 with late text). The rest are duplicate or stale `gate-release` lines and the 8 mislabelled ends after a poll abort (below). |
+| `reply-error` | 52 | 0 | Old block only: 26 `outcome=reply-error` + 26 `gate-release`. 25 of them are the next row. |
+| `connection lost` | 25 | 0 | Old block only. `turn done: … err=hermes stream: connection lost (no data …)`, at 60 s after submit (23), 61 s and 72 s. That is the reader's no-data watchdog (`core/Stream.kt:178`, `idleTimeoutMs = 60_000`). A tunnel that drops an idle stream fits; so does a run that sent nothing. Only the gateway log can separate them. |
+| `voice: no such stream` | 3192 | 0 | Old block only. Exactly 1,600 `stream-poll-error` + 1,592 `stream-wait` lines in **8 bursts of 200**, each ended by `stream-poll-abort` (1,600 = 8 × 200, `POLL_ERROR_MAX`). Every burst **starts within 3 ms after** a release (`focus-loss` ×4, `stop` ×3, one of them from an audio-route change, `hush` ×1), and each lasts **3–120 ms**. |
+
+### What the log shows the hang is: a short reply's drain
+
+In the new block, every spoken reply with **less than 4 s of audio** stalls after its last chunk:
+
+| Reply audio | Replies | Tail wait after the last chunk | `reveal-hold` |
+|---|---|---|---|
+| < 4 s | 29 | 15 waited **123.8–124.5 s** (until `finishStreaming`'s ceiling); 13 were ended early by the caller hanging up (`event=call-end`); 1 ended on its own. Plus the export's own last turn, still waiting when the log was sent. | 29 / 29 |
+| ≥ 4 s | 65 | ≤ 5.9 s | 2 / 65 (mid-reply gaps) |
+
+The old block has 119 replies under 4 s on the old 0.25 s track, and **none** of them waits 100 s or more.
+
+The line shape of one episode (the export's last turn, gen 10). Transcript text is omitted:
+
+```
+D startStream -> hvstream_<tok>_10 spoken=true presence=false reasoning=low
+D turn done: gen=10 resp= len=29 err=                 <- the gateway answered in 2.0 s
+D supertonic chunk 91665 smp @44100Hz (29 ch)         <- 2.08 s of audio, the whole reply
+D event=tts-speak engine=supertonic reason=stream chars=29
+D event=reveal-hold reason=synthesis-gap samples=94859 of=91665
+   … no tts-retire, no gate-release, no event=turn, no barge-stat, for the next 60 s until the export
+```
+
+**Why.** `reveal-hold` with `samples > of` can only come from `PlaybackClock.samples`'s
+wall-clock fallback (`SpeechCursor.kt:104-107`), which applies only while the playback head has
+**never moved**. The head stayed at 0. #517 (`5d197a10`, 2026-11-07, in 0.9.1) raised the
+stream track from `(sr/4)*4` bytes (0.25 s) to `STREAM_BUFFER_SECS = 4` s
+(`SherpaTts.kt:454@c5cda998`). A `MODE_STREAM` AudioTrack starts rendering only once the
+written data reaches its start threshold, and its default threshold is the full buffer
+capacity. The platform behaviour is from the Android documentation; I did not observe it on a
+device. A reply under 4 s never gets there. The drain loop then waits for a head that never
+moves: `while (PLAYING && waited < 120000) if (head >= written-1) break`
+(`SherpaTts.kt:541-549@c5cda998`). 120 s of 8 ms sleeps is the ~124 s observed. The worker
+holds the turn gate for the whole wait.
+
+**It explains every symptom without a gateway fault:**
+- *"The Agent Is Working", nothing on the gateway (btop/GPU idle).* The gateway finished in
+  seconds (`turn done`). A streamed reply never posts `"speaking"`, so the screen stays on
+  `"thinking"` until the worker retires.
+- *About 2 minutes.* 124 s.
+- *No "keep waiting or stop?" card.* The card belongs to the poll loop, and that loop exited
+  on `done`. The wedge comes *after* `done`, where no ladder runs.
+- *STT dead, barge-in dead.* The gate is held. The capture loop only drains for barge-in, and
+  `barge-stat` (playback reads) logs nothing because nothing plays.
+- *Recovery after the budget / when the user hangs up.* The 120 s ceiling, or `call-end`.
+- *"`/new` triggers it again", "first request only".* Any short answer triggers it, wherever it
+  falls in a call (gens 1–8 in the log). Short answers are common in a voice call.
+- *"Not present in previous versions."* The old build's 0.25 s track never stalled.
+- The reply is probably **never heard**, because the head never moved. That fits "TTS does
+  not work" from the first report. It is an inference: the log cannot say what was audible.
+
+### Defects, with a probability that each is the reporter's cause
+
+| # | Defect | Where | Real? | P(reporter's current hang) |
+|---|---|---|---|---|
+| **D** | A short reply never starts and the drain waits 120 s | `SherpaTts.kt:454@c5cda998` (4 s buffer, default start threshold) + `SherpaTts.kt:541-551@c5cda998` (120 s head wait). Fixed at `SherpaTts.kt:467` and `:557` with `StreamDrain.kt` | **Yes.** 28 of 29 short replies, in the field | **0.85** |
+| 1 | "A poll error counts as life" | `VoiceController.kt:2685` | **No — refuted by the code.** The payload carries `error` *only when* `done` (`core/Stream.kt:338`, `if (done) payload["error"] = err`), so `pollErr.isNotBlank()` implies `doneNow`, and the turn is ending anyway. The 3,192 `no such stream` errors are *exceptions* from `pollStreamJSON` (`VoiceController.kt:2640-2666`), and that path never touches `lastEventAt`. The clause is redundant, not harmful. **No change made.** | 0.02 |
+| 2 | "The stream is polled after it is gone" | old build; current guard `VoiceController.kt:2627` + `:3912` | **Real on the old build, fixed since #240.** `silenceAll` → `endReply(CANCELLED)` makes `replies.isDead(gen)` true, and the loop breaks at the top of its next tick. New block: 4 `focus-loss` releases and 0 poll errors. The bursts never masked a stall signal: they ran *after* the release and lasted ≤ 120 ms. A residual (below) mislabels the end. **No change made.** | 0.03 |
+| 2′ | After `stream-poll-abort`, the loop falls through to `abandonTurn(…"budget")` and throws `"timeout"` | `VoiceController.kt:2663` → `:2828-2834` | **Yes, cosmetic.** Every one of the 8 aborts logs `stream-turn-failed err=timeout` and a duplicate `gate-release … reason=turn-timeout`, so 8 of the 49 `turn-timeout` hits are aborts, not budgets. Recorded, not fixed (see `DECISIONS.md` 27). | 0 |
+| 3 | No date on log lines | `VoxLog.kt:34@c5cda998` | **Yes.** Fixed: `VoxLog.LINE_STAMP` = `MM-dd HH:mm:ss.SSS` (`VoxLog.kt:39`). Costs 6 bytes a line, ~5% of the 5 MB window at this file's ~112 bytes/line. | 0 (diagnostic) |
+| S | Silent turns ended at 60 s (`connection lost`) or 120 s (budget) | old block | **Real on the old build**, 45 turns. **Not seen on 0.9.1**: 0 of 126 turns, max wait 50 s. Possibly the tunnel, possibly the run. | 0.15 that it is *also* part of the current episodes |
+
+### The earlier claims against the log
+
+| Earlier claim | Verdict | Evidence |
+|---|---|---|
+| Link 2, the DROP wedge (`settle-drop … already-spoken`, up to 600 s) | **Refuted for this log** | 0 `already-spoken`, 0 `gate-timeout`. The two old-block `settle-drop` lines are `reason=cancelled`. The revision's retraction was right. There *is* a wedge holding "working" with the gateway idle, but it is D (124 s, after `done`), not DROP (600 s). |
+| Link 1, the re-warm cascade, is the voice demotion | **Confirmed**, 0.45 → **0.8** | New block, 10:19:54–56: `tts-fail code=stream-synth` → `tts-recover attempt=1` → `SherpaTts loaded` → `tts-ready` → **15 ms later** a second `tts-fail code=stream-synth` with no SherpaTts cause line → `tts-degrade from=supertonic to=system`. That is the exact signature `FINDINGS.md` A predicted. Six more first steps (`tts-recover`) and one more degrade appear. The branch's earlier patch (`tts-stream-adopt`) is the fix. |
+| Off step = the system voice's watchdog | **Observed once**, 0.3 → **0.7** | 10:22:25: `tts-fail engine=system code=timeout` → `tts-unavailable … (call continues text-only)`, about 2.5 min after the degrade. |
+| First trigger: candidates 1–3 (track, silent synth, exception) | **Refuted for this log** | 0 `buildStreamTrack:`, 0 `track-unavailable`, 0 `silent-stream`, 0 `streamChunk:`. None of the 8 `stream-synth` failures has a SherpaTts-side cause line. That leaves the *unlogged* `false` returns of 0.9.1's `streamChunk`: a closed fence (cut or swap), no engine, or null samples. Which one is **open**. |
+| #549 (one-shot track failure) | **Irrelevant, confirmed** | No track failures at all. |
+| #553 (`event=run-admit`) | **Open** | 0 lines; both builds predate it. One new-block line, `turn-abandon gen=5 route=runs reason=budget run=- elapsedMs=0`, shows the runs route is in use. That turn's budget expired at 0 ms, which is unexplained (`OPEN.md`). |
+| The 60 s ladder | **Untested by this log** | It did not exist in the old build and was never due in the new one. Its 15/40 s check-ins worked. |
+| Revision's C: "episodes are ended by the stall ladder" (0.8) | **Refuted for 0.9.1**, true of the old build | The old build's silent turns ended at 60 s (watchdog) and 120 s (budget). The 0.9.1 episodes are D. |
+| Revision's H1/H2 (unanswered admission / silent run) | **Not the 0.9.1 hang** | Every new-block turn got its first byte within 126 ms. H1/H2 remain candidates only for the old block's 45 silent turns. |
+| Revision's B: "STT compromised = the gate held by an in-flight turn" (0.75) | **Confirmed in mechanism, wrong turn phase** | The gate *is* what deafens the mic, but it is held by the drain after `done`, not by a turn waiting on the gateway. |
+| The DND correlation | **Not supported** | Of the 15 new-block short replies that waited ≥ 100 s, 14 ran with `dnd=false` (the last `event=cue` before them). The wedge is set by reply length, not by DND. |
+
+### What still needs the gateway's own log
+
+- **The 0.9.1 episodes (D):** the gateway should show each of those responses *completed* within
+  seconds of the request. That would independently confirm "GPU idle while the phone said
+  working". The `resp=` field of each `turn done` line is an opaque id that can be matched
+  there; it is not quoted here.
+- **The old build's 45 silent turns (S):** whether each run *executed and produced nothing*, or
+  never reached the gateway (the tunnel). The phone cannot tell them apart. llama.cpp's request
+  log for those minutes can.
+- **The `elapsedMs=0` budget abandon:** whether a run was created for it at all.
+
+### Witness — what this branch emits that 0.9.1 cannot
+
+| Line | When | Means |
+|---|---|---|
+| `D event=tts-track sr=44100 capacityMs=4000 startFrames=11025` | each stream track built, API 31+ | The quarter-second start threshold took. `startFrames=default` = API < 31, so the forced play-out is the fix there. |
+| `D event=tts-drain result=played forced=false writtenMs=<n> headMs=<n> waitedMs=<n>` | every reply's drain | **(c′) A short reply played and was let go**: `waitedMs` is about the unplayed tail, seconds not 124 000. The 0.9.1 signature of the same moment is `reveal-hold … samples=<more than of>` followed by `tts-retire … ms=≈124000–127000` for a 1–2-chunk reply. |
+| `W event=tts-drain result=forced forced=true …` | a head stuck for 400 ms, then `stop()` | The backstop fired. On API 31+ it means the threshold did not take. |
+| `W event=tts-drain result=timeout …` | a moving head that never reached the end within owed audio + 3 s | A slow route. Bounded, not 120 s. |
+| `11-10 22:04:05.991 [D] …` | every line | The date. |
+
+The brief asked for three witnesses. I report them as the log reads, not as asked:
+- **(a) "a poll error no longer resets liveness."** No new line exists, because 0.9.1 already
+  doesn't do it (`core/Stream.kt:338`). On any build, `W event=stream-stall gen=N … no-events=15s`
+  appearing *during* a run of `W event=stream-poll-error … gen=N` lines shows it.
+- **(b) "the 60 s question being asked."** 0.9.1 already emits
+  `W event=wait-silent gen=N idleMs=<≥60000> tools=a/b — asking windowMs=10000`. This log never
+  had a turn silent that long on 0.9.1. With D fixed, a turn the gateway really leaves silent will
+  show it. If it does not, the ladder is next.
+- **(c) "a released stream is no longer polled."** Since #240:
+  `D event=reply-end gen=N reason=cancelled cause=<focus-loss|hush|…>` followed by **no**
+  `event=stream-poll-error … gen=N`. That holds in the new block.
