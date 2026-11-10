@@ -10,7 +10,7 @@ import com.hermesvox.core.Json
  *
  * A Hermes gateway multiplexes profiles at `/p/<name>/…` but has no route that lists them,
  * and patching Hermes is not on the table. So the app asks the agent itself: one ordinary
- * non-streaming chat turn carrying a reserved marker, and the agent — which does have
+ * streamed chat turn carrying a reserved marker, and the agent — which does have
  * `hermes profile list` — answers with one fenced `vox-profiles` block.
  *
  * The **list is a hint; a probe is the proof**. A name only becomes a usable profile when
@@ -80,8 +80,14 @@ object ProfilesAsk {
      */
     const val CACHE_FRESH_MS = 15 * 60_000L
 
-    /** A chat reply is a small JSON document; anything past this is not a profile list. */
-    const val BODY_MAX = 256 * 1024
+    /**
+     * A chat reply used to be a small JSON document. Streamed (#533) it is not: every chunk
+     * carries the object envelope, and a reasoning model's reasoning deltas run long before
+     * the answer arrives — a live ask measured 158 KB of stream for a 53-character block.
+     * The cap guards against a runaway reply, so it sits well above that: past a megabyte the
+     * answer is not a profile list whatever it says.
+     */
+    const val BODY_MAX = 1024 * 1024
 
     const val DEFAULT_MODEL = "hermes-agent"
 
@@ -166,11 +172,14 @@ object ProfilesAsk {
      * The exact POST body: one user turn, non-streaming, on the model route the connection
      * already uses. No tools, no temperature, no history — the ask is self-contained.
      */
-    fun requestBody(model: String = DEFAULT_MODEL): String = Json.encode(
+    fun requestBody(model: String = DEFAULT_MODEL, stream: Boolean = true): String = Json.encode(
         linkedMapOf(
             "model" to model.ifBlank { DEFAULT_MODEL },
             "messages" to listOf(linkedMapOf("role" to "user", "content" to ASK)),
-            "stream" to false,
+            // #533: streaming, because that is the route that registers the approval
+            // notifier. A non-streaming turn could make a tool call that the phone never
+            // saw and could not have answered.
+            "stream" to stream,
         )
     )
 
@@ -190,6 +199,32 @@ object ProfilesAsk {
                 .ifBlank { null }
             else -> null
         }
+    }
+
+    /**
+     * The assistant's text from a streamed reply (#533): Server-Sent Events, one JSON object
+     * per `data:` line, `[DONE]` at the end. A server that ignores `stream: true` and answers
+     * with a whole completion is read by [assistantText] instead, so both shapes work.
+     *
+     * Only the deltas' text is accumulated; a tool call carries no text and contributes
+     * nothing, which is correct — the notifier is what makes it visible, not this parser.
+     */
+    fun assistantTextFromStream(body: String): String? {
+        if (body.isBlank()) return null
+        if (!body.contains("data:")) return assistantText(body)
+        val out = StringBuilder()
+        body.lineSequence().forEach { raw ->
+            val line = raw.trim()
+            if (!line.startsWith("data:")) return@forEach
+            val payload = line.removePrefix("data:").trim()
+            if (payload.isEmpty() || payload == "[DONE]") return@forEach
+            val root = try { Json.parse(payload) as? JObj } catch (_: Throwable) { null } ?: return@forEach
+            val choice = (root["choices"] as? JArr)?.items?.firstOrNull() as? JObj ?: return@forEach
+            val text = ((choice["delta"] as? JObj)?.get("content") as? JStr)?.value
+                ?: ((choice["message"] as? JObj)?.get("content") as? JStr)?.value
+            if (text != null) out.append(text)
+        }
+        return out.toString().ifBlank { null }
     }
 
     /**
@@ -329,7 +364,9 @@ object ProfilesAsk {
     fun fromChat(status: Int, body: String, timedOut: Boolean = false): Result {
         if (timedOut) return Result.Failed(Failure.TIMEOUT)
         if (status != 200) return Result.Failed(Failure.NO_BLOCK, status)
-        val text = assistantText(body) ?: return Result.Failed(Failure.NO_BLOCK, status)
+        // #533: the ask is streamed, so read the SSE deltas; a server that answers with
+        // a whole completion anyway is still read correctly.
+        val text = assistantTextFromStream(body) ?: return Result.Failed(Failure.NO_BLOCK, status)
         return when (val p = parse(text)) {
             is Parsed.Ok -> Result.Named(
                 p.block.served, p.block.default, Source.CONVERSATION, p.block.dropped, p.block.seen,
