@@ -31,7 +31,13 @@ object VoxLog {
     // closed only by rotation). Guards the reopen-per-line syscall churn the old
     // file?.appendText(...) did on every log line.
     private var writer: BufferedWriter? = null
-    private val fmt = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
+    /** #538 (field log 2026-11-10): the line carries the DATE. The merged pair spans several
+     *  sessions over several days; with only `HH:mm:ss.SSS` a later line can carry an earlier
+     *  clock, so a field export could not be split or timed. `MM-dd` is 6 bytes a line (~5% of
+     *  the 5 MB window at the field's ~112 bytes/line); the year is left out — one export never
+     *  spans one. Used only under [rotationLock] (SimpleDateFormat is not thread-safe). */
+    internal const val LINE_STAMP = "MM-dd HH:mm:ss.SSS"
+    private val fmt = SimpleDateFormat(LINE_STAMP, Locale.US)
     @Volatile private var debugFile = false
     /** 0.6.10 (the maintainer's rule): "verbose file log" ON = the file NEVER
      *  truncates or auto-prunes — a dev session captures EVERYTHING, unambiguously.
@@ -77,6 +83,9 @@ object VoxLog {
      *  debug-file pref only adds the high-frequency probes). */
     fun er(msg: String) { Log.d(TAG, msg); append("E", msg) }
 
+    /** One file line: `<MM-dd HH:mm:ss.SSS> [<level>] <msg>`. Pure; unit-tested. */
+    internal fun line(stamp: String, level: String, msg: String): String = "$stamp [$level] $msg\n"
+
     /** Pure K2 decision: an active log ROTATES when its size EXCEEDS the cap
      *  (> cap), KEEPs otherwise (== cap is still inside the budget). Unit-tested. */
     internal fun rotationDecision(sizeBytes: Long, capBytes: Long): LogRotation =
@@ -93,7 +102,7 @@ object VoxLog {
                 val w = writer
                     ?: BufferedWriter(OutputStreamWriter(FileOutputStream(f, true), Charsets.UTF_8))
                         .also { writer = it }
-                w.write("${fmt.format(Date())} [$level] $msg\n")
+                w.write(line(fmt.format(Date()), level, msg))
                 w.flush()   // per-line flush: keeps crash capture durable and the size check honest
                 // K2: the size check runs every ~50 writes, not per line (cheap file length).
                 if (++writesSinceCheck >= SIZE_CHECK_WRITES) {
