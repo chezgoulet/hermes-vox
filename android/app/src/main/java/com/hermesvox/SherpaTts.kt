@@ -457,6 +457,18 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
                 .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
                     .setSampleRate(sr).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
                 .setBufferSizeInBytes(bufBytes).setTransferMode(AudioTrack.MODE_STREAM).build()
+            // #538 (field log 2026-11-10): a streaming track waits for its start threshold —
+            // by default the WHOLE buffer — before it renders a sample. With 4 s of capacity a
+            // short reply never got there and sat silent until the 120 s drain ceiling. Start
+            // after a quarter-second, as the 0.25 s track did. API 31+; older APIs rely on the
+            // forced play-out in finishStreaming (StreamDrain).
+            val startFrames = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                val capacity = try { t.bufferCapacityInFrames } catch (_: Throwable) { bufBytes / 4 }
+                try { t.setStartThresholdInFrames(StreamDrain.startThresholdFrames(sr, minBuf / 4, capacity)) }
+                catch (e: Throwable) { VoxLog.w("event=tts-track start-threshold-failed err=${e.message?.take(80)}"); -1 }
+            } else -1
+            VoxLog.d("event=tts-track sr=$sr capacityMs=${StreamDrain.audioMs((bufBytes / 4).toLong(), sr)} " +
+                "startFrames=${if (startFrames >= 0) startFrames.toString() else "default"}")
             t.play()
             t
         } catch (e: Throwable) { VoxLog.e("buildStreamTrack: ${e.message}"); null }
@@ -537,19 +549,46 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
         }
     }
 
-    /** Wait for the whole reply to play out, then release the persistent track. */
+    /** Wait for the whole reply to play out, then release the persistent track.
+     *
+     *  #538: the wait is [StreamDrain]'s — bounded by the audio actually owed, and a head that
+     *  never moves (a short reply below the track's start threshold) is played out with
+     *  `stop()` instead of waited on for [timeoutMs]. One `event=tts-drain` line per reply. */
     fun finishStreaming(timeoutMs: Int = 120000) {
         if (!streamFence.allowed) return          // #D1: stopped — nothing left to play out or release
         val t = streamTrack ?: return
+        val written = streamWritten.toLong()
+        val sr = if (streamSR > 0) streamSR else try { t.sampleRate } catch (_: Throwable) { 0 }
+        val start = android.os.SystemClock.uptimeMillis()
+        var head = 0L
+        var drain: StreamDrain? = null
         try {
-            var waited = 0
-            while (t.playState == AudioTrack.PLAYSTATE_PLAYING && waited < timeoutMs) {
-                if (t.getPlaybackHeadPosition().toLong() >= streamWritten.toLong() - 1L) break
-                Thread.sleep(8); waited += 8
+            head = headOf(t)
+            val d = StreamDrain(written, sr, start, head).also { drain = it }
+            while (android.os.SystemClock.uptimeMillis() - start < timeoutMs) {
+                head = headOf(t)
+                val step = d.step(android.os.SystemClock.uptimeMillis(), head,
+                    t.playState == AudioTrack.PLAYSTATE_PLAYING)
+                if (step == StreamDrain.Step.DONE) break
+                // Streaming stop(): "audio stops after the last buffer written has played" —
+                // it forces a track still filling toward its threshold to render. Every write
+                // of this reply has returned (the caller is the writer), so #7 holds.
+                if (step == StreamDrain.Step.FORCE) try { t.stop() } catch (_: Throwable) {}
+                Thread.sleep(8)
             }
         } catch (_: Throwable) {}
+        val d = drain
+        val result = d?.result?.label ?: "timeout"
+        val line = "event=tts-drain result=$result forced=${d?.forced ?: false} " +
+            "writtenMs=${StreamDrain.audioMs(written, sr)} headMs=${StreamDrain.audioMs(head, sr)} " +
+            "waitedMs=${android.os.SystemClock.uptimeMillis() - start}"
+        if (result == "played" || result == "not-playing") VoxLog.d(line) else VoxLog.w(line)
         stopStreaming()
     }
+
+    /** The playback head in frames, read as the unsigned 32-bit value it is. */
+    private fun headOf(t: AudioTrack): Long = t.playbackHeadPosition.toLong() and 0xFFFFFFFFL
+
     /** Pause-first stop (0.3.32.4): cut the AUDIBLE audio immediately, then hand the
      *  teardown to a single cleanup thread. Closing the fence + pause() run on the
      *  caller's thread and return in ms — the old stop waited SYNCHRONOUSLY on main
