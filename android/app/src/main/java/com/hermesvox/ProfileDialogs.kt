@@ -450,7 +450,8 @@ class ProfileDialogs(
             c.doOutput = true
             c.setRequestProperty("Authorization", "Bearer $key")
             c.setRequestProperty("Content-Type", "application/json")
-            c.setRequestProperty("Accept", "application/json")
+            // #533: ask for the stream that registers the approval notifier.
+            c.setRequestProperty("Accept", "text/event-stream")
             val body = ProfilesAsk.requestBody(model).toByteArray(Charsets.UTF_8)
             c.setFixedLengthStreamingMode(body.size)
             c.outputStream.use { it.write(body) }

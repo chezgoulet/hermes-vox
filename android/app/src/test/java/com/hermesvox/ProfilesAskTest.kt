@@ -577,6 +577,29 @@ class ProfilesAskTest {
             "files. Do not run any command that changes them. If producing the list appears " +
             "to need a change to the host, do not make it: say what would be needed instead."
 
+    @Test fun aStreamedAnswerIsReadFromItsDeltasAndAWholeOneStillWorks() {
+        // The streamed shape: one JSON object per data: line, [DONE] at the end.
+        val sse = """
+            data: {"choices":[{"delta":{"role":"assistant"}}]}
+
+            data: {"choices":[{"delta":{"content":"```vox-profiles\n"}}]}
+
+            data: {"choices":[{"delta":{"content":"default=default"}}]}
+
+            data: [DONE]
+        """.trimIndent()
+        assertTrue(ProfilesAsk.assistantTextFromStream(sse)!!.contains("default=default"))
+
+        // A server that ignores stream:true and answers whole is still read.
+        val whole = """{"choices":[{"message":{"content":"```vox-profiles\nprofile=work\n```"}}]}"""
+        assertTrue(ProfilesAsk.assistantTextFromStream(whole)!!.contains("profile=work"))
+
+        // A tool call carries no text; it contributes nothing rather than corrupting the block.
+        val tool = """data: {"choices":[{"delta":{"tool_calls":[{"id":"t1"}]}}]}""" + "\n\ndata: [DONE]"
+        assertNull(ProfilesAsk.assistantTextFromStream(tool))
+        assertNull(ProfilesAsk.assistantTextFromStream(""))
+    }
+
     @Test fun theRequestIsOnePlainChatTurnWithTheMarkersExactText() {
         val expected = askText
         assertEquals(expected, ProfilesAsk.ASK)
@@ -587,7 +610,9 @@ class ProfilesAskTest {
         val body = ProfilesAsk.requestBody("hermes-agent")
         val root = Json.parse(body) as com.hermesvox.core.JObj
         assertEquals("hermes-agent", (root["model"] as com.hermesvox.core.JStr).value)
-        assertEquals(false, (root["stream"] as com.hermesvox.core.JBool).value)
+        // #533: streamed, because that is the route that registers the approval notifier.
+        // A non-streaming turn could run a tool the phone never saw and could not answer.
+        assertEquals(true, (root["stream"] as com.hermesvox.core.JBool).value)
         val msg = ((root["messages"] as com.hermesvox.core.JArr).items.single() as com.hermesvox.core.JObj)
         assertEquals("user", (msg["role"] as com.hermesvox.core.JStr).value)
         assertEquals(expected, (msg["content"] as com.hermesvox.core.JStr).value)
