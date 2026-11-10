@@ -65,9 +65,12 @@ Each entry gives the call I made, the alternative I rejected, and why.
     true behaviour for the cases they cover. The production path no longer calls it. Removing
     it is a clean-up for another commit.
 
-13. **No version bump, no push, no merge.** These are the brief's constraints. I did not touch
-    `skills/hermes-vox-app/SKILL.md`: it makes no claim about `stream-synth`, the settle rule,
-    or `noteFailure`, and the gate's 440 skill claims stayed green.
+13. **No version bump, no push, no merge.** These are the brief's constraints.
+    **The skill was updated:** its log table now names `tts-recover-skip`,
+    `tts-stream-adopt` and `settle-retire`, the `track-unavailable` exemption on `tts-fail`,
+    and the streamed `tts-drop` reasons. The checker now verifies 443 claims (up from 440,
+    0 stale). *Rejected:* leaving the skill alone. It already omitted #549's exemption, and the
+    owner will look up the witness lines there.
 
 14. **No device reproduction was attempted.** The brief establishes that a spoken turn cannot be
     produced headlessly on this host. Both links are instead proven against the real
