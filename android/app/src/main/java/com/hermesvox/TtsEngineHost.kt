@@ -367,6 +367,11 @@ internal class TtsEngineHost(
         synchronized(lock) {
             if (state.released) return
             warn("event=tts-fail engine=${state.engine} code=$reason")
+            // #538: the streaming path's track failures are #549's, and cost the same: nothing.
+            if (reason in NOT_THE_ENGINE) {
+                debug("event=tts-recover-skip engine=${state.engine} reason=$reason")
+                return
+            }
             recover(reason)
         }
     }

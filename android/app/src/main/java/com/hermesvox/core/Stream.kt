@@ -644,17 +644,41 @@ internal object Streams {
     private fun admitRun(client: ResponsesClient, body: ByteArray, st: StreamState): String {
         if (st.cancelled) return ""
         var retried = false
+        var attempt = 0
         while (true) {
+            attempt++
+            val t0 = System.currentTimeMillis()
             try {
-                return admitOnce(client, body, st)
+                val runId = admitOnce(client, body, st)
+                // #538: the one line that says the gateway took the turn. Without it a field
+                // log cannot tell "the request never got an answer" from "the run was silent".
+                admitLog(attempt, "admitted", 202, t0, run = runId)
+                return runId
             } catch (lost: AdmissionLost) {
+                admitLog(attempt, "lost", -1, t0, err = lost.cause)
                 if (!retried) { retried = true; continue }
                 if (st.cancelled) return ""
                 val e = lost.cause
                 if (e is SocketTimeoutException) throw HermesException(STALLED)
                 throw e
+            } catch (e: NoRunsRoute) {
+                throw e   // the fallback's own line (event=route-fallback) names it
+            } catch (e: Exception) {
+                if (!st.cancelled) admitLog(attempt, "failed", -1, t0, err = e)
+                throw e
             }
         }
+    }
+
+    /** `event=run-admit attempt= result=admitted|lost|failed ms= [run=] [err=]`. Metadata only. */
+    private fun admitLog(attempt: Int, result: String, code: Int, t0: Long, run: String = "", err: Throwable? = null) {
+        val ms = System.currentTimeMillis() - t0
+        val tail = buildString {
+            if (code > 0) append(" code=").append(code)
+            if (run.isNotEmpty()) append(" run=").append(run)
+            if (err != null) append(" err=").append(err.javaClass.simpleName)
+        }
+        try { StreamRoute.log("event=run-admit attempt=$attempt result=$result ms=$ms$tail") } catch (_: Throwable) { }
     }
 
     /** The reply to an admission whose body had gone out was lost: retry once ([admitRun]). */
