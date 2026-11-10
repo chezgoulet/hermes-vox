@@ -3243,7 +3243,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                             // barge check the instant `speaking` flips true (playback mode,
                             // past the grace window).
                             // C4 K1 firstAudio seam (controller-side flag, no SherpaTts<->controller
-                            // callback churn): SherpaTts.streamChunk() returns TRUE only after it
+                            // callback churn): SherpaTts.streamChunk() returns WROTE only after it
                             // synthesized the chunk AND completed the first blocking write to the
                             // persistent playback AudioTrack — which buildStreamTrack() has already
                             // put into PLAYING state before the write — so true == the first real
@@ -3251,14 +3251,30 @@ class VoiceController(private val context: Context, private val session: HermesS
                             // firstAudioPushed (reset per turn in runStreamedTurn) makes the push
                             // exactly-once; the timestamp is measured from the same t0 (turnStartedAt)
                             // as firstByte/firstText, keeping the fields comparable within a version.
-                            val wrote = try { (tts as? SherpaTts)?.streamChunk(chunk.text) ?: false } catch (_: Throwable) { false }
-                            if (StreamSynthResult.failed(wrote, genCancelled, sClosed)) {
+                            fun chunkOnce(): ChunkResult = try {
+                                (tts as? SherpaTts)?.streamChunk(chunk.text) ?: ChunkResult.NO_ENGINE
+                            } catch (_: Throwable) { ChunkResult.ERROR }
+                            var result = chunkOnce()
+                            // #538: the host replaced the engine under this reply (re-warm or
+                            // degradation). Its fence was never opened, so every chunk read as
+                            // a failure and one bad phrase spent the whole voice budget. The
+                            // stream adopts the new engine and the phrase is tried once on it.
+                            if (StreamSynthResult.adopt(result, genCancelled, sClosed)) {
+                                VoxLog.w("event=tts-stream-adopt engine=${ttsHost?.state?.engine ?: "-"} gen=$turnGen chunkIdx=$chunkIdx")
+                                try { (tts as? SherpaTts)?.startStreaming() } catch (_: Throwable) {}
+                                result = chunkOnce()
+                            }
+                            val wrote = result == ChunkResult.WROTE
+                            val failure = StreamSynthResult.failureCode(result, genCancelled, sClosed)
+                            if (failure != null) {
                                 // A streaming synth that returned no audio is an engine failure,
                                 // not a cut — and not the end of the reply. The phrase is lost,
                                 // the turn keeps draining, and the host runs the same bounded
                                 // lifecycle the one-shot path uses: one re-warm, one degradation,
-                                // then a stated reason.
-                                ttsHost?.noteFailure("stream-synth")
+                                // then a stated reason. A track failure is named but costs nothing.
+                                ttsHost?.noteFailure(failure)
+                            } else if (!wrote && !genCancelled && !sClosed) {
+                                VoxLog.d("event=tts-drop reason=${result.name.lowercase()} source=stream gen=$turnGen chunkIdx=$chunkIdx")
                             }
                             if (wrote && !firstAudioPushed) {
                                 firstAudioPushed = true

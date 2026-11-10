@@ -467,18 +467,20 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
      *  chunk is sliced into ~2s sub-writes with a fence check before every slice, so a
      *  stop that lands mid-chunk exits between sub-writes instead of draining the whole
      *  sentence's WRITE_BLOCKING write (F2: bounds the drain-wait to ~2s). */
-    fun streamChunk(text: String): Boolean {
-        if (!streamFence.allowed) return false   // #D1: fence closed -> no synth, no rebuild
+    internal fun streamChunk(text: String): ChunkResult {
+        // #D1: fence closed -> no synth, no rebuild. #538: a fence that was never opened is a
+        // fresh engine (installed after the stream began), not a stop — the caller adopts it.
+        if (!streamFence.allowed) return if (streamFence.opened) ChunkResult.CUT else ChunkResult.NOT_OPEN
         // #240: the chunk's token. A stop that lands while it synthesizes kills it for good,
         // even if the next turn re-opens the fence before the synthesis returns.
         val epoch = streamFence.stopEpoch
-        val eng = tts ?: return false
+        val eng = tts ?: return ChunkResult.NO_ENGINE
         return try {
             val audio = synth(eng, text)
-            val samples = audio.samples ?: return false
+            val samples = audio.samples ?: return ChunkResult.SILENT
             if (audioIsSilent(samples)) {
                 VoxLog.w("event=tts-fail engine=${voice.modelId} reason=silent-stream samples=${samples.size}")
-                return false
+                return ChunkResult.SILENT
             }
             val sr = audio.sampleRate   // #25: the ACTUAL model rate, not a hardcoded one
             val t: AudioTrack
@@ -488,14 +490,18 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
                 // treated as "first chunk" (that rebuild is the resurrection bug).
                 if (!streamFence.allows(epoch)) {
                     if (streamFence.allowed) VoxLog.d("event=tts-drop reason=stale-epoch chars=${text.length}")
-                    return false
+                    return ChunkResult.CUT
                 }
                 if (streamTrack == null) {
                     val built = buildStreamTrack(sr)
                     streamTrack = built; streamWritten = 0
-                    t = built ?: return false
+                    // #538: #549's track failure, on the streaming path — named, not engine death.
+                    t = built ?: run {
+                        VoxLog.w("event=tts-fail engine=${voice.modelId} reason=track-unavailable source=stream sr=$sr chunk=${samples.size}")
+                        return ChunkResult.TRACK_UNAVAILABLE
+                    }
                 } else {
-                    t = streamTrack ?: return false
+                    t = streamTrack ?: return ChunkResult.CUT
                 }
                 streamSR = sr
                 // previewB: this chunk starts where the track has been written to so far
@@ -516,18 +522,18 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
                 val twoSec = sr * 2                    // ~2s of audio per sub-write (44100 @22050Hz)
                 var at = 0
                 while (at < samples.size) {
-                    if (!streamFence.allows(epoch)) return false   // F2: stop between sub-writes exits fast
+                    if (!streamFence.allows(epoch)) return ChunkResult.CUT   // F2: stop between sub-writes exits fast
                     val n = minOf(twoSec, samples.size - at)
                     t.write(samples, at, n, AudioTrack.WRITE_BLOCKING)
                     at += n
                 }
                 streamWritten += samples.size
-                true
+                ChunkResult.WROTE
             } finally { synchronized(trackLock) { writing = false; trackLock.notifyAll() } }
         } catch (e: Throwable) {
             VoxLog.e("streamChunk: ${e.message}")
             VoxLog.w("event=tts-fail engine=${voice.modelId} reason=stream code=${e.message ?: e::class.java.simpleName}")
-            false
+            ChunkResult.ERROR
         }
     }
 

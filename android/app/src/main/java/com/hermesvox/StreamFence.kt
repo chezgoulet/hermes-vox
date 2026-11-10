@@ -18,6 +18,10 @@ internal class StreamFence {
     /** A chunk may play iff the stream started and has not been stopped. */
     val allowed: Boolean get() = started && !stopped
 
+    /** #538: has this fence EVER been opened? False only on a fresh engine that no stream
+     *  has adopted — closed-because-new, not closed-because-stopped. */
+    val opened: Boolean get() = started
+
     /** 0.4.0.4 — the cancel token for a one-shot speak(). [allowed] is LEVEL
      *  triggered, so it cannot answer "was there a stop while I was busy?": the
      *  one-shot path synthesizes for ~1.4s and then OPENS the fence itself to
