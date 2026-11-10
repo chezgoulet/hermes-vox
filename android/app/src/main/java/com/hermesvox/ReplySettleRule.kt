@@ -69,6 +69,13 @@ internal object ReplySettleRule {
         // cancel checks below must never see this case (they would starve the tail
         // and wedge the gate until the 60s backstop).
         if (streamed && streamingEngine) return ReplySettle.RETIRE_STREAM
+        // #538: the voice leg replaced the engine under an open stream that was already
+        // heard (a re-warm in flight, or a degradation to the system voice). The worker is
+        // still waiting on this queue; a DROP never marked it final, so it waited forever —
+        // the turn gate stayed shut up to TurnGateCeiling.HARD_MS with the screen on "The
+        // entity is working…" and the mic only draining. The stream still retires: the
+        // worker plays what the new engine can and closes the turn.
+        if (streamed && genSpokeAudio) return ReplySettle.RETIRE_STREAM
         // 0.4.0.4: the turn is over (cancelled) or was already audible -> no speech.
         if (gateReleased || genSpokeAudio) return ReplySettle.DROP
         if (!speakAllowed || !hasText) return ReplySettle.SILENT_SETTLE

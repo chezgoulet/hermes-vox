@@ -3045,14 +3045,21 @@ class VoiceController(private val context: Context, private val session: HermesS
         val holdAlive = gen == erHoldReleasedGen && gen == turnGen
         if (holdAlive) { erHoldReleasedGen = -1L }   // consume the witness exactly once
         val cancelled = (gen != turnGen || voiceState.released()) && !holdAlive
-        when (ReplySettleRule.decide(
+        val streamingEngine = tts?.supportsStreaming == true
+        val settle = ReplySettleRule.decide(
             streamed = streamed,
-            streamingEngine = tts?.supportsStreaming == true,
+            streamingEngine = streamingEngine,
             genSpokeAudio = firstAudioPushed,
             gateReleased = cancelled,
             speakAllowed = shouldSpeak(),
             hasText = finalText.isNotBlank(),
-        )) {
+        )
+        // #538: the witness for a reply whose engine was replaced mid-stream. Before, this
+        // shape was a DROP that left the stream worker waiting and the turn "working".
+        if (settle == ReplySettle.RETIRE_STREAM && !streamingEngine)
+            VoxLog.w("event=settle-retire gen=$gen reason=engine-swapped " +
+                "engine=${ttsHost?.state?.engine?.ifBlank { "-" } ?: "-"} ready=${ttsHost?.state?.speaking == true}")
+        when (settle) {
             // STREAMED reply (R1 single-owner retirement): the text/settle side is NO
             // LONGER an owner of "done". It only marks the queue final (sFinal) + wakes
             // the worker; the streaming worker drains every queued sentence, then on its
