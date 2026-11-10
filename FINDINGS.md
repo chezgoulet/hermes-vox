@@ -1,5 +1,9 @@
 # #538 — findings
 
+> **Superseded in part (2026-11-10).** The reporter's second report moved several probabilities
+> below — link 2 is now 0.1 for this reporter, link 1 is 0.45. Read *Revision after the
+> 2026-11-10 report* at the end before relying on any number in the original sections.
+
 Branch `investigate/538-voice`, cut from `testing` at `f199b75b`. Line references marked
 `@f199b75b` are to the code as it was reported against (0.9.1 behaviour, plus #549). Unmarked
 references are to this branch. Every claim was checked against the code. **None of it was
@@ -223,3 +227,127 @@ A build without the patch cannot emit `tts-stream-adopt`, `settle-retire`, or
 `source=stream` track lines. In 0.9.1 the same moments appear as an extra `code=stream-synth`
 and an `event=settle-drop gen=<n> reason=already-spoken`. **That `settle-drop … already-spoken`
 line, for a gen with no hush or barge before it, is the 0.9.1 signature of the wedge.**
+
+---
+
+# Revision after the 2026-11-10 report
+
+**What the new evidence does to my conclusion.** It mostly falsifies it for this reporter. My
+link 2 (the DROP wedge) predicted "The entity is working…" held for up to
+`TurnGateCeiling.HARD_MS` = 600 s (`TurnGateCeiling.kt:34`). It also needed an engine swap
+*under a reply that had already been heard*. The reporter instead describes episodes that clear
+in 60–90 s, or about two minutes, during turns that produced **no reply at all**. With no reply
+there is no streamed audio, no `firstAudioPushed`, and no swap to settle under, so neither link
+can produce "first turn works, second hangs" or "`/new` triggers it". The timings match the
+app's own stall ladder, which ends a silent turn by design:
+- the 60 s silent card (`TurnWait.SILENT_STREAM_MS`);
+- about 10 s to answer it (`WaitPrompt.WINDOW_MS`, `WaitPrompt.kt:36`), after which the turn is
+  abandoned (around 70 s);
+- the 120 s budget when a tool is counted as running (`StreamPollGate`).
+
+I also retract my use of the reporter's btop observation. `mind: remote` means the configured
+host is not on the phone's network as `PresenceDiagnostic.mindFor` sees it. It returns
+`remote` for Tailscale's `100.64/10` and for any dotted public hostname
+(`PresenceDiagnostic.kt:131-148`). A gateway reached that way may be a different machine from
+the one they watched, and a gateway that is waiting on a cloud model provider shows almost no
+CPU while a run is genuinely in progress. What survives:
+- **Both links remain real defects in the 0.9.1 code**, and their fixes stand: they are proven
+  by tests and are independent of this reporter.
+- **Link 1 remains the only code path I found that reaches the first report's "spoken replies
+  are off" quickly.** Its probability of being *this* reporter's case is lower.
+- **The new report's dominant symptom is a turn that never gets an answer.** I could not prove
+  its root cause from code. What I could prove is that the log the reporter can send could not
+  name it, and that is now fixed (commit `bc4b4b33`).
+
+## Probabilities, revised
+
+| Family | Before | After | What moved it |
+|---|---|---|---|
+| A: link 1 (re-warm cascade) is the reporter's demotion | 0.6 | **0.45** | No new TTS evidence for or against. The new episodes have no reply, so "TTS does not work" during them is explained without any engine fault. The first report's "spoken replies are off" is an app-declared state (`steadyOff`/`refuse` only), and the cascade is still the shortest path to it. |
+| A: off step = system watchdog | 0.3 | 0.3 | Unchanged; untested. |
+| B: STT "compromised" = link 2 wedge | 0.55 | **0.1** | Timings (60–120 s, not up to 600 s); no reply to wedge. |
+| B: STT "compromised" = the turn gate held by an in-flight turn that never answers | — | **0.75** | By design the capture loop only drains for barge-in while `turnInFlight` (`VoiceController.kt:1424-1440`), so new speech is not a turn until the turn ends. That fits "unresponsive to STT input while working", and "works again after 60–90 s". |
+| B: barge-in failing during those turns | — | unexplained | In generation mode barge-in should be live (`VoiceController.kt:135-141`). The log's `event=barge-*` lines would show whether the drain ran. |
+| C: link 2 wedge is the reporter's "working" | 0.55 | **0.1** | As above. |
+| C: the episodes are ended by the stall ladder (card ~70 s / budget 120 s) | — | **0.8** | Timings, Presence-independent (see below). |
+| C: root, H1 — the turn's request was never answered (unanswered admission) | — | **0.35** | See H1. |
+| C: root, H2 — admitted, then silent (provider wait, gateway queue) | — | **0.25** | See H2. |
+| C: root, H3 — other process-local state | — | **0.15** | See H3. |
+| C: root unexplained | — | 0.25 | |
+
+**#549 and my two patches** are irrelevant to the new report's episodes. None of the three
+touches the submit path.
+
+## Presence off (the brief's point 4)
+
+The ladder does not depend on Presence. `WaitPrompt.step` has no Presence input
+(`WaitPrompt.kt:127-150`), and the card is raised from the poll loop for every turn
+(`VoiceController.kt:2716`). With Presence off, `presenceSpeaks` is false, so the two check-ins
+at 15 s ("Still waiting on it.") and 40 s are **spoken** (`VoiceController.kt:2762`,
+`TurnWait.checkIn`). That is a sharp test of "TTS does not work during working": the log will
+show `event=wait-line gen=N n=1` and whether a `event=tts-speak` followed it. The screen during
+the wait is `"thinking"` → "The entity is working…" (`MainActivity.kt:2471`). At 60 s it
+becomes "Still working — keep waiting or stop?" (`MainActivity.kt` `onWaitPrompt`) unless a tool
+is counted as running. The reporter quotes only "working". Either the card's line was
+paraphrased, or `toolRunning` held the card off and the 120 s budget ended the turn. The latter
+fits "approximately two minutes".
+
+## New hypotheses and the code checked
+
+**H1 — the turn's request is never answered (0.35).** The runs route's `POST /v1/runs` waits up
+to `Streams.idleTimeoutMs` = 60 s for an answer (`core/Stream.kt:178`, `admitOnce` `:676-…`).
+After the body has gone out, a missing answer is `AdmissionLost`, which is retried once
+(`admitRun`, `:644-671`). Two unanswered attempts therefore cost about 120 s before the turn
+fails with `STALLED`. That is now pinned by
+`RunAdmissionWitnessTest.an admission nobody answers costs two idle timeouts…`. Usually the
+controller's card abandons the turn first, at about 70 s. What fits:
+- the gateway shows nothing because the request never reached it;
+- a relaunch cures it while `/new` does not. Connection reuse is process-wide (`Stream.kt:444`:
+  a clean body "goes back to the keep-alive pool"), so a new process starts with an empty pool
+  and `/new` keeps the old one;
+- "first turn after launch works";
+- a non-LAN path (`mind: remote`), the kind where a tunnel or middlebox can drop an idle
+  connection without telling either end.
+
+What doesn't fit, or is unverified: I cannot show that a pooled socket was dead on their path,
+and Android's HTTP stack discards connections the server closed cleanly. **Log for H1:**
+`event=run-admit attempt=1 result=lost … err=SocketTimeoutException` (patched build). On 0.9.1,
+the tell is `event=turn-abandon … route=runs … run=-` (`VoiceController.kt:2148-2150`): the turn
+was abandoned with no run named, so admission never completed.
+
+**H2 — admitted, then silent (0.25).** The run exists but sends no events: the provider is slow
+or overloaded, or the gateway queues the run. Liveness is events only; keepalives don't count
+(the first section's table, unchanged), so a quiet run produces `event=stream-stall` at 5 s and
+15 s and `event=wait-silent` at 60 s. What doesn't fit: **`startCall` resets the conversation
+on every call** (`MainActivity.kt:699`), and `/new` resets it as well (`:3438`). The gateway
+therefore sees the same fresh session after `/new` as after a relaunch, and a gateway-side
+explanation cannot say why one cures and the other triggers. **Log for H2:**
+`event=run-admit … result=admitted … run=<id>` (patched), or on 0.9.1
+`event=turn-abandon … run=<id>` (not `-`), followed by `stream-stall`/`wait-silent`. The run id
+can be matched against the gateway's own log.
+
+**H3 — other process-local state that survives `/new` (0.15).** I checked and **killed** one
+candidate. `newSession` runs `stopVoiceWake()`, `releaseVoiceFocus()` and
+`unregisterRouteCallback()` *after* `REARM_CALL` (`MainActivity.kt:3432-3449`), which looks like
+it would strip the re-armed call. It doesn't: a freshly built controller is never warm
+synchronously, so `openVoiceLine` defers acquisition by 500 ms (`postDelayed`, warm-wait
+branch), and that is after the teardown. The probability that this ordering bites is about 0.05,
+only if a controller could be warm at construction. Not examined: the static `Streams` map and
+`StreamRoute` state across calls.
+
+**"First request only".** It is ambiguous whether the first turn after launch was *answered* or
+was itself the one that hung. Both readings are covered: H1 predicts that the first turn on a
+fresh process works; H2 predicts nothing about turn order.
+
+**`turns: 0 answered_by_voice: 0`.** The block was captured just after Presence was switched on.
+I did not trace what those counters cover and give them no weight.
+
+## What remains unexplained
+
+- **The root cause of the silent turn.** H1 and H2 are separable only with the log; the
+  patched build makes H1 unmistakable.
+- **Why barge-in fails during those turns.**
+- **Why "Silence notifications during a call" correlated with the first report.** There is still
+  no code link (`CallQuiet.kt:77` only).
+- **Whether the first report's voice demotion and the second report's silent turns share a
+  cause.** I now treat them as separate, joined only by "the same user, the same weeks".

@@ -77,3 +77,51 @@ Each entry gives the call I made, the alternative I rejected, and why.
     `TtsEngineHost` and `ReplySettleRule` in JVM tests. The test that shows the 0.9.1 cascade
     (`before_538_…`) uses the *old* reading of chunk results, so it documents the defect and
     does not test dead code.
+
+---
+
+## After the 2026-11-10 report — what I changed my mind about
+
+15. **Link 2 (the DROP wedge) is not this reporter's "working" screen.** It had 0.55 for C; it
+    now has 0.1. The 600 s ceiling it predicts doesn't match a 60–120 s recovery, and it needs a
+    reply that was already heard, which the new episodes don't have. I keep the fix: it is a
+    real defect pinned by a test. I no longer present it as the explanation for #538.
+
+16. **I retract my use of the btop observation.** I treated "no activity on the gateway" as
+    support for the wedge. With `mind: remote` and a possible provider wait, btop can't tell an
+    unanswered request from a silent run. The log's `run-admit` / `turn-abandon run=` field
+    does that job instead.
+
+17. **"Spoken replies off" and "working with no reply" are now separate problems**, rather than
+    one mechanism. The first report's join was inferred; the second report shows the "working"
+    episodes happening without any voice-leg event.
+
+18. **Code change: a witness, not a behaviour fix** (commit `bc4b4b33`, `event=run-admit`).
+    *Rejected (a):* disabling HTTP keep-alive for admission, or shortening the admission
+    timeout. H1 is 0.35, not proven, and either change would cost every healthy turn a TLS
+    handshake or risk failing slow-but-alive gateways. *Rejected (b):* no code at all. The brief
+    allows code only for a provable defect, and the provable defect here is diagnostic: the
+    log the reporter *can* send could not say whether a turn was ever admitted (admission
+    logged nothing; `response.created` is `dd`). That is checked by grep and pinned by
+    `RunAdmissionWitnessTest`. I judged that a missing witness on the exact question the owner
+    must answer qualifies, and I record that as a judgement call, not a cure.
+
+19. **Log the admission in `core` through `StreamRoute.log`**, not in the controller. Only the
+    reader knows about the attempt, the retry and the run id. `StreamRoute.log` is already bound
+    to `VoxLog.d` (`RouteChoice.kt:44`), which writes to the file. The line carries metadata
+    only: attempt, result, ms, HTTP code, opaque run id, exception class. It carries no text.
+
+20. **Corrected the skill's `event=stream-stall` row** ("no SSE bytes, keepalives included").
+    The stall is measured on events, and keepalives are not events
+    (`VoiceController.kt:2683-2707`, `core/Stream.kt:1169`). Read literally, the old wording
+    would have made a stall look like a dead connection, which is exactly the H1/H2 confusion
+    this report needs to avoid.
+
+21. **Killed the `newSession` teardown-ordering suspect without changing it.** The trailing
+    `releaseVoiceFocus`/`unregisterRouteCallback` run after `REARM_CALL`, but the re-armed call
+    acquires 500 ms later through the warm-wait. Reordering it would be a tidy-up with no proven
+    effect, so it is out of scope for this branch.
+
+22. **The original FINDINGS sections are left as written,** with a pointer at the top to the
+    revision. *Rejected:* rewriting them in place. The owner is checking how the conclusion
+    moved, and an edited history would hide that.
