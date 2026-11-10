@@ -58,6 +58,27 @@ class ProfilesTest {
         assertEquals("HERMES", Profiles.headerLabel("Hermes", ""))
     }
 
+    @Test fun aSavedProfileCanBeForgottenAndTheActiveOneCannot() {
+        // Forgotten: the row goes, the rest of the registry is untouched.
+        val r = Profiles.remove(listOf(home, work), "work", active = "home")
+        assertTrue(r.removed)
+        assertEquals(listOf("home"), r.list.map { it.name })
+
+        // The connection in use is refused — a live session would point at an address the
+        // app no longer has. The sheet says "switch first".
+        val refused = Profiles.remove(listOf(home, work), "home", active = "home")
+        assertFalse(refused.removed)
+        assertEquals(Profiles.RemoveError.ACTIVE, refused.error)
+        assertEquals(2, refused.list.size)
+
+        // A name that was never saved is not an error state to act on, only to report.
+        assertEquals(Profiles.RemoveError.UNKNOWN,
+            Profiles.remove(listOf(home, work), "elsewhere", active = "home").error)
+
+        // Names compare as they do everywhere else in the registry.
+        assertEquals(listOf("home"), Profiles.remove(listOf(home, work), "WORK", active = "home").list.map { it.name })
+    }
+
     @Test fun theKeyIsNeverDecodedOrRewritten() {
         // The registry stores what SecureStore produced; it does not touch it.
         val json = Profiles.encode(listOf(work))

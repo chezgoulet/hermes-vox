@@ -139,8 +139,14 @@ class ProfileDialogs(
             .setView(wrap)
             .setPositiveButton("Rename", null)
             .setNegativeButton("Cancel", null)
+            // #174 follow-up: a saved row can be forgotten. Not an editor and not a host
+            // change — it deletes what this phone remembers about that connection.
+            .setNeutralButton("Remove", null)
             .create()
         dlg.setOnShowListener {
+            dlg.getButton(android.content.DialogInterface.BUTTON_NEUTRAL).setOnClickListener {
+                confirmRemove(p)
+            }
             dlg.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener {
                 val to = field.text.toString().trim()
                 val r = Profiles.rename(list(), p.name, to, activeName())
@@ -165,6 +171,41 @@ class ProfileDialogs(
             }
         }
         dlg.show()
+    }
+
+    /**
+     * Forget a saved profile, after asking. The host keeps its profile; the phone forgets the
+     * address, key, model and scope, and the profile's own VOX.md goes with them. Refused for
+     * the profile in use — switch first — because a live session would otherwise point at an
+     * address the app no longer has.
+     */
+    private fun confirmRemove(p: Profiles.Profile) {
+        AlertDialog.Builder(activity)
+            .setTitle("Remove ${p.name}?")
+            .setMessage(
+                "This phone forgets its address, key and model, and its VOX.md. The profile " +
+                    "itself stays on the host, and you can add it again by refreshing."
+            )
+            .setPositiveButton("Remove") { _, _ ->
+                val r = Profiles.remove(list(), p.name, activeName())
+                if (r.error != null) {
+                    toast(
+                        if (r.error == Profiles.RemoveError.ACTIVE)
+                            "Switch to another profile first"
+                        else "That profile is no longer saved"
+                    )
+                    return@setPositiveButton
+                }
+                prefs.edit()
+                    .putString(Profiles.PREF_LIST, Profiles.encode(r.list))
+                    .apply()
+                VoxMirror.removeSlot(activity.filesDir, p.name)
+                onRegistryChanged()
+                renderSwitcher()
+                toast("Removed ${p.name} from this phone")
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun renameError(error: Profiles.RenameError?): String = when (error) {
