@@ -86,41 +86,37 @@ Presence it stays off, with one line saying why and where to turn it on.
 #179 (co-residency), #165 (store rail), #249 (render budget). Done in 0.9.1 if achievable;
 otherwise they close in whatever release closes them.
 
-## 0.9.1.3 — the rest of 0.9.1, in one cut
+## 0.9.1.3 — the cleanup cut
 
-Set 2026-11-09 by the owner: **one release, not a train of patches.** The work still owed to 0.9.1
-lands on `testing` as it is ready, and 0.9.1.3 is cut when the batch is coherent — not once per
-item. `versionCode` 150. 0.9.2 stays closed until 0.9.1 is signed off.
+Set 2026-11-10 by the owner: **0.9.1.3 is a cleanup release.** It carries the repairs and the
+polish owed to 0.9.1 and does not wait for a feature. `versionCode` 150.
 
-**In the batch.**
+**In the cut.**
 
-*The voice leg.* #538 (Supersonic demoted, then speech off until `/new`), with #373 and #496 in
-the same investigation. First defect already merged: #549 — an `AudioTrack` that could not be
-built was counted as a dead engine, and spent a one-shot recovery budget.
+- *The voice leg.* #549 (an unbuilt track read as a dead engine), the re-warmed engine adopted
+  by the open reply, the stuck-turn wedge retired, and `event=run-admit` so the next field log
+  can say whether a turn reached the gateway (#553).
+- *A connection named once.* The title is the connection — **Hermes-Agent** for the built-in
+  default, the profile's own label otherwise — and the pill never repeats it (#552).
+- *A saved profile can be removed.* Long-press a row; the host keeps its profile, the phone
+  forgets the address, key, model and VOX.md (#554).
+- *#533 — the profile ask stops travelling on a route with no approval notifier.*
+- *#202 — truncation after a barge-in.*
+- *#413's remaining findings*, each fixed or declined with a reason.
+- *The measurements that need no room full of speech*: #249's render budget and #209's baseline.
 
-*How a connection is named.* The header names the connection once: **Hermes-Agent** for the
-built-in default, the profile's own label otherwise, and the status pill never repeats it. Two
-gaps #174 exposed: a saved row cannot be removed, and a host-side rename leaves a stale row.
+**Moved out of the cut, deliberately.**
 
-*The route that can approve.* #404 flips the turn stream to `/v1/runs`; #376 and #282 are the
-acceptance items that never passed because no approval could reach the phone on the route in use;
-#533 is the same gap in the profile ask.
+- **#228 and #229, continuous listening.** A feature, not a cleanup. It gets its own release, and
+  Presence on by default waits for it.
+- **#404, #376 and #282, the approvals route.** A transport change with a device proof of its
+  own; it is a release, not a patch.
+- **#405's talk-heavy soak.** It needs speech in the room, and the numbers it produces belong to
+  the feature above.
 
-*Continuous listening.* #228 and #229 — the mechanics the rest of Presence rests on, and the one
-item in the batch that is a feature rather than a repair. The behaviours built on them (#217,
-#223, #242, #245) are not built again here; they need the owner's ear.
-
-*The leftovers.* #405, #249, #209, #202, and whatever #413 left declined without a reason.
-
-**Gate for the cut.** The standing checklist in `docs/RELEASE-PROCESS.md`, plus: a Supersonic
-install runs a long call with no silent downgrade; an approval raised by a tool call during an
-ordinary turn is answered by voice and by touch, and a denial stops the run; the header names one
-connection once; and every number quoted in the release note was measured on this build.
-
-**Not in the batch, because it is not code.** #165's F-Droid listing is a merge request in
-somebody else's queue. The acceptance run (#375) and the Presence behaviours (#217, #223, #242, #245) need the owner's
-ear and a device before anything is built on top of them. The 0.9.0.3 upgrade path
-(G3) needs a decision about the test device before it needs a build.
+**Gate for the cut.** The standing checklist, plus: the voice witnesses on a real Supertonic
+call; a removed row gone from a real sheet; an approval-free profile ask that still names what
+the host serves; and every number quoted in the release note measured on this build.
 
 ## 0.9.2 — the gate opens, and whatever we have learned by then
 
