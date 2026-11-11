@@ -647,8 +647,8 @@ class VoiceController(private val context: Context, private val session: HermesS
         // TtsPolicy (requested engine when its model is installed, else the system voice
         // WITH the reason kept), replaces an engine that dies, and is the only thing that
         // ever releases one.
-        // Blessed default: auto-use the best installed on-device voice — Supertonic (the
-        // bake-off winner), else Piper — and System only when neither is present. An explicit
+        // Blessed default: auto-use the best installed on-device voice — Piper (#559: the
+        // consistent one in the field), else Supertonic — and System only when neither is present. An explicit
         // user choice in Settings always wins.
         val host = TtsEngineHost(
             requested = { prefString("tts", ModelCatalog.defaultTts(context)) },

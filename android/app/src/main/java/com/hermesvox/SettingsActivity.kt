@@ -1225,15 +1225,17 @@ class SettingsActivity : AppCompatActivity() {
         }
         findViewById<LinearLayout>(R.id.row_tts).setOnClickListener {
             pick("Text-to-speech",
+                // #559: Piper is recommended, Supertonic experimental — one honest line
+                // each. Both stay selectable; a stored choice is never rewritten.
                 arrayOf(
-                    "Supertonic (on-device, recommended)",
+                    "Piper · en-US (recommended) — most consistent in the field",
+                    "Supertonic (experimental) — may drop words; under investigation",
                     "Piper · fr-FR Siwis (on-device, French)",
                     "Piper · fr-FR Tom (on-device, French)",
                     "Piper · fr-FR UPMC (on-device, French, two voices)",
-                    "Piper · en-US (on-device, lighter)",
                     "System (fallback)"
                 ),
-                arrayOf("supertonic", "piper-siwis", "piper-tom", "piper-upmc", "piper", "system"),
+                arrayOf("piper", "supertonic", "piper-siwis", "piper-tom", "piper-upmc", "system"),
                 "tts", R.id.set_tts_val) { syncSpeakerRow(); previewVoice() }
         }
         // Voice = the SYNTHESIS REGISTER (system/bright/deep). The old "warm"
