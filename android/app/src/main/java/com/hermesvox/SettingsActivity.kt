@@ -641,8 +641,11 @@ class SettingsActivity : AppCompatActivity() {
                     }
                     // The display is not a setting: Save writes the connection, never
                     // the host-derived name back into the request route (`model`).
+                    // L6: never a silent plaintext fallback — the save says so (SecureStore.seal).
+                    val sealed = SecureStore.seal(ekey.text.toString().trim())
+                    if (sealed.degraded) Toast.makeText(this, SecureStore.DEGRADED_LINE, Toast.LENGTH_LONG).show()
                     prefs.edit().putString("url", u)
-                        .putString("key", (SecureStore.encrypt(ekey.text.toString().trim()) ?: ekey.text.toString().trim()))
+                        .putString("key", sealed.stored)
                         .putString(SessionScope.PREF, SessionScope.normalize(escope.text.toString())).apply()
                     // L9 (0.9.1 review): a live call belonged to the connection it opened
                     // on. Saving Entity ends it, exactly as a profile switch does, and the
@@ -1134,7 +1137,9 @@ class SettingsActivity : AppCompatActivity() {
                 " · no certificate (${reason.token})"
             else -> ""
         }
-        findViewById<TextView>(R.id.set_entity_val).text = "$u · ${storedEntityName()} · $who$mtls"
+        // L6: while the stored key is plaintext (the Keystore refused it), the row says so.
+        val plain = if (SecureStore.isDegraded(prefs.getString("key", null))) " · ${SecureStore.DEGRADED_TAG}" else ""
+        findViewById<TextView>(R.id.set_entity_val).text = "$u · ${storedEntityName()} · $who$mtls$plain"
     }
 
     /** The host's adopted name, or the old `model` value until a verify gives one. */
@@ -1779,9 +1784,21 @@ class SettingsActivity : AppCompatActivity() {
         loadSttRemoteFields()
         bindRemoteTextField(R.id.stt_remote_url, KEY_STT_REMOTE_URL) { it.trim() }
         bindRemoteTextField(R.id.stt_remote_model, KEY_STT_REMOTE_MODEL) { it.trim() }
-        bindRemoteTextField(R.id.stt_remote_key, KEY_STT_REMOTE_KEY) { SecureStore.encrypt(it) ?: it }
+        bindRemoteTextField(R.id.stt_remote_key, KEY_STT_REMOTE_KEY) { sealSttKey(it) }
         findViewById<LinearLayout>(R.id.row_test_stt_conn).setOnClickListener { testRemoteStt() }
         refreshSttRemotePanel()
+    }
+
+    /** L6: the STT key saves on every keystroke, so a refused encryption is said once per
+     *  screen, not once per character. The value is still never stored silently in plaintext. */
+    private var sttDegradedShown = false
+    private fun sealSttKey(raw: String): String {
+        val sealed = SecureStore.seal(raw)
+        if (sealed.degraded && !sttDegradedShown) {
+            sttDegradedShown = true
+            Toast.makeText(this, SecureStore.DEGRADED_LINE, Toast.LENGTH_LONG).show()
+        }
+        return sealed.stored
     }
 
     private fun loadSttRemoteFields() {
@@ -1811,7 +1828,7 @@ class SettingsActivity : AppCompatActivity() {
         prefs.edit()
             .putString(KEY_STT_REMOTE_URL, url)
             .putString(KEY_STT_REMOTE_MODEL, model)
-            .putString(KEY_STT_REMOTE_KEY, SecureStore.encrypt(key) ?: key)
+            .putString(KEY_STT_REMOTE_KEY, sealSttKey(key))
             .apply()
         if (sttBaseUrl(url).isBlank()) {
             VoxLog.dd("event=stt-remote-test ok=false reason=no-url")
