@@ -36,6 +36,9 @@ gate, not the name. "Enhanced Realtime" is retired as vocabulary.
 agent actually writes, and a profile's local label can be corrected after its address changes.
 `0.9.1.2` corrects that patch's default rule: only the built-in `default` answers at the host
 root, so a name the gateway does not serve is reported rather than saved.
+`0.9.1.3` is the cleanup cut: the short-reply drain that held calls for two minutes, the readiness
+gate that says what a call is waiting for, Piper as the recommended voice, and the profile and
+Settings repairs.
 
 ## 0.9.1 — the release in acceptance
 

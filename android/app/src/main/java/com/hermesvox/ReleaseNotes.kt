@@ -109,6 +109,20 @@ internal object ReleaseNotes {
             ),
         ),
         ReleaseNote(
+            versionCode = 150,
+            versionName = "0.9.1.3",
+            title = "The cleanup cut",
+            bullets = listOf(
+                "Short replies no longer hold the call. A reply under four seconds of audio could sit on \"The entity is working\" for two minutes; it now starts and finishes in a second or two.",
+                "The call shows what it is waiting for — connecting, loading speech recognition, loading voice models, loading the local model — and goes green when all of it is ready.",
+                "Piper is the recommended voice; Supertonic is marked experimental until its dropped words are understood.",
+                "The screen names the connection once: Hermes-Agent for the built-in default, the profile's label otherwise.",
+                "A saved profile can be removed, and Settings no longer shrinks the call into a small window.",
+                "Mood markers are never spoken aloud.",
+            ),
+        ),
+
+        ReleaseNote(
             versionCode = 149,
             versionName = "0.9.1.2",
             title = "The profile fix, corrected",
