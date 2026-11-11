@@ -78,19 +78,26 @@ object CommRoute {
     private fun selectModern(am: AudioManager): Int {
         val devices = am.availableCommunicationDevices
         val names = devices.joinToString("+") { CommRoutePolicy.name(it.type) }
-        val idx = CommRoutePolicy.bestIndex(IntArray(devices.size) { devices[it].type })
+        val idx = CommRoutePolicy.routeIndex(IntArray(devices.size) { devices[it].type })
         if (idx < 0) {
             VoxLog.d("event=comm-route action=none api=${Build.VERSION.SDK_INT} available=${names.ifEmpty { "none" }}")
             return -1
         }
         val want = devices[idx]
+        // #572: this is a hands-free assistant, not a handset. With no headset attached the
+        // platform default for the communication strategy is the EARPIECE, which is why the
+        // voice played quietly at the phone instead of out loud. The speaker is the answer,
+        // and it is chosen explicitly rather than left to the platform.
+        val headsetAbsent = CommRoutePolicy.bestIndex(IntArray(devices.size) { devices[it].type }) < 0
         val cur = am.communicationDevice
         if (cur != null && cur.type == want.type && selected == want.type) return want.type
         val ok = am.setCommunicationDevice(want)
         selected = if (ok) want.type else -1
         VoxLog.d(
             "event=comm-route action=set ok=$ok type=${CommRoutePolicy.name(want.type)} " +
-                "previous=${cur?.let { CommRoutePolicy.name(it.type) } ?: "default"} available=${names.ifEmpty { "none" }}"
+                "previous=${cur?.let { CommRoutePolicy.name(it.type) } ?: "default"} " +
+                (if (headsetAbsent) "reason=headset-absent " else "") +
+                "available=${names.ifEmpty { "none" }}"
         )
         return selected
     }
@@ -103,8 +110,15 @@ object CommRoute {
         val outs = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
         val names = outs.joinToString("+") { CommRoutePolicy.name(it.type) }
         if (outs.none { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }) {
-            VoxLog.d("event=comm-route action=none api=${Build.VERSION.SDK_INT} outputs=${names.ifEmpty { "none" }}")
-            return -1
+            // #572: no headset — a hands-free call uses the speaker, not the earpiece.
+            @Suppress("DEPRECATION")
+            if (!am.isSpeakerphoneOn) am.isSpeakerphoneOn = true
+            selected = AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+            VoxLog.d(
+                "event=comm-route action=set ok=true type=BUILTIN_SPEAKER reason=headset-absent " +
+                    "api=${Build.VERSION.SDK_INT} outputs=${names.ifEmpty { "none" }}"
+            )
+            return selected
         }
         if (!am.isBluetoothScoOn) {
             am.isBluetoothScoOn = true
@@ -141,6 +155,19 @@ object CommRoutePolicy {
         AudioDeviceInfo.TYPE_USB_HEADSET -> 3
         AudioDeviceInfo.TYPE_WIRED_HEADSET -> 4
         else -> NOT_A_ROUTE
+    }
+
+    /**
+     * The device a call should use: the best headset, else the built-in speaker, else -1.
+     *
+     * The fallback is deliberate (#572). This app is hands-free — the microphone is open for the
+     * whole call — so leaving the platform default means the earpiece, and the voice plays
+     * quietly at the phone instead of out loud.
+     */
+    fun routeIndex(types: IntArray): Int {
+        val headset = bestIndex(types)
+        if (headset >= 0) return headset
+        return types.indexOfFirst { it == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
     }
 
     /** Index of the best-ranked entry in [types], or -1 when nothing there is worth
