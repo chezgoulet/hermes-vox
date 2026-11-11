@@ -262,25 +262,25 @@ short, in first run with where to turn it on. It never selects anything.
 full-screen overlay where the being assembles itself while four legs report
 (android/app/src/main/java/com/hermesvox/CallReadiness.kt `object CallReadiness {`):
 
-| Leg | Its line | Ready when (observed, never simulated) |
+| Leg | Its line (a boot log, not a voice) | Ready when (observed, never simulated) |
 |---|---|---|
-| The mind | *reaching the mind* | a fresh probe for this call answers `conn-test: verdict=ok` |
-| Hearing | *opening my ears* | the recogniser is up (`sttReady=true`) and the VAD, if installed |
-| Voice | *finding my voice* | an engine is warm (`event=tts-ready`), not merely selected |
-| Presence | *waking the rest of me* | `event=presence-load phase=end ok=true` and this profile's VOX.md; **absent** (not green) when Presence is off |
+| The mind | *Connecting to gateway* | a fresh probe for this call answers `conn-test: verdict=ok` |
+| Hearing | *Loading speech recognition* | the recogniser is up (`sttReady=true`) and the VAD, if installed |
+| Voice | *Loading voice models* | an engine is warm (`event=tts-ready`), not merely selected |
+| Presence | *Loading local model* | `event=presence-load phase=end ok=true` and this profile's VOX.md; **absent** (not green) when Presence is off |
 
 Each completed leg adds one structural element around the being, and at green it says
-*here — talk to me* and the call opens underneath the fading overlay
+*Connection established* and the call opens underneath the fading overlay
 (android/app/src/main/java/com/hermesvox/ReadinessOverlay.kt `class ReadinessOverlay(context: Context) : FrameLayout(context) {`).
 
 - **A failure** is said in the app's existing words — a refused voice in the call-refusal line, an
   unreachable gateway in the connection pill's — and offers **Close**, the existing refusal. A
   failure of the mind, the ears or the voice is fatal; Presence failing is not, so **Talk anyway**
-  is offered at once (android/app/src/main/java/com/hermesvox/CallReadiness.kt `PRESENCE("waking the rest of me", "presence is still warming",`).
+  is offered at once (android/app/src/main/java/com/hermesvox/CallReadiness.kt `PRESENCE("Loading local model", "Local model still loading",`).
 - **After 20 s** still waiting (android/app/src/main/java/com/hermesvox/CallReadiness.kt `const val TALK_ANYWAY_MS = 20_000L`) the
   overlay names the leg still coming and offers **Talk anyway** — only when everything missing is
   the mind or Presence; the ears and the voice are never skipped. Talk anyway starts the call and
-  names what is not there ("presence is still warming; asides are off"); Presence is off for that
+  names what is not there ("Local model still loading; presence disabled"); Presence is off for that
   call and the greeting is not held for it (android/app/src/main/java/com/hermesvox/MainActivity.kt `event=call-ready-skip missing=`).
 - The ears and the voice keep the old ~90 s ceiling and its words
   (android/app/src/main/java/com/hermesvox/MainActivity.kt `const val WARM_CEILING_MS = 90_000L`).
@@ -1283,10 +1283,10 @@ log), then match the signature.
   operation. Restarting the app once often clears the hang. There is no setting that fixes a GPU
   the engine cannot use.
 
-### 8.12 A call with Presence on sits on "waking the rest of me" for most of a minute
+### 8.12 A call with Presence on sits on "Loading local model" for most of a minute
 
-- **Signature:** the readiness overlay says *waking the rest of me*, then after 20 s *presence is
-  still warming* with **Talk anyway** (`event=call-ready phase=stalled pending=presence`); on the
+- **Signature:** the readiness overlay says *Loading local model*, then after 20 s *Local model still
+  loading* with **Talk anyway** (`event=call-ready phase=stalled pending=presence`); on the
   older path (a route rebuild) the pill reads "Loading Presence · N s"; `event=presence-load phase=start availMb=…` with a low
   number, then `phase=end ok=true ms=` tens of thousands; around it, the system log shows the low-memory killer
   clearing other apps.
