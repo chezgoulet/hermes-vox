@@ -568,11 +568,11 @@ open class MainActivity : AppCompatActivity() {
         // What's new, once per upgrade, with any breaking-change action attached.
         UpdateBannerView.maybeShow(this, window.decorView, prefs, currentVersionCode()) { alert ->
             when (alert.action) {
-                AlertAction.ENTITY -> startActivity(
+                AlertAction.ENTITY -> openOwnScreen(
                     android.content.Intent(this, SettingsActivity::class.java)
                         .putExtra("section", "entity")   // SettingsActivity.SECTION_ENTITY
                 )
-                AlertAction.MODELS -> startActivity(
+                AlertAction.MODELS -> openOwnScreen(
                     android.content.Intent(this, SettingsActivity::class.java)
                         .putExtra("section", "models")   // SettingsActivity.SECTION_MODELS
                 )
@@ -1137,16 +1137,30 @@ open class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Open another screen or another app without losing the call: PiP first, the start
-     * second ([CallWindow]). This is the funnel `apps.launch` / `open` uses — on 12+ the
-     * system only shrinks us for the caller's own leave gesture, not for a launch the app
-     * performs itself, so the app has to arrange this one. If PiP is unavailable the start
-     * still happens, immediately.
+     * Open **another app** without losing the call: PiP first, the start second
+     * ([CallWindow]). This is the funnel `apps.launch` / `open` uses — on 12+ the system
+     * only shrinks us for the caller's own leave gesture, not for a launch the app performs
+     * itself, so the app has to arrange this one. If PiP is unavailable the start still
+     * happens, immediately. Only for targets outside Vox (a URL, the file picker); our own
+     * screens go through [openOwnScreen].
      */
     private fun launchOutside(start: () -> Unit) {
-        val plan = CallWindow.launch(pipHost, start)
+        val plan = CallWindow.open(pipHost, CallWindow.Target.OUTSIDE, start)
         if (plan.order == CallWindow.Order.PIP_THEN_LAUNCH) {
             VoxLog.d("event=launch pip-first callLive=$callLive posted=${plan.posted}")
+        }
+    }
+
+    /**
+     * Open one of **our own** screens (Settings, Models, …). Never PiP (field-2, item 1):
+     * no manual `enterPip`, and `FLAG_ACTIVITY_NO_USER_ACTION` so the start is not a "user
+     * leaving" — without it 12+ auto-enter and the 26–30 `onUserLeaveHint` path would both
+     * shrink a live call the moment the app starts its own activity.
+     */
+    private fun openOwnScreen(intent: Intent, after: () -> Unit = {}) {
+        CallWindow.open(pipHost, CallWindow.Target.OWN_SCREEN) {
+            startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NO_USER_ACTION))
+            after()
         }
     }
 
@@ -1357,7 +1371,7 @@ open class MainActivity : AppCompatActivity() {
     }
 
     private fun openModelsStore() {
-        launchOutside { startActivity(Intent(this, ModelsActivity::class.java)) }
+        openOwnScreen(Intent(this, ModelsActivity::class.java))
     }
 
     private fun showModelsEmptyState() {
@@ -2913,8 +2927,7 @@ open class MainActivity : AppCompatActivity() {
         else -> null
     }
 
-    private fun openSettings() = launchOutside {
-        startActivity(Intent(this, SettingsActivity::class.java))
+    private fun openSettings() = openOwnScreen(Intent(this, SettingsActivity::class.java)) {
         overridePendingTransition(R.anim.slide_in, R.anim.fade_out)
     }
 
