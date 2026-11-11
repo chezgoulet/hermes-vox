@@ -2402,8 +2402,11 @@ class SettingsActivity : AppCompatActivity() {
     /** DEBUG-ONLY (#275/#225 convention): make a capture deterministic without taps.
      *  Extras: `section` (already honoured), `being_advanced` (open the fine-look panel),
      *  `preview_state` (hold the preview on idle|listening|thinking|speaking) and `scroll_to`
-     *  (a row or seek-bar resource name to scroll the section to). Inert in a release build,
-     *  because it is guarded by the same FLAG_DEBUGGABLE test MainActivity's harness uses. */
+     *  (a row or seek-bar resource name to scroll the section to). M3: these extras only ever
+     *  arrive from DebugHarnessActivity (debug source set, DUMP-gated); this activity is not
+     *  exported, so no other app can deliver them, and in release the FLAG_DEBUGGABLE test
+     *  below makes the method inert. It changes only what the screen shows — no endpoint,
+     *  key, turn or file. */
     private fun applyDebugHarness() {
         if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) == 0) return
         intent?.getStringExtra("being_advanced")?.let { want ->

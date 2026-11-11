@@ -195,7 +195,7 @@ class HermesSession(baseURL: String, apiKey: String, model: String) {
      * its id. The approval is then read from the run's status, not from this call — the
      * model has to reach the flagged command first.
      *
-     * Blocks. Reachable only from the FLAG_DEBUGGABLE intent harness.
+     * Blocks. Reachable only from the debug harness (DebugHarnessActivity, debug source set, DUMP-gated; absent from release).
      */
     internal fun startArmRun(input: String): String = gateway.startRun(input)
 

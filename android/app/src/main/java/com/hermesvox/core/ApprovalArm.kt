@@ -49,8 +49,8 @@ package com.hermesvox.core
  *
  * This object is pure JVM so the wire reading is pinned by unit tests; the Android edges
  * (place the run, poll, show the card) live in [VoiceController.armApproval]. The whole
- * path is reachable ONLY from the FLAG_DEBUGGABLE intent harness in `MainActivity`, never
- * from a shipped surface.
+ * path is reachable ONLY from the debug harness (`DebugHarnessActivity`, debug source set,
+ * DUMP-gated, absent from the release APK), never from a shipped surface.
  */
 internal object ApprovalArm {
 

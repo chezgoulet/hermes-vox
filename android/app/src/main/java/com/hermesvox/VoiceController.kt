@@ -1900,7 +1900,7 @@ class VoiceController(private val context: Context, private val session: HermesS
      * run lane parks the request in the run's own state; the card must outlive the poller,
      * and it does — [ApprovalGate] owns it from [approvalArrived] on.
      *
-     * Reachable only from the FLAG_DEBUGGABLE intent harness.
+     * Reachable only from the debug harness (DebugHarnessActivity, debug source set, DUMP-gated; absent from release).
      */
     fun armApproval(runId: String) {
         if (runId.isEmpty()) return
