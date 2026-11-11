@@ -18,7 +18,7 @@ class CallReadinessTest {
     fun nothing_reported_is_not_green_and_says_the_first_leg() {
         val v = Gate(presence = true).view(early)
         assertEquals(Phase.ASSEMBLING, v.phase)
-        assertEquals("reaching the mind", v.line)
+        assertEquals("Connecting to gateway", v.line)
         assertTrue(v.ready.isEmpty())
         assertFalse(v.talkAnyway)
     }
@@ -29,7 +29,7 @@ class CallReadinessTest {
         g.report(Leg.MIND, true); g.report(Leg.HEARING, true); g.report(Leg.VOICE, true)
         val v = g.view(early)
         assertEquals(Phase.ASSEMBLING, v.phase)
-        assertEquals("waking the rest of me", v.line)
+        assertEquals("Loading local model", v.line)
         assertEquals(3, v.ready.size)
         g.report(Leg.PRESENCE, true)
         assertEquals(Phase.GREEN, g.view(early).phase)
@@ -53,9 +53,9 @@ class CallReadinessTest {
     fun the_lines_follow_the_legs_in_order() {
         val g = Gate(presence = true)
         g.report(Leg.MIND, true)
-        assertEquals("opening my ears", g.view(early).line)
+        assertEquals("Loading speech recognition", g.view(early).line)
         g.report(Leg.HEARING, true)
-        assertEquals("finding my voice", g.view(early).line)
+        assertEquals("Loading voice models", g.view(early).line)
     }
 
     @Test
@@ -66,9 +66,9 @@ class CallReadinessTest {
         val v = g.view(late)
         assertEquals(Phase.STALLED, v.phase)
         assertEquals(Leg.PRESENCE, v.pending)
-        assertEquals("presence is still warming", v.line)
+        assertEquals("Local model still loading", v.line)
         assertTrue(v.talkAnyway)
-        assertEquals("presence is still warming; asides are off", v.missing)
+        assertEquals("Local model still loading; presence disabled", v.missing)
     }
 
     @Test
@@ -87,7 +87,7 @@ class CallReadinessTest {
         g.report(Leg.HEARING, true); g.report(Leg.VOICE, true)
         val v = g.view(late)
         assertTrue(v.talkAnyway)
-        assertTrue(v.missing.startsWith("the mind has not answered yet"))
+        assertTrue(v.missing.startsWith("Gateway not responding"))
     }
 
     @Test

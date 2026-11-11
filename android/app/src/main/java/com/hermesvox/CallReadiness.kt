@@ -35,7 +35,7 @@ object CallReadiness {
     const val TALK_ANYWAY_MS = 20_000L
 
     enum class Leg(
-        /** The being's own line while this leg is the one it is waiting on. */
+        /** The boot line while this leg is the one the gate is waiting on. */
         val waiting: String,
         /** Said after the wait has run long, naming the leg still coming. */
         val still: String,
@@ -46,14 +46,14 @@ object CallReadiness {
         /** Its failure ends the attempt (only the refusal is offered). */
         val fatal: Boolean,
     ) {
-        MIND("reaching the mind", "the mind has not answered yet",
-            "the mind has not answered yet; your first words may wait", skippable = true, fatal = true),
-        HEARING("opening my ears", "my ears are still opening",
-            "the recogniser is still loading", skippable = false, fatal = true),
-        VOICE("finding my voice", "my voice is still warming",
-            "the voice is still warming", skippable = false, fatal = true),
-        PRESENCE("waking the rest of me", "presence is still warming",
-            "presence is still warming; asides are off", skippable = true, fatal = false),
+        MIND("Connecting to gateway", "Gateway not responding",
+            "Gateway not responding; the first turn may queue", skippable = true, fatal = true),
+        HEARING("Loading speech recognition", "Speech recognition still loading",
+            "Speech recognition still loading", skippable = false, fatal = true),
+        VOICE("Loading voice models", "Voice models still loading",
+            "Voice models still loading", skippable = false, fatal = true),
+        PRESENCE("Loading local model", "Local model still loading",
+            "Local model still loading; presence disabled", skippable = true, fatal = false),
     }
 
     enum class State { WAITING, READY, FAILED }
@@ -87,7 +87,7 @@ object CallReadiness {
     }
 
     /** The line the being says when the gate goes green. */
-    const val GREEN_LINE = "here — talk to me"
+    const val GREEN_LINE = "Connection established"
 
     /** The gate for one call start. [presence]: Presence is on and can arrive this call. */
     class Gate(presence: Boolean) {

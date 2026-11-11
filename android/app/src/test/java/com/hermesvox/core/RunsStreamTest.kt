@@ -867,7 +867,10 @@ data: {"event":"run.completed","run_id":"run_b","seq":1,"completed":true,"output
                 assertEquals("", Json.str(p, "error"))
                 assertEquals(2, at.size)
                 val gapMs = (at[1] - at[0]) / 1_000_000
-                assertTrue("the reattach came ${gapMs} ms after the drop; the floor is 200 ms", gapMs >= 200)
+                // #565: the delay is 200 ms, but a scheduler may deliver a hair early and the
+                // nanosecond diff truncates, so the assertion allows 5% under. It still fails
+                // loudly if the backoff is removed (that lands in single-digit ms).
+                assertTrue("the reattach came ${gapMs} ms after the drop; the floor is 200 ms", gapMs >= 190)
             }
         } finally {
             Streams.reattachBaseMs = oldBase
