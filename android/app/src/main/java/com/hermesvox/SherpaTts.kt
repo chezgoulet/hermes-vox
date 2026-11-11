@@ -23,6 +23,11 @@ import kotlin.concurrent.thread
  * ~10x faster than real time on a desktop CPU with two threads (RTF 0.10-0.15), 44.1 kHz, ten
  * built-in voices, and every word of the test sentence intact on eight of ten voices. Kokoro
  * int8 was slower than real time; Pocket TTS dropped and misheard words.
+ *
+ * #559 reversed the recommendation from the field: on a Pixel 9, Supertonic dropped words
+ * through an ordinary call while Piper on the same call did not (Supertonic's chunks ran
+ * 56–126 characters against Piper's 19–29; chunking vs the model is not yet separated).
+ * PIPER is the recommended voice and the fresh-install default; SUPERTONIC is experimental.
  */
 enum class SherpaVoice(val modelId: String, val displayName: String) {
     PIPER("piper-lessac", "Piper"),

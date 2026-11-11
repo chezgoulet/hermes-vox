@@ -319,6 +319,8 @@ class SettingsHintsTest {
             "MemoryBudget.PREF_HEARS",
             "MemoryBudget.PREF_LAZY_LOAD",
             "MemoryBudget.PREF_IDLE_OPEN_MIN",
+            // "Keep presence warm while charging" — a Presence row, off by default.
+            "MemoryBudget.PREF_WARM_CHARGING",
             // ModelCatalog.KEY_SOURCE left deliberately (UI/UX pass): the one-row "Voice models"
             // section and its restore are gone; the store's own "Use default" resets the source.
             "ModelCatalog.KEY_STT_BACKEND",

@@ -647,8 +647,8 @@ class VoiceController(private val context: Context, private val session: HermesS
         // TtsPolicy (requested engine when its model is installed, else the system voice
         // WITH the reason kept), replaces an engine that dies, and is the only thing that
         // ever releases one.
-        // Blessed default: auto-use the best installed on-device voice — Supertonic (the
-        // bake-off winner), else Piper — and System only when neither is present. An explicit
+        // Blessed default: auto-use the best installed on-device voice — Piper (#559: the
+        // consistent one in the field), else Supertonic — and System only when neither is present. An explicit
         // user choice in Settings always wins.
         val host = TtsEngineHost(
             requested = { prefString("tts", ModelCatalog.defaultTts(context)) },
@@ -777,6 +777,17 @@ class VoiceController(private val context: Context, private val session: HermesS
      *  readiness is deliberately not part of warmth — a broken output leg must not keep
      *  the call from starting (#330). Use [ttsStatus]/[callGate] to report it separately. */
     fun isWarm() = sttReady && (vad?.isAvailable != false) && (ttsHost?.state?.settled != false)
+
+    /** The readiness gate's hearing leg: the recogniser answered ready (`sttReady=true`) and
+     *  the VAD, when one is installed, is up. Observed state only. */
+    fun hearingReady(): Boolean = sttReady && (vad?.isAvailable != false)
+
+    /** The readiness gate's voice leg: an engine is warm (`event=tts-ready`), not merely
+     *  selected. */
+    fun voiceWarm(): Boolean = ttsHost?.state?.speaking == true
+
+    /** The voice leg's refusal in TtsPolicy's own words, or null while it is not refused. */
+    fun voiceRefusal(): String? = callGate().takeIf { !it.starts }?.line
 
     /** Non-empty when spoken replies are unavailable, with the reason to show the user. */
     fun ttsStatus(): String = if (ttsReady) "" else ttsIssue.ifBlank { "text-to-speech unavailable" }

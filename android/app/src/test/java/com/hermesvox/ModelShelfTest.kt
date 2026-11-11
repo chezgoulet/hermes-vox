@@ -31,8 +31,8 @@ class ModelShelfTest {
 
     private fun catalogue() = listOf(
         spec("gemma", "express", 5),
-        spec("supertonic", "tts", 4, recommended = true),
-        spec("piper", "tts", 2),
+        spec("supertonic", "tts", 2),
+        spec("piper", "tts", 4, recommended = true),
         spec("whisper", "stt", 3, recommended = true),
         spec("vad", "vad", 1, recommended = true)
     )
@@ -52,7 +52,7 @@ class ModelShelfTest {
     @Test
     fun the_recommended_model_comes_first_inside_a_shelf() {
         val voice = ModelShelf.groups(catalogue()).first { it.key == ModelShelf.VOICE }
-        assertEquals(listOf("supertonic", "piper"), voice.specs.map { it.id })
+        assertEquals(listOf("piper", "supertonic"), voice.specs.map { it.id })
     }
 
     @Test

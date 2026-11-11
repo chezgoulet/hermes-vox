@@ -191,7 +191,7 @@ answer. State it plainly, in these words; none of them is a bug report.
 | 3a | STT alternative | **remote** | optional OpenAI-compatible server; audio is POSTed to the URL the user typed | (android/app/src/main/java/com/hermesvox/RemoteStt.kt `audio never leaves the`) |
 | 3b | STT alternative | **remote (platform)** | Android `SpeechRecognizer`; the device's provider may process audio off-device — do not call it local | (android/app/src/main/java/com/hermesvox/VoiceController.kt `createSpeechRecognizer`) |
 | 4 | The mind | **remote** | your Hermes gateway: `POST /v1/runs` by default (a body `session_id` continues the conversation), falling back to `POST /v1/responses` on a 404, chained by `previous_response_id` | (docs/ARCHITECTURE.md `Only an admission that answers **404** falls back to this route, once.`) (android/app/src/main/java/com/hermesvox/core/HermesSession.kt `* previous_response_id on the next turn.`) |
-| 5 | TTS | on-device | Supertonic (recommended), Piper, or the System voice as fallback | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `defaultTts`) |
+| 5 | TTS | on-device | Piper (recommended — most consistent in the field), Supertonic (experimental — may drop words; under investigation), or the System voice as fallback | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `fun defaultTtsOf(`) |
 | 6 | Presence (optional) | on-device | Gemma 4 E2B via LiteRT-LM on the GPU; speaks asides in the agent's mirrored voice | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec("gemma-e2b", "Gemma 4 E2B (presence)", "express", "gemma-4-E2B-it.litertlm", 2588.1,`) |
 | 7 | Avatar + words | on-device | GPU-drawn being and the speech-locked crawl | (docs/ARCHITECTURE.md `6,000 stateless particles`) |
 | 8 | Phone actions | on-device engine, plus a tailnet MCP listener while a call is live | timers, alarms, do-not-disturb, volume, media, device state, clipboard, files, calendar, a contacts lookup by name, the installed-apps list, notifications (a counts-per-app summary while a call is live, one notification's content by id, and dismissal), and handoffs: a text is composed for the owner's messaging app, the dialer opens with a number ready, apps launch or open, and an uninstall opens Android's own confirmation. **The phone takes no turns of its own**: every voice turn goes to the mind, which acts through one MCP tool and gets a result back. The one phrase it matches locally is an approval answer — a few words, never a search over a sentence (android/app/src/main/java/com/hermesvox/core/Approval.kt `never a phrase search over a sentence`). Nothing is sent or dialled by Vox. Every capability group is Off until the owner grants it, and the schema offers only what is granted | (android/app/src/main/java/com/hermesvox/PhoneEngine.kt `fun registry(`) (android/app/src/main/java/com/hermesvox/PhoneGrants.kt `val GROUPS: List<Group> = listOf(`) (android/app/src/main/java/com/hermesvox/AppsAccess.kt `const val ACTION_APPS = "apps"`) (android/app/src/main/java/com/hermesvox/PhoneNotifications.kt `const val ACTION_DISMISS = "notification_dismiss"`) |
@@ -255,6 +255,36 @@ off and says so in the Alpha panel
 (android/app/src/main/java/com/hermesvox/MainActivity.kt `event=hw-check stage=first-load`).
 It only advises: the verdict appears in the Alpha panel under Presence and, when the phone falls
 short, in first run with where to turn it on. It never selects anything.
+
+### Starting a call: the readiness gate
+
+**A call does not go green until everything is ready, Presence included.** Pressing call shows a
+full-screen overlay where the being assembles itself while four legs report
+(android/app/src/main/java/com/hermesvox/CallReadiness.kt `object CallReadiness {`):
+
+| Leg | Its line | Ready when (observed, never simulated) |
+|---|---|---|
+| The mind | *reaching the mind* | a fresh probe for this call answers `conn-test: verdict=ok` |
+| Hearing | *opening my ears* | the recogniser is up (`sttReady=true`) and the VAD, if installed |
+| Voice | *finding my voice* | an engine is warm (`event=tts-ready`), not merely selected |
+| Presence | *waking the rest of me* | `event=presence-load phase=end ok=true` and this profile's VOX.md; **absent** (not green) when Presence is off |
+
+Each completed leg adds one structural element around the being, and at green it says
+*here — talk to me* and the call opens underneath the fading overlay
+(android/app/src/main/java/com/hermesvox/ReadinessOverlay.kt `class ReadinessOverlay(context: Context) : FrameLayout(context) {`).
+
+- **A failure** is said in the app's existing words — a refused voice in the call-refusal line, an
+  unreachable gateway in the connection pill's — and offers **Close**, the existing refusal. A
+  failure of the mind, the ears or the voice is fatal; Presence failing is not, so **Talk anyway**
+  is offered at once (android/app/src/main/java/com/hermesvox/CallReadiness.kt `PRESENCE("waking the rest of me", "presence is still warming",`).
+- **After 20 s** still waiting (android/app/src/main/java/com/hermesvox/CallReadiness.kt `const val TALK_ANYWAY_MS = 20_000L`) the
+  overlay names the leg still coming and offers **Talk anyway** — only when everything missing is
+  the mind or Presence; the ears and the voice are never skipped. Talk anyway starts the call and
+  names what is not there ("presence is still warming; asides are off"); Presence is off for that
+  call and the greeting is not held for it (android/app/src/main/java/com/hermesvox/MainActivity.kt `event=call-ready-skip missing=`).
+- The ears and the voice keep the old ~90 s ceiling and its words
+  (android/app/src/main/java/com/hermesvox/MainActivity.kt `const val WARM_CEILING_MS = 90_000L`).
+- A mid-call audio-route rebuild never shows the gate; it is armed by a call start only.
 
 ---
 
@@ -384,7 +414,7 @@ the section's own refusal cannot disagree.
 
 | UI | Key | Default | What it changes | Reference |
 |---|---|---|---|---|
-| Text-to-speech | `tts` | unset → best installed (`supertonic` → `piper` → a fr-FR voice → `system`) | Which engine speaks | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `fun defaultTts`) |
+| Text-to-speech | `tts` | unset → best installed (`piper` → `supertonic` → a fr-FR voice → `system`); a stored choice is never rewritten | Which engine speaks | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `fun defaultTts(`) (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `"piper-lessac" to "piper",`) |
 | Delivery | `voice` | `system` (shown as "Natural") | Synthesis register: Natural / Bright / Deep | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `private fun deliveryLabel(): String = when (prefs.getString("voice", "system")) {`) |
 | Speaker | `tts_speaker_<model>` | Supertonic F2 (id 1), Piper 0 | The engine's built-in voice, per engine. UPMC has two (Jessica, Pierre); Siwis and Tom have one, so their row hides | (android/app/src/main/java/com/hermesvox/VoiceSpeakers.kt `fun defaultId(engine: SherpaVoice): Int = when (engine) {`) |
 | Speak responses | `speak_responses` | true | Whether replies are voiced at all | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `speak.isChecked = prefs.getBoolean("speak_responses", true)`) |
@@ -400,6 +430,7 @@ voice replies at all) stays device-wide: it is about how you use the phone, not 
 |---|---|---|---|---|
 | Presence | `presence_enabled` | true | The layer itself: the being, its voice and its asides. The switch is on by default but applies only behind the Alpha gate; it runs only when the model is downloaded and able to start | (android/app/src/main/java/com/hermesvox/PresenceGate.kt `const val KEY_PRESENCE_ENABLED = "presence_enabled"`) |
 | Soul narration | `er_presence` | true | Presence's spoken asides (mm, breath, fillers); off keeps the layer wired but quiet | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `swPresence.isChecked = prefs.getBoolean("er_presence", true)`) |
+| Keep presence warm while charging | `presence_warm_charging` | false | On, with the phone charging and no call live, the presence engine loads and stays resident — no idle release while the charger is in — so a call starts warm instead of paying a 5.6 s median (13 s measured) cold load. **It costs ≈2.6 GB of memory while charging** (model file 2,588 MB, ~2,646 MB PSS loaded). Off the charger it follows the ordinary idle rules (the same release a hangup arms) | (android/app/src/main/java/com/hermesvox/MemoryBudget.kt `const val PREF_WARM_CHARGING = "presence_warm_charging"`) (android/app/src/main/java/com/hermesvox/MemoryBudget.kt `fun chargeWarm(setting: Boolean, charging: Boolean, presenceActive: Boolean, callLive: Boolean): ChargeWarm = when {`) (android/app/src/main/java/com/hermesvox/MainActivity.kt `g.requestUnload("charge-off")`) |
 | Semantic barge-in | `er_semantic_barge` | true | Lets "take your time" keep the mind working instead of cancelling it | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `swBarge.isChecked = prefs.getBoolean("er_semantic_barge", true)`) |
 | Narration voice | `er_presence_voice` | `sounds` | `silent` (motion only), `sounds` (mm/breath clips), `spoken` (sentence fillers) | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `val cur = prefs.getString("er_presence_voice", "sounds") ?: "sounds"`) |
 | Presence while working | `er_presence_density` | `conversational` | How often Presence speaks during a long mind run: quiet 30 s / conversational 18 s / chatty 10 s intervals, with caps | (android/app/src/main/java/com/hermesvox/PresenceCadence.kt `val DEFAULT = Density.CONVERSATIONAL`) |
@@ -823,6 +854,8 @@ add it with a reference; if it contradicts a row here, the code wins.
 
 | Event | Meaning | Bad values | Reference |
 |---|---|---|---|
+| `event=call-ready` | The readiness gate: `phase=open legs=…`, then one line per change — `phase=` (`assembling`, `stalled`, `failed`, `green`), `ready=`, `pending=`, `failed=`, `waitedMs=`; `phase=closed` when the caller closed it | `phase=stalled pending=presence` on every call = the engine is cold at call time (see "Keep presence warm while charging") | (android/app/src/main/java/com/hermesvox/CallReadiness.kt `"event=call-ready phase=${v.phase.name.lowercase()} " +`) |
+| `event=call-ready-talk-anyway` / `event=call-ready-skip` | The caller started without a leg; `missing=` names it | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt `event=call-ready-talk-anyway waitedMs=`) |
 | `event=call-end` | The call closed; `callLive` says whether it was live | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt `VoxLog.d("event=call-end callLive=$callLive")`) |
 | `event=activity-stop` | The activity stopped; `reason=no-live-call controller-stopped` is normal | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt `activity-stop`) |
 | `event=fg-service` | Foreground service created/started/destroyed | `startForeground-failed` | (android/app/src/main/java/com/hermesvox/VoiceService.kt `VoxLog.d("event=fg-service start id=$startId")`) |
@@ -937,7 +970,8 @@ add it with a reference; if it contradicts a row here, the code wins.
 | Event | Meaning | Bad values | Reference |
 |---|---|---|---|
 | `event=er-soul` | The soul decided for a turn: `kind=` (turn/greeting/working), `decision=`, `chars=`, `heard=`, `mood=`, `ms=` | `decision=escalate` on every turn = the layer is doing nothing; high `ms=` = slow render | (android/app/src/main/java/com/hermesvox/MainActivity.kt `er-soul kind=`) |
-| `event=presence-unload` | The presence Engine was released: `reason=` one of `call-end` (immediate arm, dev pref), `idle` (the delayed arm's timer), `presence-off`, `released=`, `availMb=` after the close | Never fires on a shipped build — both release arms are off by default | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt `synchronized(loadLock) { if (loading) { VoxLog.d("event=presence-unload reason=$reason skipped=loading"); return } }`) |
+| `event=presence-unload` | The presence Engine was released: `reason=` one of `call-end` (immediate arm, dev pref), `idle` (the delayed arm's timer), `presence-off`, `released=`, `availMb=` after the close. Load and unload are one guarded transition (#560): `released=true` only when no load is in flight; an unload asked for during a load logs `released=false skipped=loading` and releases nothing | `released=true` followed by a `presence-load phase=end ok=true` that started before it = the #560 race is back | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt `VoxLog.d("event=presence-unload reason=$reason released=false skipped=loading"); false`) (android/app/src/main/java/com/hermesvox/PresenceLifecycle.kt `fun unloadFinished(): List<W>`) |
+| `event=presence-load phase=queued` / `phase=cancelled` | A load asked for while the engine was being released waits (`queued reason=unloading`) and is then cancelled by the release (`cancelled reason=unload-<reason>`), never started — the unload wins; a call start asks again and gets a clean load | `queued` with no `cancelled` after it = a waiter was lost | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt `event=presence-load phase=queued reason=unloading`) (android/app/src/main/java/com/hermesvox/GemmaExpress.kt `event=presence-load phase=cancelled reason=unload-$reason`) |
 | `event=presence-unload-arm` | The delayed arm was armed at hangup: `trigger=call-end`/`presence-off`, `minutes=` | Fires and is never followed by `-due` or `-cancel` = the timer died | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt `event=presence-unload-arm trigger=`) |
 | `event=memory-budget` | The dev memory dialog was applied: `kv=` (2048/4096/8192, applies on the next presence load), `unload=`, `idleMin=` | Any `kv=` other than the arm a run believes it is in = the measurement is misattributed | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `event=memory-budget`) |
 | `event=presence-unload-cancel` | A pending release was called off: `reason=call-start` (a redial inside the window, the case the arm exists for), `presence-load`, `policy-keep`, `policy-on-hangup` | — | (android/app/src/main/java/com/hermesvox/GemmaExpress.kt `event=presence-unload-cancel reason=`) |
@@ -1042,19 +1076,19 @@ resumable over HTTP `Range` and refuses to install on a hash mismatch
 "Required" and "recommended" are the **same set** everywhere — the Settings badge, the store
 header and the install-all button all count the same three models
 (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `val required`). That set is
-Silero VAD, Supertonic and Whisper base.en: the offline voice needs all three
+Silero VAD, Piper (en-US) and Whisper base.en: the offline voice needs all three
 (android/app/src/main/java/com/hermesvox/ModelsActivity.kt `ModelCatalog.required.filter { !ModelCatalog.isInstalled(this, it.id) }`).
 
 | Model id | Kind | Download | Required? | Notes | Reference |
 |---|---|---|---|---|---|
 | `silero-vad` | VAD | 0.6 MB | **yes** | Speech start/stop; without it barge-in is level-only | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec("silero-vad", "Silero VAD", "vad", "silero_vad.onnx", 0.6,`) |
-| `supertonic` | TTS | 84.7 MB | **yes** | Ten voices at 44.1 kHz; the recommended voice | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec("supertonic", "Supertonic · 10 voices (44.1 kHz)", "tts", "sherpa-onnx-supertonic-tts-int8-2026-03-06.tar.bz2", 84.7,`) |
+| `supertonic` | TTS | 84.7 MB | no | Ten voices at 44.1 kHz; **experimental** — may drop words; under investigation (#559) | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec("supertonic", "Supertonic · 10 voices (44.1 kHz)", "tts", "sherpa-onnx-supertonic-tts-int8-2026-03-06.tar.bz2", 84.7,`) |
 | `whisper-base` | STT | 208.6 MB | **yes** | The blessed default recogniser | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec("whisper-base", "Whisper base.en", "stt", "sherpa-onnx-whisper-base.en.tar.bz2", 208.6,`) |
 | `whisper-tiny` | STT | 118.1 MB | no | Fastest, least accurate | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec("whisper-tiny", "Whisper tiny.en", "stt", "sherpa-onnx-whisper-tiny.en.tar.bz2", 118.1,`) |
 | `whisper-small` | STT | 635.7 MB | no | Most accurate Whisper, heaviest | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec("whisper-small", "Whisper small.en", "stt", "sherpa-onnx-whisper-small.en.tar.bz2", 635.7,`) |
 | `parakeet-v2` | STT | 482.5 MB | no | Measured best accuracy+speed on the host bench; larger resident set, so not the default | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec("parakeet-v2", "Parakeet TDT 0.6B v2 (int8)", "stt", "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8.tar.bz2", 482.5,`) |
 | `nemotron-stream-160ms` | STT (streaming) | 463.9 MB | no | Opt-in streaming arm; ~900 MB resident. **Licence gate** | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec(NEMOTRON_STREAM_ID, "Nemotron Speech Streaming 0.6B (160 ms, int8)", "stt",`) |
-| `piper-lessac` | TTS | 82.0 MB | no | Lighter alternative voice (904 speakers, 8 curated in the picker) | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec("piper-lessac", "Piper · en-US (LibriTTS-R, medium)", "tts", "vits-piper-en_US-libritts_r-medium.tar.bz2", 82.0,`) |
+| `piper-lessac` | TTS | 82.0 MB | **yes** | **The recommended voice** — most consistent in the field (904 speakers, 8 curated in the picker) | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec("piper-lessac", "Piper · en-US (LibriTTS-R, medium)", "tts", "vits-piper-en_US-libritts_r-medium.tar.bz2", 82.0,`) |
 | `piper-siwis` | TTS (fr-FR) | 67.2 MB | no | French voice, CC BY 4.0, one speaker; card in the row | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec("piper-siwis", "Piper · fr-FR (Siwis, medium)", "tts", "vits-piper-fr_FR-siwis-medium.tar.bz2", 67.2,`) |
 | `piper-tom` | TTS (fr-FR) | 67.2 MB | no | French voice, **AGPLv3** (not CC0), one speaker | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec("piper-tom", "Piper · fr-FR (Tom, medium)", "tts", "vits-piper-fr_FR-tom-medium.tar.bz2", 67.2,`) |
 | `piper-upmc` | TTS (fr-FR) | 80.4 MB | no | French voice, CC BY-SA 4.0, **two speakers** (Jessica, Pierre) | (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `ModelSpec("piper-upmc", "Piper · fr-FR (UPMC, medium)", "tts", "vits-piper-fr_FR-upmc-medium.tar.bz2", 80.4,`) |
@@ -1249,17 +1283,21 @@ log), then match the signature.
   operation. Restarting the app once often clears the hang. There is no setting that fixes a GPU
   the engine cannot use.
 
-### 8.12 A call with Presence on sits on "Loading Presence" for most of a minute
+### 8.12 A call with Presence on sits on "waking the rest of me" for most of a minute
 
-- **Signature:** the pill reads "Loading Presence · N s"; `event=presence-load phase=start availMb=…` with a low
+- **Signature:** the readiness overlay says *waking the rest of me*, then after 20 s *presence is
+  still warming* with **Talk anyway** (`event=call-ready phase=stalled pending=presence`); on the
+  older path (a route rebuild) the pill reads "Loading Presence · N s"; `event=presence-load phase=start availMb=…` with a low
   number, then `phase=end ok=true ms=` tens of thousands; around it, the system log shows the low-memory killer
   clearing other apps.
 - **Cause:** the phone is short of memory, so loading Presence's model (about 2.5 GB) waits while Android frees
   room — measured at ~50 s on an 8 GB Pixel 7 whose other apps held a 2.5 GB model of their own.
-  It is not a hang. After 20 s the pill adds "tap to start without it" (android/app/src/main/java/com/hermesvox/PresenceWait.kt `const val OFFER_SKIP_MS = 20_000L`),
+  It is not a hang. After 20 s the overlay offers **Talk anyway** (the older pill adds "tap to start without it" (android/app/src/main/java/com/hermesvox/PresenceWait.kt `const val OFFER_SKIP_MS = 20_000L`),
   which opens the call with Presence joining when it is ready
-  (android/app/src/main/java/com/hermesvox/MainActivity.kt `event=presence-skip`).
-- **What to do:** close other heavy apps (on-device AI apps especially), or turn Presence off on that phone.
+  (android/app/src/main/java/com/hermesvox/MainActivity.kt `event=presence-skip`)); Talk anyway
+  instead keeps Presence off for that call and says so.
+- **What to do:** close other heavy apps (on-device AI apps especially), turn on **Keep presence warm
+  while charging**, or turn Presence off on that phone.
 
 ### 8.13 The text on screen runs ahead of (or behind) the voice
 

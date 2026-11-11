@@ -356,7 +356,7 @@ internal class TtsEngineHost(
         if (wanted != null && wanted != current && modelPresent(wanted)) return wanted
         // An explicit "system" preference still has a usable local voice installed: the
         // point of a degradation is that SOMETHING speaks, and the line names it.
-        return listOf("supertonic", "piper").firstOrNull { it != current && modelPresent(it) }
+        return listOf("piper", "supertonic").firstOrNull { it != current && modelPresent(it) }
     }
 
     /**
