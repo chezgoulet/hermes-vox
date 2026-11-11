@@ -19,6 +19,17 @@ import java.net.URI
  *
  * [tunnelUp] is injected (VoxApplication wires it to Tailnet) so the rule is pure and the
  * whole matrix is proven off-device in `CleartextPolicyTest`.
+ *
+ * Residual risk (#413 second pass, recorded rather than closed):
+ *  * "Tunnel up" is `Tailnet.address() != null`: some non-radio interface holds a
+ *    100.64.0.0/10 or fd7a:115c:a1e0::/48 address. That is a heuristic, not a check of
+ *    Tailscale's own tunnel. A VPN that also numbers its tun from CGNAT (Cloudflare WARP)
+ *    would read as up, so `http://` to a `*.ts.net` name would be allowed with Tailscale
+ *    down. This is the open #413 L8 question, unverified on a WARP device.
+ *  * The ts.net domain-config still trusts user-installed CAs for `*.ts.net`.
+ *  * LAN policy is unchanged by M4 and deliberately not touched here: the network
+ *    security config's base-config already refuses cleartext to every non-ts.net host.
+ * `https://` via `tailscale serve` with a system-trusted certificate removes the first two.
  */
 object CleartextPolicy {
 

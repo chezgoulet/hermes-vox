@@ -74,7 +74,8 @@ internal class GatewayClient(private val baseURL: String, private val apiKey: St
      * is `/v1/responses`, which on gateway 0.22.6 does not bridge approval requests at all;
      * `/v1/runs` does, and answers them through the same run id — see [ApprovalArm].
      *
-     * Debug-only by construction: the only caller is the FLAG_DEBUGGABLE arm.
+     * Debug-only by construction: the only caller is the arm in
+     * the debug harness (DebugHarnessActivity, debug source set, DUMP-gated; absent from release).
      */
     fun startRun(input: String): String {
         val body = Json.encode(linkedMapOf<String, Any?>("input" to input)).toByteArray(Charsets.UTF_8)

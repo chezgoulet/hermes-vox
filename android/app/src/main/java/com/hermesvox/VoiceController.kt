@@ -1900,7 +1900,7 @@ class VoiceController(private val context: Context, private val session: HermesS
      * run lane parks the request in the run's own state; the card must outlive the poller,
      * and it does — [ApprovalGate] owns it from [approvalArrived] on.
      *
-     * Reachable only from the FLAG_DEBUGGABLE intent harness.
+     * Reachable only from the debug harness (DebugHarnessActivity, debug source set, DUMP-gated; absent from release).
      */
     fun armApproval(runId: String) {
         if (runId.isEmpty()) return
@@ -1946,11 +1946,13 @@ class VoiceController(private val context: Context, private val session: HermesS
             }
             if (status in ApprovalArm.TERMINAL_STATUSES) {
                 VoxLog.d("event=approval-arm-end run=$runId status=$status requested=false")
+                armRunId = ApprovalArm.armedAfter(armRunId, runId)
                 return
             }
             sleepArm()
         }
         VoxLog.w("event=approval-arm-timeout run=$runId watched_ms=${ApprovalArm.WATCH_MS}")
+        armRunId = ApprovalArm.armedAfter(armRunId, runId)
     }
 
     private fun sleepArm() {
@@ -2019,6 +2021,8 @@ class VoiceController(private val context: Context, private val session: HermesS
         approvalNudge.reset()
         // The request is decided, so this run no longer needs to be held past a loop end.
         heldApprovalRuns.remove(answer.request.runId)
+        // #413 nit: nor exempted as the debug arm's run — its one card is answered.
+        armRunId = ApprovalArm.armedAfter(armRunId, answer.request.runId)
         VoxLog.d(answer.logLine())
         val prompt = promptOf(answer.request)
         main.post {
@@ -2977,6 +2981,13 @@ class VoiceController(private val context: Context, private val session: HermesS
                     main.post { listener?.onLog("// response completed") }
                 }
                 "response.failed", "error", "response.incomplete" -> runEnded = true
+                // L3 (#413 second pass): a reattach could not replay everything it missed. The
+                // reader replaces the gapped text with the run's final answer (or fails the
+                // turn); this says so where the user and a field report can see it.
+                "replay.truncated" -> {
+                    VoxLog.w("event=stream-replay-truncated gen=$gen oldest=${e.optString("output").ifEmpty { "-" }}")
+                    main.post { listener?.onLog(REPLAY_TRUNCATED_LINE) }
+                }
                 "approval.request" -> {
                     val request = approvalFrom(e)
                     if (request == null) {
@@ -4280,6 +4291,9 @@ class VoiceController(private val context: Context, private val session: HermesS
         const val SOURCE_APPROVAL_PROMPT = "approval-prompt"
         /** F8: the mind's own progress narration, spoken as the working line. */
         const val SOURCE_COMMENTARY = "mind-commentary"
+        /** L3: the transcript line for a truncated reattach replay. */
+        const val REPLAY_TRUNCATED_LINE =
+            "// reconnected, but part of the reply was lost in transit — the run's final answer replaces it"
         /** How long a LIVE auth observation vouches for the connection (K1). Long
          *  enough to cover a whole conversation, short enough that a key/endpoint
          *  change is not underwritten by yesterday's success. */

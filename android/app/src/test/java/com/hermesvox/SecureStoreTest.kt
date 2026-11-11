@@ -152,4 +152,59 @@ class SecureStoreTest {
         // Re-encrypting under the default alias would have lost the profile's plaintext.
         assertNull(SecureStore.decrypt(upgraded))
     }
+
+    // ---- L6, second pass: the fallback is never silent, and a ':' key survives migration ----
+
+    /** A Keystore that refuses: the value is stored, and the caller is TOLD it is plaintext. */
+    @Test fun aRefusedEncryptionSavesTheValueAndSaysItIsDegraded() {
+        val sealed = SecureStore.seal("sk-live", encrypt = { _, _ -> null })
+        assertTrue("the user must be told", sealed.degraded)
+        assertEquals("the key is never lost", "sk-live", sealed.stored)
+        assertFalse("the line names the condition, never the key",
+            SecureStore.DEGRADED_LINE.contains("sk-live"))
+    }
+
+    @Test fun aWorkingKeystoreSealsWithoutTheDegradedFlag() {
+        val sealed = SecureStore.seal("sk-live")
+        assertFalse(sealed.degraded)
+        assertTrue(SecureStore.isVersioned(sealed.stored))
+        assertEquals("sk-live", SecureStore.decrypt(sealed.stored))
+    }
+
+    @Test fun aBlankKeyIsNeitherEncryptedNorDegraded() {
+        var asked = false
+        val sealed = SecureStore.seal("", encrypt = { _, _ -> asked = true; null })
+        assertFalse(sealed.degraded)
+        assertEquals("", sealed.stored)
+        assertFalse("nothing to protect, nothing to ask the Keystore", asked)
+    }
+
+    /** Settings' persistent marker: on for plaintext (':' included), off for every ciphertext. */
+    @Test fun onlyAPlaintextStoredValueReadsAsDegraded() {
+        assertTrue(SecureStore.isDegraded("sk-plain"))
+        assertTrue(SecureStore.isDegraded("sk-legacy:with:colon"))
+        assertFalse(SecureStore.isDegraded(SecureStore.encrypt("sk-live")!!))
+        val unmarked = SecureStore.encrypt("sk-old")!!.removePrefix(SecureStore.PREFIX)
+        assertFalse("a legacy unmarked ciphertext is encrypted, not degraded", SecureStore.isDegraded(unmarked))
+        assertFalse(SecureStore.isDegraded(""))
+        assertFalse(SecureStore.isDegraded(null))
+    }
+
+    /**
+     * The whole migration, through the real cipher: a pre-0.9.1 plaintext key containing ':'
+     * is read as the key it is (not as a ciphertext it fails to decrypt) and rewritten as
+     * marked ciphertext of that same key. It is not lost, and not left in plaintext.
+     */
+    @Test fun aLegacyPlaintextKeyWithAColonMigratesToCiphertextOfTheSameKey() {
+        val legacy = "sk-proj:abc:def"
+        val upgraded = SecureStore.storageUpgrade(
+            legacy,
+            decrypt = { SecureStore.decrypt(it) },
+            encrypt = { SecureStore.encrypt(it) },
+        )
+        assertNotNull(upgraded)
+        assertTrue(SecureStore.isVersioned(upgraded!!))
+        assertEquals(legacy, SecureStore.decrypt(upgraded))
+        assertFalse(SecureStore.isDegraded(upgraded))
+    }
 }

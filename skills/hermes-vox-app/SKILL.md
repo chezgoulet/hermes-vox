@@ -339,7 +339,7 @@ the section's own refusal cannot disagree.
 | Entity name | `agent_name` | the host's `data[0].id`, else `model` | The name above the being and in Settings → Entity. It is **read-only and host-derived**: the same `GET /v1/models` probe as connect adopts `data[0].id`; a 200 with no id says "connected, but the host did not name itself" and keeps the fallback. It is not the request route | (android/app/src/main/java/com/hermesvox/OnboardingActivity.kt `HostEntity.answer`) |
 | Teach your agent this app | (action) | — | Asks the agent to install this skill on its gateway, or copies the `hermes skills install …` command (with `-p <profile>` for a profile address) | (android/app/src/main/java/com/hermesvox/AppSkill.kt `fun command`) |
 | Teach your agent this app — first run | `app_skill_offered` | unset | The same install, offered once right after the connection is verified ("Teach your agent this app?", Ask the agent / Copy command / Later). The answer is remembered either way; it is an offer, never an automatic install | (android/app/src/main/java/com/hermesvox/AppSkillInstall.kt `fun offerOnce`) |
-| API key | `key` | "" | Bearer credential, Keystore-encrypted at rest | (android/app/src/main/java/com/hermesvox/core/Entity.kt `Bearer`) |
+| API key | `key` | "" | Bearer credential, Keystore-encrypted at rest; if the Keystore refuses, it is saved in plaintext **and the save says so**, Settings → Entity shows `key not encrypted` until a later start manages to encrypt it (L6) | (android/app/src/main/java/com/hermesvox/core/Entity.kt `Bearer`) (android/app/src/main/java/com/hermesvox/SecureStore.kt `const val DEGRADED_TAG = "key not encrypted"`) |
 | Model | `model`, `provider` | `hermes-agent` | The model route sent on every request; chosen from the gateway's model list, never typed in Settings → Entity (that field is the host-derived entity name). It is **this profile's** model: the Settings → *Agent model* row opens the same model sheet `/models` does, and says whose it is | (android/app/src/main/java/com/hermesvox/EntitySession.kt `DEFAULT_MODEL = "hermes-agent"`) |
 | Agent model | `model` (per profile) | the profile's, else the device-wide one | The Settings row that makes the model visible: it shows the route as words ("DeepSeek V4 Flash") and opens the model sheet. Choosing one persists it, sets it on the live session and re-inits the conversation, so the next turn uses it | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `fun bindAgentModel`) |
 | Entity scope | `session_scope` | "" (blank) | Optional `X-Hermes-Session-Key`; blank means "declare no identity" | (android/app/src/main/java/com/hermesvox/SessionScope.kt `session_scope`) |
@@ -377,7 +377,7 @@ the section's own refusal cannot disagree.
 | Voice CPU threads | `voice_threads` | Auto (0) | Thread override for STT and TTS; applies on the next model load | (android/app/src/main/java/com/hermesvox/VoxThreads.kt `fun stt`) |
 | Remote STT URL | `stt_remote_url` | "" | The server audio is POSTed to; blank means the remote leg is unavailable | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `bindRemoteTextField(R.id.stt_remote_url, KEY_STT_REMOTE_URL) { it.trim() }`) |
 | Remote STT model | `stt_remote_model` | `whisper` | The model name sent to that server | (android/app/src/main/java/com/hermesvox/RemoteStt.kt `internal const val DEFAULT_REMOTE_MODEL = "whisper"`) |
-| Remote STT key | `stt_remote_key` | "" | Encrypted bearer key for that server | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `bindRemoteTextField(R.id.stt_remote_key, KEY_STT_REMOTE_KEY) { SecureStore.encrypt(it) ?: it }`) |
+| Remote STT key | `stt_remote_key` | "" | Encrypted bearer key for that server (a refused encryption is said once per screen, never silent) | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `bindRemoteTextField(R.id.stt_remote_key, KEY_STT_REMOTE_KEY) { sealSttKey(it) }`) |
 | Test STT server connection | (action) | — | Probes `/v1/models` then `/api/v1/models` and reports ok/FAILED | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `VoxLog.dd("event=stt-remote-test ok=false reason=no-url")`) |
 
 ### Voice (speech out)
@@ -770,9 +770,10 @@ Do not send a user hunting for these.
 - `er_filler_cap` — a legacy slider, read only to migrate an upgraded install into
   `er_presence_density` (android/app/src/main/java/com/hermesvox/PresenceCadence.kt `LEGACY_PREF`).
   Nothing in this tree writes it.
-- `presence` — a second narration gate read alongside `er_presence` when a tool call wants a
-  spoken line (android/app/src/main/java/com/hermesvox/MainActivity.kt `"presence", true`).
-  Read with a default of true and never written by this tree, so treat it as permanently on.
+- `presence` — gone (#413 nit). It was a second narration gate, read with a default of true and
+  never written, so it was always on; tool narration now follows Presence alone
+  (android/app/src/main/java/com/hermesvox/MainActivity.kt `val narrationWanted = presenceActive() && liveController?.glueBlocked() != true`).
+  An old install's stray value is ignored.
 
 ---
 
