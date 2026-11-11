@@ -704,8 +704,20 @@ open class MainActivity : AppCompatActivity() {
     private var presenceWaitStartedAt = 0L
     private var skipPresenceThisCall = false
 
+    // The call readiness gate (CallReadiness): armed by a fresh call start only — a mid-call
+    // route rebuild re-enters openVoiceLine and must never see it. The gate, its overlay, when
+    // it opened, whether the caller chose Talk anyway, and the last line logged.
+    private var readinessArmed = false
+    private var readinessGate: CallReadiness.Gate? = null
+    private var readinessOverlay: ReadinessOverlay? = null
+    private var readinessStartedAt = 0L
+    private var readinessTalkAnyway = false
+    private var readinessLastLog = ""
+    private var readinessLastDial = 0L
+
     private fun startCall() {
         skipPresenceThisCall = false; presenceWaitStartedAt = 0L
+        readinessArmed = true; readinessTalkAnyway = false
         voxFailedFor = null      // each call gets its own first-call ask for the profile
         sampleResources()   // #191: the memory picture before the models warm, should the load kill us
         if (missingKeyPrompt()) return   // C0: empty key -> clear Settings prompt
@@ -783,10 +795,29 @@ open class MainActivity : AppCompatActivity() {
                 VoxLog.w("event=presence-unavailable reason=vox-missing profile=${VoxMirror.activeProfile(prefs)}")
             }
         }
+        // The call readiness gate: a fresh call does not open until every leg is observed ready
+        // (CallReadiness). It replaces the warm-wait below for a call start; a route rebuild,
+        // which never arms it, keeps the old path.
+        val rg = readinessGate ?: if (readinessArmed) {
+            readinessArmed = false
+            CallReadiness.Gate(presence = presenceWanted).also { openReadiness(it) }
+        } else null
+        var readinessMissing = ""
+        if (rg != null) {
+            c.presenceActive = presenceWanted
+            val v = stepReadiness(rg, c, soulDoc) ?: return
+            readinessMissing = if (v.phase == CallReadiness.Phase.GREEN) "" else v.missing
+            // Talk anyway without Presence: off for this call, and the greeting is not held for it.
+            if (presenceWanted && rg.state(CallReadiness.Leg.PRESENCE) != CallReadiness.State.READY) {
+                presenceWanted = false
+                skipPresenceThisCall = true
+            }
+            closeReadiness(green = v.phase == CallReadiness.Phase.GREEN, line = v.line)
+        }
         val soulReady = !presenceWanted || skipPresenceThisCall ||
             (express.available && soulDoc == SoulDoc.READY)
         c.presenceActive = presenceWanted
-        if (!c.isWarm() || !soulReady) {
+        if (rg == null && (!c.isWarm() || !soulReady)) {
             if (warmRetries++ % 10 == 0) VoxLog.d("warm-wait retry=${warmRetries} ${c.warmDiagnostics()} expressReady=${express.available} presence=$presenceWanted")
             if (warmRetries < 180) {
                 if (::warming.isInitialized) warming.visibility = android.view.View.VISIBLE
@@ -896,6 +927,11 @@ open class MainActivity : AppCompatActivity() {
         c.start(listener, prefs.getBoolean("duplex", true))
         enterCallUi()
         setStatus(if (voiceLegLine.isBlank()) "On call" else voiceLegLine, voiceLegLine.isNotBlank())
+        // Talk anyway: the call names what it started without, once, in the gate's own words.
+        if (readinessMissing.isNotBlank()) {
+            VoxLog.w("event=call-ready-skip missing=\"$readinessMissing\"")
+            setStatus(readinessMissing.replaceFirstChar { it.uppercase() }, true)
+        }
         // 0.8/M3c: THE SOUL OPENS THE CALL. With Presence on the entity greets you first,
         // in its own voice, before the mind has anything to answer — so there is no race
         // to lose and the layer is perceptible from the first second rather than only on
@@ -904,9 +940,125 @@ open class MainActivity : AppCompatActivity() {
         if (presenceWanted) c.soulGreet()
     }
 
+    /** Show the readiness overlay for a fresh call start and ask the gateway afresh: the mind
+     *  leg is a probe answered for THIS call, not one remembered from when the app opened. */
+    private fun openReadiness(rg: CallReadiness.Gate) {
+        readinessGate = rg
+        readinessStartedAt = android.os.SystemClock.uptimeMillis()
+        readinessLastLog = ""
+        readinessLastDial = readinessStartedAt
+        val o = readinessOverlay ?: ReadinessOverlay(this).also { ov ->
+            readinessOverlay = ov
+            (findViewById<android.view.View>(android.R.id.content) as android.view.ViewGroup).addView(ov)
+            ov.talkAnyway.setOnClickListener {
+                VoxLog.d("event=call-ready-talk-anyway waitedMs=${android.os.SystemClock.uptimeMillis() - readinessStartedAt}")
+                readinessTalkAnyway = true
+            }
+            ov.close.setOnClickListener { abandonReadiness() }
+        }
+        o.applyLook(prefs, isLightTheme())
+        o.animate().cancel()
+        o.being.setPaused(false)
+        o.alpha = 1f
+        o.visibility = View.VISIBLE
+        o.bringToFront()
+        // One being renders at a time: the overlay's, so the frame budget is the same one.
+        avatar.setPaused(true)
+        if (!probeInFlight) { probe = ConnectionPhase.Probe.NOT_TESTED; dialGateway() }
+        VoxLog.d("event=call-ready phase=open legs=${rg.legs.joinToString(",") { it.name.lowercase() }}")
+    }
+
+    /**
+     * One tick of the gate: read what each leg has observed, render, and decide. Returns the
+     * view when the call should open now (green, or Talk anyway), or null when it is still
+     * waiting (a tick is scheduled) or was abandoned.
+     */
+    private fun stepReadiness(rg: CallReadiness.Gate, c: VoiceController, soulDoc: SoulDoc): CallReadiness.View? {
+        val s = session ?: run { abandonReadiness("Connect first"); return null }
+        val now = android.os.SystemClock.uptimeMillis()
+        val waited = now - readinessStartedAt
+        // The mind: `conn-test: verdict=ok`. A warming gateway is asked again every few seconds.
+        when (CallReadiness.mindReady(probe)) {
+            true -> rg.report(CallReadiness.Leg.MIND, true)
+            false -> {
+                rg.report(CallReadiness.Leg.MIND, false)
+                if (probe == ConnectionPhase.Probe.COLD && !probeInFlight && now - readinessLastDial > 3_000L) {
+                    readinessLastDial = now; dialGateway()
+                }
+            }
+            null -> {
+                val missing = ProfileReach.missing()
+                val phase = ConnectionPhase.resolve(endpointSet(), !GatewayKey.isMissing(storedKey()),
+                    true, probe, profileMissing = missing != null)
+                rg.fail(CallReadiness.Leg.MIND, ConnectionPhase.pill(phase, missing?.name.orEmpty()))
+            }
+        }
+        rg.report(CallReadiness.Leg.HEARING, c.hearingReady())
+        val refusal = c.voiceRefusal()
+        if (refusal != null) rg.fail(CallReadiness.Leg.VOICE, refusal) else rg.report(CallReadiness.Leg.VOICE, c.voiceWarm())
+        if (CallReadiness.Leg.PRESENCE in rg.legs) when {
+            (express as? GemmaExpress)?.loadFailed == true ->
+                rg.fail(CallReadiness.Leg.PRESENCE, "presence could not start on this phone")
+            soulDoc == SoulDoc.ABSENT ->
+                rg.fail(CallReadiness.Leg.PRESENCE, "presence has no VOX.md for this profile")
+            // The load itself is asked for at the top of openVoiceLine, every tick, as before.
+            else -> rg.report(CallReadiness.Leg.PRESENCE, express.available && soulDoc == SoulDoc.READY)
+        }
+        val v = rg.view(waited)
+        val log = CallReadiness.logLine(v, 0)
+        if (log != readinessLastLog) { readinessLastLog = log; VoxLog.d(CallReadiness.logLine(v, waited)) }
+        readinessOverlay?.render(v, waited)
+        if (v.phase == CallReadiness.Phase.GREEN) return v
+        if (readinessTalkAnyway && v.talkAnyway) return v
+        readinessTalkAnyway = false   // offered no longer (a leg went back): the tap does not carry
+        // The old ceiling still bounds the ears and the voice: ~90 s, then the old words.
+        if (waited >= WARM_CEILING_MS && !v.talkAnyway && v.phase != CallReadiness.Phase.FAILED) {
+            VoxLog.e("warm: models never loaded after ~90s (${c.warmDiagnostics()})")
+            abandonReadiness("Voice models failed to load")
+            return null
+        }
+        mainHandler.postDelayed({ if (!isFinishing && readinessGate === rg) openVoiceLine(s) }, 500)
+        return null
+    }
+
+    /** Close on the overlay: the honest refusal. A refused voice takes the existing path (the
+     *  controller is dropped so a later attempt builds a fresh leg); anything else leaves the
+     *  warm pipeline for the next try and puts the gate's words on the pill. */
+    private fun abandonReadiness(line: String? = null) {
+        val rg = readinessGate ?: return
+        val v = rg.view(android.os.SystemClock.uptimeMillis() - readinessStartedAt)
+        VoxLog.w("event=call-ready phase=closed failed=${v.failed?.name?.lowercase() ?: "-"} pending=${v.pending?.name?.lowercase() ?: "-"}")
+        closeReadiness(green = false, line = null)
+        if (v.failed == CallReadiness.Leg.VOICE) {
+            VoxLog.w("event=call-refused reason=${v.line}")
+            liveController?.stop()
+            liveController = null
+        }
+        setStatus(line ?: v.line.replaceFirstChar { it.uppercase() }, true)
+    }
+
+    /** Take the overlay down. At green the being's line turns green and it fades while the call
+     *  opens underneath — the greeting is never held for the fade. */
+    private fun closeReadiness(green: Boolean, line: String?) {
+        readinessGate = null
+        readinessArmed = false
+        val o = readinessOverlay ?: run { avatar.setPaused(false); return }
+        avatar.setPaused(false)
+        if (green) {
+            o.animate().alpha(0f).setStartDelay(450L).setDuration(450L)
+                .withEndAction { o.visibility = View.GONE; o.being.setPaused(true) }.start()
+        } else {
+            o.animate().cancel()
+            o.visibility = View.GONE
+            o.being.setPaused(true)
+        }
+        if (line != null) VoxLog.d("event=call-ready phase=${if (green) "green" else "open"} line=\"$line\"")
+    }
+
     /** Hang up: stop the voice line + the foreground service, reset the UI. */
     private fun endCall() {
         VoxLog.d("event=call-end callLive=$callLive")
+        if (readinessGate != null) closeReadiness(green = false, line = null)
         callLive = false
         updatePip()   // no call -> no actions, and auto-enter off
         CallQuiet.end(this, prefs)
@@ -2102,6 +2254,9 @@ open class MainActivity : AppCompatActivity() {
 
     // App-scoped call start time so a live call's timer survives activity recreation.
     companion object {
+        /** The readiness gate's ceiling for the ears and the voice: the old warm-wait's ~90 s
+         *  (180 ticks of 500 ms), after which it says what it always said. */
+        const val WARM_CEILING_MS = 90_000L
         // 0.5.0-A reveal pacing (see revealTask).
         const val REVEAL_TICK_MS = 80L    // ~12fps: fast enough to read as continuous, cheap
         const val MIN_REVEAL_MS = 220L    // floor on how briefly the reveal may be engaged

@@ -778,6 +778,17 @@ class VoiceController(private val context: Context, private val session: HermesS
      *  the call from starting (#330). Use [ttsStatus]/[callGate] to report it separately. */
     fun isWarm() = sttReady && (vad?.isAvailable != false) && (ttsHost?.state?.settled != false)
 
+    /** The readiness gate's hearing leg: the recogniser answered ready (`sttReady=true`) and
+     *  the VAD, when one is installed, is up. Observed state only. */
+    fun hearingReady(): Boolean = sttReady && (vad?.isAvailable != false)
+
+    /** The readiness gate's voice leg: an engine is warm (`event=tts-ready`), not merely
+     *  selected. */
+    fun voiceWarm(): Boolean = ttsHost?.state?.speaking == true
+
+    /** The voice leg's refusal in TtsPolicy's own words, or null while it is not refused. */
+    fun voiceRefusal(): String? = callGate().takeIf { !it.starts }?.line
+
     /** Non-empty when spoken replies are unavailable, with the reason to show the user. */
     fun ttsStatus(): String = if (ttsReady) "" else ttsIssue.ifBlank { "text-to-speech unavailable" }
 

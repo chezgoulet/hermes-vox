@@ -256,6 +256,36 @@ off and says so in the Alpha panel
 It only advises: the verdict appears in the Alpha panel under Presence and, when the phone falls
 short, in first run with where to turn it on. It never selects anything.
 
+### Starting a call: the readiness gate
+
+**A call does not go green until everything is ready, Presence included.** Pressing call shows a
+full-screen overlay where the being assembles itself while four legs report
+(android/app/src/main/java/com/hermesvox/CallReadiness.kt `object CallReadiness {`):
+
+| Leg | Its line | Ready when (observed, never simulated) |
+|---|---|---|
+| The mind | *reaching the mind* | a fresh probe for this call answers `conn-test: verdict=ok` |
+| Hearing | *opening my ears* | the recogniser is up (`sttReady=true`) and the VAD, if installed |
+| Voice | *finding my voice* | an engine is warm (`event=tts-ready`), not merely selected |
+| Presence | *waking the rest of me* | `event=presence-load phase=end ok=true` and this profile's VOX.md; **absent** (not green) when Presence is off |
+
+Each completed leg adds one structural element around the being, and at green it says
+*here — talk to me* and the call opens underneath the fading overlay
+(android/app/src/main/java/com/hermesvox/ReadinessOverlay.kt `class ReadinessOverlay(context: Context) : FrameLayout(context) {`).
+
+- **A failure** is said in the app's existing words — a refused voice in the call-refusal line, an
+  unreachable gateway in the connection pill's — and offers **Close**, the existing refusal. A
+  failure of the mind, the ears or the voice is fatal; Presence failing is not, so **Talk anyway**
+  is offered at once (android/app/src/main/java/com/hermesvox/CallReadiness.kt `PRESENCE("waking the rest of me", "presence is still warming",`).
+- **After 20 s** still waiting (android/app/src/main/java/com/hermesvox/CallReadiness.kt `const val TALK_ANYWAY_MS = 20_000L`) the
+  overlay names the leg still coming and offers **Talk anyway** — only when everything missing is
+  the mind or Presence; the ears and the voice are never skipped. Talk anyway starts the call and
+  names what is not there ("presence is still warming; asides are off"); Presence is off for that
+  call and the greeting is not held for it (android/app/src/main/java/com/hermesvox/MainActivity.kt `event=call-ready-skip missing=`).
+- The ears and the voice keep the old ~90 s ceiling and its words
+  (android/app/src/main/java/com/hermesvox/MainActivity.kt `const val WARM_CEILING_MS = 90_000L`).
+- A mid-call audio-route rebuild never shows the gate; it is armed by a call start only.
+
 ---
 
 ## 5. The settings map
@@ -824,6 +854,8 @@ add it with a reference; if it contradicts a row here, the code wins.
 
 | Event | Meaning | Bad values | Reference |
 |---|---|---|---|
+| `event=call-ready` | The readiness gate: `phase=open legs=…`, then one line per change — `phase=` (`assembling`, `stalled`, `failed`, `green`), `ready=`, `pending=`, `failed=`, `waitedMs=`; `phase=closed` when the caller closed it | `phase=stalled pending=presence` on every call = the engine is cold at call time (see "Keep presence warm while charging") | (android/app/src/main/java/com/hermesvox/CallReadiness.kt `"event=call-ready phase=${v.phase.name.lowercase()} " +`) |
+| `event=call-ready-talk-anyway` / `event=call-ready-skip` | The caller started without a leg; `missing=` names it | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt `event=call-ready-talk-anyway waitedMs=`) |
 | `event=call-end` | The call closed; `callLive` says whether it was live | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt `VoxLog.d("event=call-end callLive=$callLive")`) |
 | `event=activity-stop` | The activity stopped; `reason=no-live-call controller-stopped` is normal | — | (android/app/src/main/java/com/hermesvox/MainActivity.kt `activity-stop`) |
 | `event=fg-service` | Foreground service created/started/destroyed | `startForeground-failed` | (android/app/src/main/java/com/hermesvox/VoiceService.kt `VoxLog.d("event=fg-service start id=$startId")`) |
@@ -1250,17 +1282,21 @@ log), then match the signature.
   operation. Restarting the app once often clears the hang. There is no setting that fixes a GPU
   the engine cannot use.
 
-### 8.12 A call with Presence on sits on "Loading Presence" for most of a minute
+### 8.12 A call with Presence on sits on "waking the rest of me" for most of a minute
 
-- **Signature:** the pill reads "Loading Presence · N s"; `event=presence-load phase=start availMb=…` with a low
+- **Signature:** the readiness overlay says *waking the rest of me*, then after 20 s *presence is
+  still warming* with **Talk anyway** (`event=call-ready phase=stalled pending=presence`); on the
+  older path (a route rebuild) the pill reads "Loading Presence · N s"; `event=presence-load phase=start availMb=…` with a low
   number, then `phase=end ok=true ms=` tens of thousands; around it, the system log shows the low-memory killer
   clearing other apps.
 - **Cause:** the phone is short of memory, so loading Presence's model (about 2.5 GB) waits while Android frees
   room — measured at ~50 s on an 8 GB Pixel 7 whose other apps held a 2.5 GB model of their own.
-  It is not a hang. After 20 s the pill adds "tap to start without it" (android/app/src/main/java/com/hermesvox/PresenceWait.kt `const val OFFER_SKIP_MS = 20_000L`),
+  It is not a hang. After 20 s the overlay offers **Talk anyway** (the older pill adds "tap to start without it" (android/app/src/main/java/com/hermesvox/PresenceWait.kt `const val OFFER_SKIP_MS = 20_000L`),
   which opens the call with Presence joining when it is ready
-  (android/app/src/main/java/com/hermesvox/MainActivity.kt `event=presence-skip`).
-- **What to do:** close other heavy apps (on-device AI apps especially), or turn Presence off on that phone.
+  (android/app/src/main/java/com/hermesvox/MainActivity.kt `event=presence-skip`)); Talk anyway
+  instead keeps Presence off for that call and says so.
+- **What to do:** close other heavy apps (on-device AI apps especially), turn on **Keep presence warm
+  while charging**, or turn Presence off on that phone.
 
 ### 8.13 The text on screen runs ahead of (or behind) the voice
 
