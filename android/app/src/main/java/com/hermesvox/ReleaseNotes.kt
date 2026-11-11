@@ -109,6 +109,16 @@ internal object ReleaseNotes {
             ),
         ),
         ReleaseNote(
+            versionCode = 151,
+            versionName = "0.9.1.4",
+            title = "Out loud again",
+            bullets = listOf(
+                "Voice now plays through the speaker on a call with no headset attached. It was going to the earpiece, because that is where Android sends the communication stream unless asked otherwise.",
+                "A Bluetooth or wired headset still takes the call when one is connected, and the route is released at hang-up.",
+            ),
+        ),
+
+        ReleaseNote(
             versionCode = 150,
             versionName = "0.9.1.3",
             title = "The cleanup cut",

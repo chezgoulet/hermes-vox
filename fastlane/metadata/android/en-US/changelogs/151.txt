@@ -1,0 +1,1 @@
+The call speaks out loud again: voice plays through the speaker when no headset is attached, instead of the earpiece.

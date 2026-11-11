@@ -39,6 +39,8 @@ root, so a name the gateway does not serve is reported rather than saved.
 `0.9.1.3` is the cleanup cut: the short-reply drain that held calls for two minutes, the readiness
 gate that says what a call is waiting for, Piper as the recommended voice, and the profile and
 Settings repairs.
+`0.9.1.4` puts the call back on the speaker: voice output runs on the communication strategy, and
+with no headset attached the platform's default for it is the earpiece.
 
 ## 0.9.1 — the release in acceptance
 
@@ -126,20 +128,27 @@ community rather than decided in private. Nothing in that review blocks this rel
 call; a removed row gone from a real sheet; an approval-free profile ask that still names what
 the host serves; and every number quoted in the release note measured on this build.
 
-## 0.9.2 — the gate opens, and whatever we have learned by then
+## 0.10 — the next minor, and the gate opens
 
-**Not open.** 0.9.1.3 ships first; this milestone opens when 0.9.1 is signed off.
+Set 2026-11-11. **`0.9.2` never opened.** The 0.9.1 work went out as point releases — `0.9.1.1`,
+`0.9.1.2`, `0.9.1.3` — and everything tagged for 0.9.2 moves here. The label is `milestone/0.10`;
+`milestone/0.9.2` is retired, and the issues once carried by it are re-tagged.
 
-A living milestone, not a promise. What it holds today:
+What it holds today, from the issues tagged to it:
 
-- **Presence on by default.** The Alpha gate opens for Presence: it stops being opt-in.
-- **Per-profile settings** — *landed early, in 0.9.1*: a profile carries its own voice, model and
-  look (`docs/PRESENCE.md`). This line stays as the record that it was carried here first.
+- **Presence on by default.** The Alpha gate opens for Presence. It waits on continuous listening
+  (#228) and semantic endpointing (#229) — the mechanics the rest of the layer rests on.
+- **The approvals route.** #404 flips the turn stream to `/v1/runs`; #376 and #282 are the proof
+  that a sign-off reaches the phone and can be answered.
+- **Localisation.** #528's contract first, then the staged pull requests that follow it.
+- **Operations** (#281) — what is running, and on what — and **first run** (#230).
+- **Voice and hearing quality.** #569 (the recogniser at RTF 1.0–1.8 on the field device), #559
+  (Supertonic's dropped words), #562 (a smaller presence model, or no model for most lines), #374.
+- **The measurements.** #209, #208, #179, #405, #217, #279.
+- **Presence tool use** (#421) and **per-profile mTLS** (#514).
 
-What else lands there is decided by what the 0.9.1 acceptance run and real use turn up. Expect new
-features to be wanted, expect some of them to be the ones we have not thought of yet, and expect
-this list to grow between now and the cut. That is the normal shape of a beta milestone; a frozen
-list would mean we stopped listening.
+A living milestone, not a promise: it is expected to grow as field reports arrive. A frozen list
+would mean we stopped listening.
 
 ## Polish is continuous, and belongs to no milestone
 
