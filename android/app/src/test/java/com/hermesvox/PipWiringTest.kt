@@ -78,7 +78,7 @@ class PipWiringTest {
     fun the_launch_path_goes_through_pip_first_and_stop_reuses_the_one_teardown() {
         val src = mainActivitySource()
         // The funnel, not five ad-hoc startActivity calls.
-        assertTrue(src.contains("CallWindow.launch(pipHost, start)"))
+        assertTrue(src.contains("CallWindow.open(pipHost, CallWindow.Target.OUTSIDE, start)"))
         // Stop ends the call through endCall(), the same path the hang-up button uses;
         // no second teardown lives in the receiver.
         val receiver = src.substringAfter("private val pipReceiver = object : BroadcastReceiver()")
@@ -96,5 +96,33 @@ class PipWiringTest {
         // A dial handoff ends the call from inside PiP; an idle app must never float.
         assertTrue("the teardown notices PiP", endCall.contains("isInPictureInPictureMode"))
         assertTrue("and closes the window", endCall.contains("finish()"))
+    }
+
+    /**
+     * Field-2, item 1: tapping Settings mid-call floated the call. Our own screens must never
+     * take the PiP funnel: every `launchOutside { … }` block starts something that is not one
+     * of our activities, and the in-app path both skips `enterPip` and marks the start as
+     * not-a-user-leave (otherwise 12+ auto-enter / pre-12 `onUserLeaveHint` floats it anyway).
+     */
+    @Test
+    fun our_own_screens_never_take_the_pip_funnel() {
+        val src = mainActivitySource()
+        val blocks = src.split("launchOutside {").drop(1).map { it.substringBefore("\n        }") }
+        assertTrue("the funnel still has its external callers", blocks.size >= 2)
+        for (b in blocks) {
+            val head = b.substringBefore("\n    }")
+            assertFalse("an in-app activity routed through PiP: $head", head.contains("Activity::class.java"))
+        }
+        val own = src.substringAfter("private fun openOwnScreen(").substringBefore("\n    }\n")
+        assertTrue(own.contains("CallWindow.Target.OWN_SCREEN"))
+        assertTrue(own.contains("Intent.FLAG_ACTIVITY_NO_USER_ACTION"))
+        assertFalse(own.contains("enterPip"))
+        assertTrue(src.contains("private fun openSettings() = openOwnScreen(Intent(this, SettingsActivity::class.java))"))
+        assertTrue(src.contains("openOwnScreen(Intent(this, ModelsActivity::class.java))"))
+        // No other direct start of one of our screens from the call screen bypasses it
+        // (onboarding is the one exception: it finishes this activity, there is no call).
+        val direct = Regex("startActivity\\(\\s*(?:android\\.content\\.)?Intent\\(this, (\\w+)::class\\.java\\)")
+            .findAll(src).map { it.groupValues[1] }.toSet()
+        assertEquals(setOf("OnboardingActivity"), direct)
     }
 }

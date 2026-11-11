@@ -723,4 +723,43 @@ class ProfilesAskTest {
         assertFalse(refresh.merge.changed)
         assertEquals(hostProfile, refresh.merge.list.single())
     }
+
+    // ---- Field-2, item 3: a streamed ask whose connection is cut ----
+
+    /** Serves [bytes], then throws [error] instead of reporting the end of the stream. */
+    private class CutStream(bytes: ByteArray, private val error: java.io.IOException) : java.io.InputStream() {
+        private val inner = java.io.ByteArrayInputStream(bytes)
+        override fun read(): Int = inner.read().let { if (it < 0) throw error else it }
+        override fun read(b: ByteArray, off: Int, len: Int): Int =
+            inner.read(b, off, len).let { if (it < 0) throw error else it }
+    }
+
+    private fun sse(vararg deltas: String, done: Boolean): String =
+        deltas.joinToString("\n\n") { d ->
+            "data: " + """{"choices":[{"delta":{"content":${Json.encode(d)}}}]}"""
+        } + if (done) "\n\ndata: [DONE]\n\n" else "\n\n"
+
+    @Test fun aStreamCutAfterItsAnswerKeepsTheAnswer() {
+        val body = sse("```vox-profiles\n", "default=default\nprofile=work\n", "```", done = true)
+        val read = ProfilesAsk.readAtMost(CutStream(body.toByteArray(), java.io.IOException("unexpected end of stream")), ProfilesAsk.BODY_MAX)
+        assertTrue(read.error is java.io.IOException)
+        assertEquals(body, read.text)
+        assertTrue(ProfilesAsk.streamDone(read.text))
+        val r = ProfilesAsk.fromChat(200, read.text)
+        assertTrue("a whole block that arrived before the cut is read: $r", r is Result.Named)
+    }
+
+    @Test fun aStreamCutInsideItsBlockIsNoAnswerNeverAShorterList() {
+        val body = sse("```vox-profiles\n", "default=default\nprofile=work\nprofile=ho", done = false)
+        val read = ProfilesAsk.readAtMost(CutStream(body.toByteArray(), java.io.IOException("connection reset")), ProfilesAsk.BODY_MAX)
+        assertFalse(ProfilesAsk.streamDone(read.text))
+        val r = ProfilesAsk.fromChat(200, read.text)
+        assertTrue("an unterminated block is refused: $r", r is Result.Failed)
+    }
+
+    @Test fun aCleanReadReportsNoErrorAndHonoursTheCap() {
+        val read = ProfilesAsk.readAtMost(java.io.ByteArrayInputStream(ByteArray(10_000) { 'a'.code.toByte() }), 4_000)
+        assertNull(read.error)
+        assertEquals(4_000, read.text.length)
+    }
 }

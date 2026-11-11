@@ -3629,8 +3629,11 @@ class VoiceController(private val context: Context, private val session: HermesS
     /** Speak low-priority Gemma "phone-call glue" (acknowledgment/narration).
      *  Preempted by the authoritative Hermes reply (see speak). If the controller
      *  isn't in a reply, this just voices the presence glue. */
-    fun speakGlue(text: String, critical: Boolean = false, source: String = "unspecified",
+    fun speakGlue(raw: String, critical: Boolean = false, source: String = "unspecified",
                   onPlayed: (() -> Unit)? = null, onDone: (() -> Unit)? = null) {
+        // Field-2: the boundary. A mood marker (`<<CALM>>`, `{calm}`, `[CALM]`, …) leading any
+        // line never reaches TTS or the transcript — everything below sees the cleaned words.
+        val text = VoiceMood.clean(raw).second.trim()
         if (text.isBlank()) return
         // 0.8/M3: RECORD the glue text and its source. The 09-10 field session produced a
         // 60-character spoken line during the mind-work window that matched no ErFillers
@@ -3640,6 +3643,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         // Gemma's acknowledgements and narration are written from the caller's words
         // ("checking your bank balance") — so it rides the log_transcripts backstop like
         // every other line that carries what was said. Source and length always log.
+        if (text != raw.trim()) VoxLog.er("event=er-glue-marker stripped source=$source")
         VoxLog.er("event=er-glue source=$source critical=$critical chars=${text.length} " +
             "text=${if (logTranscripts()) text.take(120) else "<hidden>"}")
         // M2 (0.9.1 review): D29's false-action-claim guard, on EVERY lane. It used to run

@@ -59,7 +59,7 @@ class GlueClaimGuardTest {
 
     // ---- the placement --------------------------------------------------------
 
-    private val speakGlue = vc.substringAfter("fun speakGlue(text: String").substringBefore("\n    fun ")
+    private val speakGlue = vc.substringAfter("fun speakGlue(raw: String").substringBefore("\n    fun ")
 
     @Test fun `speakGlue refuses a claim before the repeat guard and the arbiter`() {
         val guard = speakGlue.indexOf("ErSoulTurn.claimsResult(text)")

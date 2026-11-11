@@ -209,6 +209,38 @@ object ProfilesAsk {
      * Only the deltas' text is accumulated; a tool call carries no text and contributes
      * nothing, which is correct — the notifier is what makes it visible, not this parser.
      */
+    /** What a bounded read got: the text, and the failure that ended it early (null = clean). */
+    data class Read(val text: String, val error: Throwable?)
+
+    /**
+     * Read at most [max] bytes, KEEPING what arrived when the read throws (field-2, item 3).
+     *
+     * Streamed (#533) the ask's connection stays open for the whole turn, so a transport that
+     * drops it at the end — a reset, or a chunked body closed without its last chunk — used to
+     * throw away an answer that had already arrived, and the log said only `status=-1`. The
+     * caller decides what a partial body is worth; [fromChat]'s one-fenced-block rule already
+     * refuses an unterminated block, so a cut-off list can never be read as a shorter one.
+     */
+    fun readAtMost(stream: java.io.InputStream, max: Int): Read {
+        val buf = java.io.ByteArrayOutputStream()
+        val chunk = ByteArray(4096)
+        var error: Throwable? = null
+        try {
+            while (buf.size() < max) {
+                val n = stream.read(chunk, 0, minOf(chunk.size, max - buf.size()))
+                if (n < 0) break
+                buf.write(chunk, 0, n)
+            }
+        } catch (t: Throwable) {
+            error = t
+        }
+        return Read(buf.toByteArray().toString(Charsets.UTF_8), error)
+    }
+
+    /** Did a streamed body reach its end marker? (For the log: a cut before or after the answer.) */
+    fun streamDone(body: String): Boolean =
+        body.lineSequence().any { it.trim() == "data: [DONE]" || it.trim() == "data:[DONE]" }
+
     fun assistantTextFromStream(body: String): String? {
         if (body.isBlank()) return null
         if (!body.contains("data:")) return assistantText(body)
