@@ -47,6 +47,7 @@ build.
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | What a change needs to be reviewable. |
 | [`docs/RELEASE-PROCESS.md`](RELEASE-PROCESS.md) | How a release is cut, gated, signed and verified. |
 | [`docs/REPRODUCIBLE.md`](REPRODUCIBLE.md) | The reproducible-build status and the commands that prove it. |
+| [`docs/REGRESSION.md`](REGRESSION.md) | The per-cut regression set, the witness lines, and what CI cannot see. |
 | [`docs/FDROID.md`](FDROID.md) | The F-Droid rail: the source-built runtime, the draft recipe, and what is still missing. |
 | [`docs/GIT-FLOW.md`](GIT-FLOW.md) | Which branches exist and what merges where. |
 | [`DEVICE_VERIFY.md`](../DEVICE_VERIFY.md) | Sideloading and verifying the app on a phone. |
