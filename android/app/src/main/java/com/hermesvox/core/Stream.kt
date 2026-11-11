@@ -849,8 +849,20 @@ internal object Streams {
      * outcome goes to [stopOutcome] so it can be observed, never thrown.
      */
     private fun stopRun(client: ResponsesClient, runId: String) {
-        Thread({ stopRunNow(client, runId) }, "hermes-run-stop").apply { isDaemon = true }.start()
+        stopExecutor.execute { stopRunNow(client, runId) }
     }
+
+    /**
+     * #413 nit: the stops share one small pool instead of a new thread per barge. A burst of
+     * barges queues instead of fanning out threads. Two workers, so one stop stuck on a
+     * dead gateway (connect + read timeouts) cannot hold the next run's stop behind it. Idle
+     * workers exit, so a quiet app holds none.
+     */
+    internal val stopExecutor: java.util.concurrent.ThreadPoolExecutor =
+        java.util.concurrent.ThreadPoolExecutor(
+            2, 2, 30L, TimeUnit.SECONDS, java.util.concurrent.LinkedBlockingQueue(),
+        ) { r -> Thread(r, "hermes-run-stop").apply { isDaemon = true } }
+            .apply { allowCoreThreadTimeOut(true) }
 
     /** The stop itself, on the calling thread; returns (and reports) its verdict. */
     private fun stopRunNow(client: ResponsesClient, runId: String): String {

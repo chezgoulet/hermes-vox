@@ -1946,11 +1946,13 @@ class VoiceController(private val context: Context, private val session: HermesS
             }
             if (status in ApprovalArm.TERMINAL_STATUSES) {
                 VoxLog.d("event=approval-arm-end run=$runId status=$status requested=false")
+                armRunId = ApprovalArm.armedAfter(armRunId, runId)
                 return
             }
             sleepArm()
         }
         VoxLog.w("event=approval-arm-timeout run=$runId watched_ms=${ApprovalArm.WATCH_MS}")
+        armRunId = ApprovalArm.armedAfter(armRunId, runId)
     }
 
     private fun sleepArm() {
@@ -2019,6 +2021,8 @@ class VoiceController(private val context: Context, private val session: HermesS
         approvalNudge.reset()
         // The request is decided, so this run no longer needs to be held past a loop end.
         heldApprovalRuns.remove(answer.request.runId)
+        // #413 nit: nor exempted as the debug arm's run — its one card is answered.
+        armRunId = ApprovalArm.armedAfter(armRunId, answer.request.runId)
         VoxLog.d(answer.logLine())
         val prompt = promptOf(answer.request)
         main.post {

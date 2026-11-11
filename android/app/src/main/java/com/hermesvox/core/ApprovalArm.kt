@@ -82,6 +82,14 @@ internal object ApprovalArm {
      * The run's status string, or "" when the body is not the run-status object. Used only
      * for the arm's log line, so an unreadable body is a fact to print, never a crash.
      */
+    /**
+     * #413 nit: the arm's run id after [ended] is over. The id is cleared for its own run and
+     * kept for any other, so [VoiceController.closeApprovals] stops exempting a run that has
+     * finished, been answered or timed out, and a later turn's sweep can close it.
+     */
+    fun armedAfter(armed: String, ended: String): String =
+        if (armed.isNotEmpty() && armed == ended) "" else armed
+
     fun statusOf(json: String): String = root(json)?.let { Json.str(it, "status") } ?: ""
 
     /**

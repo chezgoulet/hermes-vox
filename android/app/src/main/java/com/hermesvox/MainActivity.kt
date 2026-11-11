@@ -2566,8 +2566,10 @@ open class MainActivity : AppCompatActivity() {
                 // was pure GPU waste. The tool is NAMED so the aside can be topical, and
                 // the soul may decline — the token means silence, and it is parsed, never
                 // spoken.
-                val narrationWanted = presenceActive() && prefs.getBoolean("presence", true) &&
-                    liveController?.glueBlocked() != true
+                // (#413 nit: a `presence` boolean pref used to be read here too. Nothing has
+                // ever written it, so it was always true; PresenceGate via presenceActive() is
+                // the one switch.)
+                val narrationWanted = presenceActive() && liveController?.glueBlocked() != true
                 if (narrationWanted) {
                     val args = line.removePrefix("◆ tool: ").substringAfter(' ', "").take(60)
                     // 0.6.2: async render — the Gemma generation must never run on

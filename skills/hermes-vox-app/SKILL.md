@@ -770,9 +770,10 @@ Do not send a user hunting for these.
 - `er_filler_cap` — a legacy slider, read only to migrate an upgraded install into
   `er_presence_density` (android/app/src/main/java/com/hermesvox/PresenceCadence.kt `LEGACY_PREF`).
   Nothing in this tree writes it.
-- `presence` — a second narration gate read alongside `er_presence` when a tool call wants a
-  spoken line (android/app/src/main/java/com/hermesvox/MainActivity.kt `"presence", true`).
-  Read with a default of true and never written by this tree, so treat it as permanently on.
+- `presence` — gone (#413 nit). It was a second narration gate, read with a default of true and
+  never written, so it was always on; tool narration now follows Presence alone
+  (android/app/src/main/java/com/hermesvox/MainActivity.kt `val narrationWanted = presenceActive() && liveController?.glueBlocked() != true`).
+  An old install's stray value is ignored.
 
 ---
 
