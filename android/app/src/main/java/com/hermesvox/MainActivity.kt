@@ -3590,20 +3590,28 @@ open class MainActivity : AppCompatActivity() {
         val g = express as? GemmaExpress ?: return
         if (g.available || !ModelCatalog.isInstalled(this, "gemma-e2b")) return
         // Phase 5: a load is about to run, so a pending idle release would undo the work it
-        // is paying for. Cancelled only on the load path — a resident engine left idle keeps
-        // its timer (that is the arm's whole point).
-        g.cancelIdleUnload("presence-load")
+        // is paying for. GemmaExpress.load cancels it (#560: the load owns that direction).
+        // Cancelled only on the load path — a resident engine left idle keeps its timer.
         // #191: the load's cost on this phone, from the memory it started under to how
         // long it took — the two numbers the field report could not give.
         val mi = android.app.ActivityManager.MemoryInfo().also { getSystemService(android.app.ActivityManager::class.java)?.getMemoryInfo(it) }
         val t0 = android.os.SystemClock.uptimeMillis()
         VoxLog.d("event=presence-load phase=start availMb=${mi.availMem / 1048576} low=${mi.lowMemory}")
-        g.load { ok ->
-            // A second caller while a load is in flight is chained onto it and told false at once
-            // (GemmaExpress.load); that is not a failure, and must not read like one in the log.
-            val chained = !ok && !g.loadFailed
-            VoxLog.d("event=presence-load phase=${if (chained) "chained" else "end"} ok=$ok ms=${android.os.SystemClock.uptimeMillis() - t0}")
-            if (!chained) runOnUiThread {
+        g.loadFor { result ->
+            // A second caller while a load is in flight is chained onto it and told at once
+            // (GemmaExpress.load); a load asked for during a release is cancelled by it (#560).
+            // Neither is a failure, and neither may read like one in the log.
+            val ok = result == GemmaExpress.LoadResult.OK
+            val ran = ok || result == GemmaExpress.LoadResult.FAILED
+            val phase = when (result) {
+                GemmaExpress.LoadResult.CHAINED -> "chained"
+                GemmaExpress.LoadResult.CANCELLED -> "cancelled"
+                GemmaExpress.LoadResult.MISSING -> "missing"
+                else -> "end"
+            }
+            if (result != GemmaExpress.LoadResult.CANCELLED)   // the release already logged it
+                VoxLog.d("event=presence-load phase=$phase ok=$ok ms=${android.os.SystemClock.uptimeMillis() - t0}")
+            if (ran) runOnUiThread {
                 // #403 stage two: the first real load is the hardware check's second half. A
                 // failure demotes the Presence selection (off, never on); the Alpha panel says why.
                 if (HardwareCheck.noteFirstLoad(HardwareCheck.store(prefs), !g.loadFailed)) {

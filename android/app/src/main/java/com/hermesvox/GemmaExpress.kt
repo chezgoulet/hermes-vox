@@ -59,22 +59,52 @@ class GemmaExpress(private val context: Context) : VoxExpress {
     private val persona: String
         get() = VoxSoul.soulPrompt(VoxMirror.read(context) ?: "")
 
+    /** How one load request ended, so the caller logs what happened instead of inferring it. */
+    enum class LoadResult {
+        /** Resident and primed. */
+        OK,
+        /** No backend could start the model ([loadFailed]). */
+        FAILED,
+        /** The model file is not installed. */
+        MISSING,
+        /** Another load is in flight; this caller did not run one. */
+        CHAINED,
+        /** Asked for during a release, and cancelled by it (#560). */
+        CANCELLED,
+    }
+
+    /** #560: the one guarded transition both directions go through. */
+    private val lifecycle = PresenceLifecycle<(LoadResult) -> Unit>()
+
     /** Load the on-device LiteRT-LM model (async, device/GPU). onReady(true) when loaded. */
-    fun load(onReady: (Boolean) -> Unit) {
+    fun load(onReady: (Boolean) -> Unit) = loadFor { onReady(it == LoadResult.OK) }
+
+    /** [load], reporting how the request ended. */
+    fun loadFor(onDone: (LoadResult) -> Unit) {
         // 0.6.2 field log (hermes-vox-merged: two "GemmaExpress loaded" lines 105ms
         // apart): onResume calls handleModeUi, and handleModeUi ran BEFORE the first
         // load's thread set loaded=true — so the availability check raced and the
         // model initialized TWICE (double memory on a phone, and a window where two
         // Engines could serve generations). Guard: one in-flight load; every caller
         // during it is chained onto the same completion.
-        if (loaded) { onReady(true); return }
-        synchronized(loadLock) {
-            if (loading) { onReady(false); return }   // a chained caller gets the next onResume
-            loading = true
+        //
+        // #560: the guard is now [lifecycle], which owns the unload direction as well. A load
+        // cancels a pending (timed) release first: the timers exist so a reload is never paid
+        // twice, and a load is the clearest sign the engine is wanted.
+        cancelIdleUnload("presence-load")
+        when (lifecycle.requestLoad(onDone)) {
+            PresenceLifecycle.Load.RESIDENT -> { onDone(LoadResult.OK); return }
+            PresenceLifecycle.Load.CHAINED -> { onDone(LoadResult.CHAINED); return }
+            PresenceLifecycle.Load.QUEUED -> {
+                VoxLog.d("event=presence-load phase=queued reason=unloading")
+                return
+            }
+            PresenceLifecycle.Load.START -> Unit
         }
         kotlin.concurrent.thread {
+            var result = LoadResult.FAILED
             try {
-                if (!modelFile.exists()) { loaded = false; onReady(false); return@thread }
+                if (!modelFile.exists()) { loaded = false; result = LoadResult.MISSING; return@thread }
                 // 0.8/M3: speculative decoding (ExperimentalFlags.enableSpeculativeDecoding)
                 // was enabled here and REMOVED after measurement. The model card documents
                 // 1.3-1.8x decode on phone GPUs, but it is explicitly task-dependent, and
@@ -101,17 +131,21 @@ class GemmaExpress(private val context: Context) : VoxExpress {
                 warmUp()
                 loaded = true
                 VoxLog.d("GemmaExpress loaded: $modelFile backend=$backend hears=$hears kv=$kvTokens (primed)")
-                onReady(true)
-                // The full-vs-minimal prefill probe is diagnostic and holds the engine for
-                // seconds, so it runs only for a verbose-log field session, after ready.
-                if (context.getSharedPreferences("hv", Context.MODE_PRIVATE).getBoolean("debug_log", false)) {
-                    kotlin.concurrent.thread(isDaemon = true) { probePrefill() }
-                }
+                result = LoadResult.OK
             } catch (e: Throwable) {
                 VoxLog.e("GemmaExpress load failed: ${e.message}")
-                loaded = false; llm = null; loadFailed = true; onReady(false)
+                loaded = false; llm = null; loadFailed = true; result = LoadResult.FAILED
             } finally {
-                synchronized(loadLock) { loading = false }
+                // The phase settles BEFORE the caller hears, so nothing it does next can see
+                // a load "in flight" that has already ended.
+                lifecycle.loadFinished(result == LoadResult.OK)
+                onDone(result)
+            }
+            // The full-vs-minimal prefill probe is diagnostic and holds the engine for
+            // seconds, so it runs only for a verbose-log field session, after ready.
+            if (result == LoadResult.OK &&
+                context.getSharedPreferences("hv", Context.MODE_PRIVATE).getBoolean("debug_log", false)) {
+                kotlin.concurrent.thread(isDaemon = true) { probePrefill() }
             }
         }
     }
@@ -124,7 +158,7 @@ class GemmaExpress(private val context: Context) : VoxExpress {
     /** True between a load thread's start and its callback. The call-open path uses it so it
      *  never opens a second `event=presence-load` pair for a load it did not start — those
      *  `ms=` values are quoted in docs/BASELINE.md and must stay one per real load. */
-    val isLoading: Boolean get() = loading
+    val isLoading: Boolean get() = lifecycle.busy
 
     /** A real load failure this session (no backend could start the model) — distinct from the
      *  `false` a caller gets while another load is already in flight. */
@@ -253,9 +287,6 @@ class GemmaExpress(private val context: Context) : VoxExpress {
         throw lastError ?: IllegalStateException("GemmaExpress: no backend available")
     }
 
-    private val loadLock = Object()
-    @Volatile private var loading = false
-
     /**
      * Phase 4: release the Engine. This is the only code path in the app that returns the
      * presence layer's memory — measured on a Pixel 7 at ~2.2 GB of MemAvailable between
@@ -269,8 +300,20 @@ class GemmaExpress(private val context: Context) : VoxExpress {
      * conversation under [genLock] (the same lock a render holds), then the engine.
      */
     fun unload(reason: String) {
-        synchronized(loadLock) { if (loading) { VoxLog.d("event=presence-unload reason=$reason skipped=loading"); return } }
-        if (!loaded && llm == null) return
+        if (beginUnload(reason)) teardown(reason)
+    }
+
+    /** #560: claim the teardown under the lifecycle lock — on the caller's thread, so the
+     *  decision is made at the moment the release is due, not whenever its thread runs. */
+    private fun beginUnload(reason: String): Boolean = when (lifecycle.requestUnload()) {
+        PresenceLifecycle.Unload.START -> true
+        PresenceLifecycle.Unload.SKIPPED_LOADING -> {
+            VoxLog.d("event=presence-unload reason=$reason released=false skipped=loading"); false
+        }
+        PresenceLifecycle.Unload.ALREADY, PresenceLifecycle.Unload.NOTHING -> false
+    }
+
+    private fun teardown(reason: String) {
         // A release disarms any pending idle release: there is nothing left to release, and a
         // stale arm would log a second `presence-unload` after the next load.
         idleArmed = false
@@ -294,7 +337,14 @@ class GemmaExpress(private val context: Context) : VoxExpress {
         val mi = android.app.ActivityManager.MemoryInfo().also {
             context.getSystemService(android.app.ActivityManager::class.java)?.getMemoryInfo(it)
         }
+        // Only now may a load run again — and any that asked during the teardown are
+        // cancelled, not started: the release was the decision (#560).
+        val cancelled = lifecycle.unloadFinished()
         VoxLog.d("event=presence-unload reason=$reason released=$freed availMb=${mi.availMem / 1048576}")
+        for (w in cancelled) {
+            VoxLog.d("event=presence-load phase=cancelled reason=unload-$reason")
+            try { w(LoadResult.CANCELLED) } catch (t: Throwable) { VoxLog.e("presence-load waiter failed: ${t.message}") }
+        }
     }
 
     /**
@@ -401,7 +451,8 @@ class GemmaExpress(private val context: Context) : VoxExpress {
     /** Never on the caller's thread: endCall() runs on main, and closing the Engine frees
      *  ~2 GB of GPU/native memory — that is a stall, not an operation. */
     private fun unloadAsync(reason: String) {
-        kotlin.concurrent.thread(isDaemon = true, name = "presence-unload") { unload(reason) }
+        if (!beginUnload(reason)) return
+        kotlin.concurrent.thread(isDaemon = true, name = "presence-unload") { teardown(reason) }
     }
 
     /** True when the engine came up with its audio encoder; cleared for the session if a heard
