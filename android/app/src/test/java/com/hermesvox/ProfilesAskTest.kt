@@ -577,6 +577,29 @@ class ProfilesAskTest {
             "files. Do not run any command that changes them. If producing the list appears " +
             "to need a change to the host, do not make it: say what would be needed instead."
 
+    @Test fun aStreamedAnswerIsReadFromItsDeltasAndAWholeOneStillWorks() {
+        // The streamed shape: one JSON object per data: line, [DONE] at the end.
+        val sse = """
+            data: {"choices":[{"delta":{"role":"assistant"}}]}
+
+            data: {"choices":[{"delta":{"content":"```vox-profiles\n"}}]}
+
+            data: {"choices":[{"delta":{"content":"default=default"}}]}
+
+            data: [DONE]
+        """.trimIndent()
+        assertTrue(ProfilesAsk.assistantTextFromStream(sse)!!.contains("default=default"))
+
+        // A server that ignores stream:true and answers whole is still read.
+        val whole = """{"choices":[{"message":{"content":"```vox-profiles\nprofile=work\n```"}}]}"""
+        assertTrue(ProfilesAsk.assistantTextFromStream(whole)!!.contains("profile=work"))
+
+        // A tool call carries no text; it contributes nothing rather than corrupting the block.
+        val tool = """data: {"choices":[{"delta":{"tool_calls":[{"id":"t1"}]}}]}""" + "\n\ndata: [DONE]"
+        assertNull(ProfilesAsk.assistantTextFromStream(tool))
+        assertNull(ProfilesAsk.assistantTextFromStream(""))
+    }
+
     @Test fun theRequestIsOnePlainChatTurnWithTheMarkersExactText() {
         val expected = askText
         assertEquals(expected, ProfilesAsk.ASK)
@@ -587,7 +610,9 @@ class ProfilesAskTest {
         val body = ProfilesAsk.requestBody("hermes-agent")
         val root = Json.parse(body) as com.hermesvox.core.JObj
         assertEquals("hermes-agent", (root["model"] as com.hermesvox.core.JStr).value)
-        assertEquals(false, (root["stream"] as com.hermesvox.core.JBool).value)
+        // #533: streamed, because that is the route that registers the approval notifier.
+        // A non-streaming turn could run a tool the phone never saw and could not answer.
+        assertEquals(true, (root["stream"] as com.hermesvox.core.JBool).value)
         val msg = ((root["messages"] as com.hermesvox.core.JArr).items.single() as com.hermesvox.core.JObj)
         assertEquals("user", (msg["role"] as com.hermesvox.core.JStr).value)
         assertEquals(expected, (msg["content"] as com.hermesvox.core.JStr).value)
@@ -697,5 +722,44 @@ class ProfilesAskTest {
         )
         assertFalse(refresh.merge.changed)
         assertEquals(hostProfile, refresh.merge.list.single())
+    }
+
+    // ---- Field-2, item 3: a streamed ask whose connection is cut ----
+
+    /** Serves [bytes], then throws [error] instead of reporting the end of the stream. */
+    private class CutStream(bytes: ByteArray, private val error: java.io.IOException) : java.io.InputStream() {
+        private val inner = java.io.ByteArrayInputStream(bytes)
+        override fun read(): Int = inner.read().let { if (it < 0) throw error else it }
+        override fun read(b: ByteArray, off: Int, len: Int): Int =
+            inner.read(b, off, len).let { if (it < 0) throw error else it }
+    }
+
+    private fun sse(vararg deltas: String, done: Boolean): String =
+        deltas.joinToString("\n\n") { d ->
+            "data: " + """{"choices":[{"delta":{"content":${Json.encode(d)}}}]}"""
+        } + if (done) "\n\ndata: [DONE]\n\n" else "\n\n"
+
+    @Test fun aStreamCutAfterItsAnswerKeepsTheAnswer() {
+        val body = sse("```vox-profiles\n", "default=default\nprofile=work\n", "```", done = true)
+        val read = ProfilesAsk.readAtMost(CutStream(body.toByteArray(), java.io.IOException("unexpected end of stream")), ProfilesAsk.BODY_MAX)
+        assertTrue(read.error is java.io.IOException)
+        assertEquals(body, read.text)
+        assertTrue(ProfilesAsk.streamDone(read.text))
+        val r = ProfilesAsk.fromChat(200, read.text)
+        assertTrue("a whole block that arrived before the cut is read: $r", r is Result.Named)
+    }
+
+    @Test fun aStreamCutInsideItsBlockIsNoAnswerNeverAShorterList() {
+        val body = sse("```vox-profiles\n", "default=default\nprofile=work\nprofile=ho", done = false)
+        val read = ProfilesAsk.readAtMost(CutStream(body.toByteArray(), java.io.IOException("connection reset")), ProfilesAsk.BODY_MAX)
+        assertFalse(ProfilesAsk.streamDone(read.text))
+        val r = ProfilesAsk.fromChat(200, read.text)
+        assertTrue("an unterminated block is refused: $r", r is Result.Failed)
+    }
+
+    @Test fun aCleanReadReportsNoErrorAndHonoursTheCap() {
+        val read = ProfilesAsk.readAtMost(java.io.ByteArrayInputStream(ByteArray(10_000) { 'a'.code.toByte() }), 4_000)
+        assertNull(read.error)
+        assertEquals(4_000, read.text.length)
     }
 }

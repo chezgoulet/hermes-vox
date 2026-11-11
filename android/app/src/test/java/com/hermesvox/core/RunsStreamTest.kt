@@ -813,4 +813,109 @@ data: {"event":"run.completed","run_id":"run_setup","seq":1,"completed":true,"ou
                 gets.any { it.contains("last_seq=0") })
         }
     }
+
+    // ---- L3, second pass: the reattach backs off, and a truncated replay is surfaced ----
+
+    /** Every event type the poller saw, in order, until done. */
+    private fun drainTypes(s: HermesSession, sid: String, budgetMs: Long = 5000): Pair<JObj, List<JObj>> {
+        val seen = ArrayList<JObj>()
+        val deadline = System.currentTimeMillis() + budgetMs
+        while (System.currentTimeMillis() < deadline) {
+            s.waitStream(sid, 50)
+            val p = Json.parse(s.pollStreamJSON(sid)) as JObj
+            (p["events"] as? JArr)?.items?.forEach { (it as? JObj)?.let(seen::add) }
+            if ((p["done"] as JBool).value) return p to seen
+        }
+        error("run never reported done")
+    }
+
+    /**
+     * A dropped socket is no longer followed at once: the reattach waits at least half its
+     * first backoff step. The draw is pinned to its floor, so the bound is exact.
+     */
+    @Test
+    fun `a dropped socket waits its backoff before reattaching`() = withRuns {
+        val oldBase = Streams.reattachBaseMs
+        val oldJitter = Streams.jitter
+        Streams.reattachBaseMs = 400L
+        Streams.jitter = { 0.0 }
+        try {
+            val at = Collections.synchronizedList(ArrayList<Long>())
+            TestServer { r, w ->
+                when {
+                    r.method == "POST" && r.path == "/v1/runs" ->
+                        w.send(202, "Accepted", """{"run_id":"run_b","status":"started"}""")
+                    r.method == "GET" -> {
+                        at.add(System.nanoTime())
+                        w.sse()
+                        if (at.size == 1) {
+                            w.write("""id: 0
+data: {"event":"message.delta","run_id":"run_b","seq":0,"delta":"Hi"}
+
+""")
+                        } else {
+                            w.write("""id: 1
+data: {"event":"run.completed","run_id":"run_b","seq":1,"completed":true,"output":"Hi"}
+
+""")
+                        }
+                    }
+                }
+            }.use { srv ->
+                val s = session(srv)
+                val p = drain(s, s.startStream("hi"))
+                assertEquals("", Json.str(p, "error"))
+                assertEquals(2, at.size)
+                val gapMs = (at[1] - at[0]) / 1_000_000
+                // #565: the delay is 200 ms, but a scheduler may deliver a hair early and the
+                // nanosecond diff truncates, so the assertion allows 5% under. It still fails
+                // loudly if the backoff is removed (that lands in single-digit ms).
+                assertTrue("the reattach came ${gapMs} ms after the drop; the floor is 200 ms", gapMs >= 190)
+            }
+        } finally {
+            Streams.reattachBaseMs = oldBase
+            Streams.jitter = oldJitter
+        }
+    }
+
+    /**
+     * The truncation is no longer swallowed: the poller receives a `replay.truncated` event
+     * carrying the oldest seq the gateway kept, so the controller can log it and put a line in
+     * the transcript, while the text is still the run's own final answer.
+     */
+    @Test
+    fun `a truncated replay reaches the poller as its own event`() = withRuns {
+        val attempt = AtomicInteger()
+        TestServer { r, w ->
+            when {
+                r.method == "POST" && r.path == "/v1/runs" ->
+                    w.send(202, "Accepted", """{"run_id":"run_t3","status":"started"}""")
+                r.method == "GET" -> {
+                    w.sse()
+                    if (attempt.incrementAndGet() == 1) {
+                        w.write("""id: 0
+data: {"event":"message.delta","run_id":"run_t3","seq":0,"delta":"The first "}
+
+""")
+                    } else {
+                        w.write("""data: {"event":"replay.truncated","run_id":"run_t3","oldest_retained_seq":5}
+
+id: 6
+data: {"event":"run.completed","run_id":"run_t3","seq":6,"completed":true,"output":"The whole answer."}
+
+""")
+                    }
+                }
+            }
+        }.use { srv ->
+            val s = session(srv)
+            val (p, events) = drainTypes(s, s.startStream("hi"))
+            assertEquals("", Json.str(p, "error"))
+            assertEquals("The whole answer.", Json.str(p, "text"))
+            val cut = events.filter { Json.str(it, "type") == "replay.truncated" }
+            assertEquals("exactly one truncation event", 1, cut.size)
+            assertEquals("5", Json.str(cut.single(), "output"))
+            assertEquals("it carries no answer text", "", Json.str(cut.single(), "delta"))
+        }
+    }
 }

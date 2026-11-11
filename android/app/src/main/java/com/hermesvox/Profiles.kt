@@ -118,6 +118,29 @@ object Profiles {
      * names, and a label identical to the current one, return the list unchanged with a
      * reason. Renaming the active profile moves [active] with it.
      */
+    /** What removing a saved profile did, and why it refused. */
+    enum class RemoveError { UNKNOWN, ACTIVE }
+
+    data class Removed(val list: List<Profile>, val error: RemoveError? = null) {
+        val removed: Boolean get() = error == null
+    }
+
+    /**
+     * Forget one saved profile on this phone. The host is untouched — this deletes what Vox
+     * remembers (address, key, model, scope), which is the only way to clear a row for a
+     * profile the host has stopped serving or that was a test.
+     *
+     * The active profile is refused: removing the connection under a live session would leave
+     * the app pointing at an address it no longer has. Switch first, then remove. That keeps
+     * the one-write rule simple, and the sheet says so in words instead of failing silently.
+     */
+    fun remove(list: List<Profile>, name: String, active: String): Removed {
+        val target = list.firstOrNull { it.name.equals(name.trim(), ignoreCase = true) }
+            ?: return Removed(list, RemoveError.UNKNOWN)
+        if (target.name.equals(active.trim(), ignoreCase = true)) return Removed(list, RemoveError.ACTIVE)
+        return Removed(list.filterNot { it === target })
+    }
+
     fun rename(list: List<Profile>, from: String, to: String, active: String = ""): Rename {
         val i = list.indexOfFirst { it.name.equals(from.trim(), ignoreCase = true) }
         if (i < 0) return Rename(list, active, error = RenameError.UNKNOWN)
@@ -186,11 +209,10 @@ object Profiles {
     /** The active profile's name, read from the store. Blank when nothing is active yet. */
     fun activeName(get: (String) -> String): String = get(PREF_ACTIVE).trim()
 
-    /** The header label: the agent's name, and the profile's once there is more than one.
-     *  The words live in [Header] so the title, the call screen and this one spelling cannot
-     *  drift apart. */
-    fun headerLabel(agent: String, active: String, count: Int): String =
-        Header.title(agent, active, count)
+    /** The header label: the connection's name, once. The words live in [Header] so the
+     *  title, the call screen and this one spelling cannot drift apart. */
+    fun headerLabel(agent: String, active: String): String =
+        Header.title(Header.connection(agent, active))
 
     fun encode(list: List<Profile>): String = Json.encode(list.map {
         linkedMapOf("name" to it.name, "url" to it.url, "key" to it.keyEnc, "model" to it.model,

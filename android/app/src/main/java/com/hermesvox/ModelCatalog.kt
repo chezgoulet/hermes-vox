@@ -58,10 +58,10 @@ object ModelCatalog {
             "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6", true, "",
             "Hears when you start or stop speaking, so you can interrupt hands-free"),
         ModelSpec("piper-lessac", "Piper · en-US (LibriTTS-R, medium)", "tts", "vits-piper-en_US-libritts_r-medium.tar.bz2", 82.0,
-            "Piper en-US canonical LibriTTS-R medium · the lighter alternative voice", true, 11,
-            "10dc268f3e371696d721486123e2705a9fc1faa113491979fde4d88dba1f1b1c", false,
+            "Piper en-US canonical LibriTTS-R medium · the recommended voice: most consistent in the field", true, 11,
+            "10dc268f3e371696d721486123e2705a9fc1faa113491979fde4d88dba1f1b1c", true,
             "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-libritts_r-medium.tar.bz2",
-            "Speaks Hermes' replies aloud in a natural voice — fully offline"),
+            "Speaks Hermes' replies aloud in a natural voice, fully offline — the recommended voice"),
         // French Piper voices (#477, PierreCsn, re-landed against this tree). The licences are
         // the ones their MODEL_CARDs state, fetched from the rhasspy/piper-voices repository —
         // Tom is AGPLv3, not CC0. Each desc carries the licence and the card URL so the claim
@@ -88,10 +88,10 @@ object ModelCatalog {
             "Speaks French in two voices (Jessica and Pierre) — fully offline",
             cardUrl = "https://huggingface.co/rhasspy/piper-voices/blob/main/fr/fr_FR/upmc/medium/MODEL_CARD"),
         ModelSpec("supertonic", "Supertonic · 10 voices (44.1 kHz)", "tts", "sherpa-onnx-supertonic-tts-int8-2026-03-06.tar.bz2", 84.7,
-            "On-device neural voice · fast, natural (model: OpenRAIL-M)", true, 2,
-            "8c74359f63edd5045d47747f65331f0f6dbcbc91d7e898dd756d631295fe3259", true,
+            "On-device neural voice · experimental: may drop words; under investigation (model: OpenRAIL-M)", true, 2,
+            "8c74359f63edd5045d47747f65331f0f6dbcbc91d7e898dd756d631295fe3259", false,
             "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-supertonic-tts-int8-2026-03-06.tar.bz2",
-            "Speaks Hermes' replies in a natural voice, fully offline — the recommended voice"),
+            "Speaks Hermes' replies in ten voices, fully offline — experimental: may drop words"),
         ModelSpec("whisper-tiny", "Whisper tiny.en", "stt", "sherpa-onnx-whisper-tiny.en.tar.bz2", 118.1,
             "Offline STT · English only, fastest, lightest", true, 3,
             "2bd6cf965c8bb3e068ef9fa2191387ee63a9dfa2a4e37582a8109641c20005dd", false, "",
@@ -160,16 +160,29 @@ object ModelCatalog {
     /** Required models that are not yet installed (app-private model dirs). */
     fun missingRequired(context: Context): List<ModelSpec> = required.filter { !isInstalled(context, it.id) }
 
+    /**
+     * #559: the order an unset `tts` pref resolves in. Piper first — it was the consistent
+     * voice in the field (Pixel 9, one ordinary call) while Supertonic dropped words; the
+     * cause (chunk boundaries or the model) is not yet separated, so Supertonic stays
+     * selectable but is no longer what a fresh install speaks with. Each pair is
+     * (catalogue model id, `tts` pref token).
+     */
+    val TTS_DEFAULT_ORDER: List<Pair<String, String>> = listOf(
+        "piper-lessac" to "piper",
+        "supertonic" to "supertonic",
+        "piper-siwis" to "piper-siwis",
+        "piper-tom" to "piper-tom",
+        "piper-upmc" to "piper-upmc",
+    )
+
     /** The TTS engine token used when the user has not chosen one: the best installed
-     *  on-device voice (Supertonic, then Piper), else the system voice. */
-    fun defaultTts(context: Context): String = when {
-        isInstalled(context, "supertonic") -> "supertonic"
-        isInstalled(context, "piper-lessac") -> "piper"
-        isInstalled(context, "piper-siwis") -> "piper-siwis"
-        isInstalled(context, "piper-tom") -> "piper-tom"
-        isInstalled(context, "piper-upmc") -> "piper-upmc"
-        else -> "system"
-    }
+     *  on-device voice in [TTS_DEFAULT_ORDER] (Piper, then Supertonic), else the system
+     *  voice. A stored choice never reaches this — it is only the unset default. */
+    fun defaultTts(context: Context): String = defaultTtsOf { isInstalled(context, it) }
+
+    /** [defaultTts] without a Context, so the order is testable. */
+    fun defaultTtsOf(installed: (String) -> Boolean): String =
+        TTS_DEFAULT_ORDER.firstOrNull { installed(it.first) }?.second ?: "system"
 
     /** The on-device STT model -> model-id map (Settings STT model picker). */
     val sttModels = listOf(

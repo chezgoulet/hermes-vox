@@ -20,7 +20,10 @@ package com.hermesvox
 object Header {
 
     /** The entity's name when neither the host nor a saved profile has given one. */
-    const val AGENT = "Hermes"
+    const val AGENT = "Hermes-Agent"
+
+    /** The host's name for the built-in connection. A profile with this name is not a choice. */
+    const val BUILTIN = "default"
 
     /**
      * How long a blue notice stays up, fading in the last [FADE_MS]. Five to six seconds:
@@ -34,18 +37,33 @@ object Header {
     /** The agent's name: the host's, or the Hermes agent's own when nothing has named it. */
     fun agent(stored: String): String = stored.trim().ifBlank { AGENT }
 
-    /** The big title: the agent, plus the profile's name once there is a choice. */
-    fun title(agent: String, active: String, count: Int): String = callTitle(agent, active, count).uppercase()
+    /**
+     * The connection's own name, once. A named profile is called by its label; the built-in
+     * `default` is called by the agent's name, because showing the word "default" would name
+     * the mechanism instead of the entity. Nothing is appended to either.
+     */
+    fun connection(agent: String, profile: String): String {
+        val p = profile.trim()
+        return if (p.isEmpty() || p.equals(BUILTIN, ignoreCase = true)) agent(agent) else p
+    }
+
+    /** The big title: exactly the connection's name. */
+    fun title(name: String): String = name.trim().uppercase()
 
     /**
-     * The same name for the call screen's notification: the entity, and the profile when
-     * there is more than one. One spelling for one entity — the title and the notification
-     * cannot name different things.
+     * The same name for the call screen's notification: one spelling for one entity, so the
+     * title and the notification cannot name different things.
      */
-    fun callTitle(agent: String, active: String, count: Int): String {
-        val a = agent(agent)
-        val p = active.trim()
-        return if (count < 2 || p.isEmpty()) a else "$a · $p"
+    fun callTitle(name: String): String = name.trim()
+
+    /**
+     * Whether two names are the same name to a person. Case, spaces and punctuation do not
+     * count: "Hermes-Agent", "hermes agent" and "HERMESAGENT" are one name, which is what
+     * lets the sub-pill stay silent instead of repeating the title.
+     */
+    fun sameName(a: String, b: String): Boolean {
+        val x = a.lowercase().filter { it.isLetterOrDigit() }
+        return x.isNotEmpty() && x == b.lowercase().filter { it.isLetterOrDigit() }
     }
 
     /** The resting sub-pill: the model's name, plainly. No verb, no filler. */

@@ -1,0 +1,5 @@
+Short replies no longer sit on working for two minutes.
+The call shows what it is waiting for, and goes green when it is ready.
+Piper is the recommended voice; Supertonic is experimental.
+The screen names the connection once.
+A saved profile can be removed; Settings no longer shrinks the call.

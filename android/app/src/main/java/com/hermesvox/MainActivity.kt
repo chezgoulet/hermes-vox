@@ -134,6 +134,21 @@ open class MainActivity : AppCompatActivity() {
     private var compact = false
     /** The Stop receiver exists only where PiP does; unregistered with the surface. */
     private var pipReceiverRegistered = false
+    /** "Keep presence warm while charging": the charger state, and the receiver that tracks it. */
+    @Volatile private var charging = false
+    private var powerReceiverRegistered = false
+    private val powerReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val now = when (intent.action) {
+                Intent.ACTION_POWER_CONNECTED -> true
+                Intent.ACTION_POWER_DISCONNECTED -> false
+                else -> return
+            }
+            if (now == charging) return
+            charging = now
+            runOnUiThread { applyChargeWarm(if (now) "plugged" else "unplugged") }
+        }
+    }
 
     /** The being the window can see: the compact one while floating, the full one otherwise. */
     private val being: AvatarView
@@ -568,11 +583,11 @@ open class MainActivity : AppCompatActivity() {
         // What's new, once per upgrade, with any breaking-change action attached.
         UpdateBannerView.maybeShow(this, window.decorView, prefs, currentVersionCode()) { alert ->
             when (alert.action) {
-                AlertAction.ENTITY -> startActivity(
+                AlertAction.ENTITY -> openOwnScreen(
                     android.content.Intent(this, SettingsActivity::class.java)
                         .putExtra("section", "entity")   // SettingsActivity.SECTION_ENTITY
                 )
-                AlertAction.MODELS -> startActivity(
+                AlertAction.MODELS -> openOwnScreen(
                     android.content.Intent(this, SettingsActivity::class.java)
                         .putExtra("section", "models")   // SettingsActivity.SECTION_MODELS
                 )
@@ -689,8 +704,20 @@ open class MainActivity : AppCompatActivity() {
     private var presenceWaitStartedAt = 0L
     private var skipPresenceThisCall = false
 
+    // The call readiness gate (CallReadiness): armed by a fresh call start only — a mid-call
+    // route rebuild re-enters openVoiceLine and must never see it. The gate, its overlay, when
+    // it opened, whether the caller chose Talk anyway, and the last line logged.
+    private var readinessArmed = false
+    private var readinessGate: CallReadiness.Gate? = null
+    private var readinessOverlay: ReadinessOverlay? = null
+    private var readinessStartedAt = 0L
+    private var readinessTalkAnyway = false
+    private var readinessLastLog = ""
+    private var readinessLastDial = 0L
+
     private fun startCall() {
         skipPresenceThisCall = false; presenceWaitStartedAt = 0L
+        readinessArmed = true; readinessTalkAnyway = false
         voxFailedFor = null      // each call gets its own first-call ask for the profile
         sampleResources()   // #191: the memory picture before the models warm, should the load kill us
         if (missingKeyPrompt()) return   // C0: empty key -> clear Settings prompt
@@ -768,10 +795,29 @@ open class MainActivity : AppCompatActivity() {
                 VoxLog.w("event=presence-unavailable reason=vox-missing profile=${VoxMirror.activeProfile(prefs)}")
             }
         }
+        // The call readiness gate: a fresh call does not open until every leg is observed ready
+        // (CallReadiness). It replaces the warm-wait below for a call start; a route rebuild,
+        // which never arms it, keeps the old path.
+        val rg = readinessGate ?: if (readinessArmed) {
+            readinessArmed = false
+            CallReadiness.Gate(presence = presenceWanted).also { openReadiness(it) }
+        } else null
+        var readinessMissing = ""
+        if (rg != null) {
+            c.presenceActive = presenceWanted
+            val v = stepReadiness(rg, c, soulDoc) ?: return
+            readinessMissing = if (v.phase == CallReadiness.Phase.GREEN) "" else v.missing
+            // Talk anyway without Presence: off for this call, and the greeting is not held for it.
+            if (presenceWanted && rg.state(CallReadiness.Leg.PRESENCE) != CallReadiness.State.READY) {
+                presenceWanted = false
+                skipPresenceThisCall = true
+            }
+            closeReadiness(green = v.phase == CallReadiness.Phase.GREEN, line = v.line)
+        }
         val soulReady = !presenceWanted || skipPresenceThisCall ||
             (express.available && soulDoc == SoulDoc.READY)
         c.presenceActive = presenceWanted
-        if (!c.isWarm() || !soulReady) {
+        if (rg == null && (!c.isWarm() || !soulReady)) {
             if (warmRetries++ % 10 == 0) VoxLog.d("warm-wait retry=${warmRetries} ${c.warmDiagnostics()} expressReady=${express.available} presence=$presenceWanted")
             if (warmRetries < 180) {
                 if (::warming.isInitialized) warming.visibility = android.view.View.VISIBLE
@@ -881,6 +927,11 @@ open class MainActivity : AppCompatActivity() {
         c.start(listener, prefs.getBoolean("duplex", true))
         enterCallUi()
         setStatus(if (voiceLegLine.isBlank()) "On call" else voiceLegLine, voiceLegLine.isNotBlank())
+        // Talk anyway: the call names what it started without, once, in the gate's own words.
+        if (readinessMissing.isNotBlank()) {
+            VoxLog.w("event=call-ready-skip missing=\"$readinessMissing\"")
+            setStatus(readinessMissing.replaceFirstChar { it.uppercase() }, true)
+        }
         // 0.8/M3c: THE SOUL OPENS THE CALL. With Presence on the entity greets you first,
         // in its own voice, before the mind has anything to answer — so there is no race
         // to lose and the layer is perceptible from the first second rather than only on
@@ -889,9 +940,125 @@ open class MainActivity : AppCompatActivity() {
         if (presenceWanted) c.soulGreet()
     }
 
+    /** Show the readiness overlay for a fresh call start and ask the gateway afresh: the mind
+     *  leg is a probe answered for THIS call, not one remembered from when the app opened. */
+    private fun openReadiness(rg: CallReadiness.Gate) {
+        readinessGate = rg
+        readinessStartedAt = android.os.SystemClock.uptimeMillis()
+        readinessLastLog = ""
+        readinessLastDial = readinessStartedAt
+        val o = readinessOverlay ?: ReadinessOverlay(this).also { ov ->
+            readinessOverlay = ov
+            (findViewById<android.view.View>(android.R.id.content) as android.view.ViewGroup).addView(ov)
+            ov.talkAnyway.setOnClickListener {
+                VoxLog.d("event=call-ready-talk-anyway waitedMs=${android.os.SystemClock.uptimeMillis() - readinessStartedAt}")
+                readinessTalkAnyway = true
+            }
+            ov.close.setOnClickListener { abandonReadiness() }
+        }
+        o.applyLook(prefs, isLightTheme())
+        o.animate().cancel()
+        o.being.setPaused(false)
+        o.alpha = 1f
+        o.visibility = View.VISIBLE
+        o.bringToFront()
+        // One being renders at a time: the overlay's, so the frame budget is the same one.
+        avatar.setPaused(true)
+        if (!probeInFlight) { probe = ConnectionPhase.Probe.NOT_TESTED; dialGateway() }
+        VoxLog.d("event=call-ready phase=open legs=${rg.legs.joinToString(",") { it.name.lowercase() }}")
+    }
+
+    /**
+     * One tick of the gate: read what each leg has observed, render, and decide. Returns the
+     * view when the call should open now (green, or Talk anyway), or null when it is still
+     * waiting (a tick is scheduled) or was abandoned.
+     */
+    private fun stepReadiness(rg: CallReadiness.Gate, c: VoiceController, soulDoc: SoulDoc): CallReadiness.View? {
+        val s = session ?: run { abandonReadiness("Connect first"); return null }
+        val now = android.os.SystemClock.uptimeMillis()
+        val waited = now - readinessStartedAt
+        // The mind: `conn-test: verdict=ok`. A warming gateway is asked again every few seconds.
+        when (CallReadiness.mindReady(probe)) {
+            true -> rg.report(CallReadiness.Leg.MIND, true)
+            false -> {
+                rg.report(CallReadiness.Leg.MIND, false)
+                if (probe == ConnectionPhase.Probe.COLD && !probeInFlight && now - readinessLastDial > 3_000L) {
+                    readinessLastDial = now; dialGateway()
+                }
+            }
+            null -> {
+                val missing = ProfileReach.missing()
+                val phase = ConnectionPhase.resolve(endpointSet(), !GatewayKey.isMissing(storedKey()),
+                    true, probe, profileMissing = missing != null)
+                rg.fail(CallReadiness.Leg.MIND, ConnectionPhase.pill(phase, missing?.name.orEmpty()))
+            }
+        }
+        rg.report(CallReadiness.Leg.HEARING, c.hearingReady())
+        val refusal = c.voiceRefusal()
+        if (refusal != null) rg.fail(CallReadiness.Leg.VOICE, refusal) else rg.report(CallReadiness.Leg.VOICE, c.voiceWarm())
+        if (CallReadiness.Leg.PRESENCE in rg.legs) when {
+            (express as? GemmaExpress)?.loadFailed == true ->
+                rg.fail(CallReadiness.Leg.PRESENCE, "presence could not start on this phone")
+            soulDoc == SoulDoc.ABSENT ->
+                rg.fail(CallReadiness.Leg.PRESENCE, "presence has no VOX.md for this profile")
+            // The load itself is asked for at the top of openVoiceLine, every tick, as before.
+            else -> rg.report(CallReadiness.Leg.PRESENCE, express.available && soulDoc == SoulDoc.READY)
+        }
+        val v = rg.view(waited)
+        val log = CallReadiness.logLine(v, 0)
+        if (log != readinessLastLog) { readinessLastLog = log; VoxLog.d(CallReadiness.logLine(v, waited)) }
+        readinessOverlay?.render(v, waited)
+        if (v.phase == CallReadiness.Phase.GREEN) return v
+        if (readinessTalkAnyway && v.talkAnyway) return v
+        readinessTalkAnyway = false   // offered no longer (a leg went back): the tap does not carry
+        // The old ceiling still bounds the ears and the voice: ~90 s, then the old words.
+        if (waited >= WARM_CEILING_MS && !v.talkAnyway && v.phase != CallReadiness.Phase.FAILED) {
+            VoxLog.e("warm: models never loaded after ~90s (${c.warmDiagnostics()})")
+            abandonReadiness("Voice models failed to load")
+            return null
+        }
+        mainHandler.postDelayed({ if (!isFinishing && readinessGate === rg) openVoiceLine(s) }, 500)
+        return null
+    }
+
+    /** Close on the overlay: the honest refusal. A refused voice takes the existing path (the
+     *  controller is dropped so a later attempt builds a fresh leg); anything else leaves the
+     *  warm pipeline for the next try and puts the gate's words on the pill. */
+    private fun abandonReadiness(line: String? = null) {
+        val rg = readinessGate ?: return
+        val v = rg.view(android.os.SystemClock.uptimeMillis() - readinessStartedAt)
+        VoxLog.w("event=call-ready phase=closed failed=${v.failed?.name?.lowercase() ?: "-"} pending=${v.pending?.name?.lowercase() ?: "-"}")
+        closeReadiness(green = false, line = null)
+        if (v.failed == CallReadiness.Leg.VOICE) {
+            VoxLog.w("event=call-refused reason=${v.line}")
+            liveController?.stop()
+            liveController = null
+        }
+        setStatus(line ?: v.line.replaceFirstChar { it.uppercase() }, true)
+    }
+
+    /** Take the overlay down. At green the being's line turns green and it fades while the call
+     *  opens underneath — the greeting is never held for the fade. */
+    private fun closeReadiness(green: Boolean, line: String?) {
+        readinessGate = null
+        readinessArmed = false
+        val o = readinessOverlay ?: run { avatar.setPaused(false); return }
+        avatar.setPaused(false)
+        if (green) {
+            o.animate().alpha(0f).setStartDelay(450L).setDuration(450L)
+                .withEndAction { o.visibility = View.GONE; o.being.setPaused(true) }.start()
+        } else {
+            o.animate().cancel()
+            o.visibility = View.GONE
+            o.being.setPaused(true)
+        }
+        if (line != null) VoxLog.d("event=call-ready phase=${if (green) "green" else "open"} line=\"$line\"")
+    }
+
     /** Hang up: stop the voice line + the foreground service, reset the UI. */
     private fun endCall() {
         VoxLog.d("event=call-end callLive=$callLive")
+        if (readinessGate != null) closeReadiness(green = false, line = null)
         callLive = false
         updatePip()   // no call -> no actions, and auto-enter off
         CallQuiet.end(this, prefs)
@@ -914,6 +1081,9 @@ open class MainActivity : AppCompatActivity() {
         // default (MemoryBudget.release) — whether the trade is worth it is the owner's
         // decision, not this branch's.
         (express as? GemmaExpress)?.requestUnload("call-end")
+        // Still on the charger with the setting on: the hold kept the engine; make sure it is
+        // there for the next call (and the hold re-evaluated now that no call is live).
+        applyChargeWarm("call-end")
         // A dial handoff ends the call from inside PiP. Leaving an idle app floating
         // contradicts CallWindow's own rule: an idle app must never float (H1).
         if (Build.VERSION.SDK_INT >= Pip.MIN_API && isInPictureInPictureMode) finish()
@@ -1012,6 +1182,18 @@ open class MainActivity : AppCompatActivity() {
             pipReceiverRegistered = true
         } catch (e: Throwable) {
             VoxLog.w("event=pip receiver-failed err=${e.message}")
+        }
+        // The charger state for "Keep presence warm while charging". The sticky battery
+        // broadcast gives the state now; the two power broadcasts give every change after.
+        try {
+            val battery = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            charging = (battery?.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
+            ContextCompat.registerReceiver(this, powerReceiver,
+                IntentFilter().apply { addAction(Intent.ACTION_POWER_CONNECTED); addAction(Intent.ACTION_POWER_DISCONNECTED) },
+                ContextCompat.RECEIVER_NOT_EXPORTED)
+            powerReceiverRegistered = true
+        } catch (e: Throwable) {
+            VoxLog.w("event=presence-warm-charging receiver-failed err=${e.message}")
         }
     }
 
@@ -1137,16 +1319,30 @@ open class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Open another screen or another app without losing the call: PiP first, the start
-     * second ([CallWindow]). This is the funnel `apps.launch` / `open` uses — on 12+ the
-     * system only shrinks us for the caller's own leave gesture, not for a launch the app
-     * performs itself, so the app has to arrange this one. If PiP is unavailable the start
-     * still happens, immediately.
+     * Open **another app** without losing the call: PiP first, the start second
+     * ([CallWindow]). This is the funnel `apps.launch` / `open` uses — on 12+ the system
+     * only shrinks us for the caller's own leave gesture, not for a launch the app performs
+     * itself, so the app has to arrange this one. If PiP is unavailable the start still
+     * happens, immediately. Only for targets outside Vox (a URL, the file picker); our own
+     * screens go through [openOwnScreen].
      */
     private fun launchOutside(start: () -> Unit) {
-        val plan = CallWindow.launch(pipHost, start)
+        val plan = CallWindow.open(pipHost, CallWindow.Target.OUTSIDE, start)
         if (plan.order == CallWindow.Order.PIP_THEN_LAUNCH) {
             VoxLog.d("event=launch pip-first callLive=$callLive posted=${plan.posted}")
+        }
+    }
+
+    /**
+     * Open one of **our own** screens (Settings, Models, …). Never PiP (field-2, item 1):
+     * no manual `enterPip`, and `FLAG_ACTIVITY_NO_USER_ACTION` so the start is not a "user
+     * leaving" — without it 12+ auto-enter and the 26–30 `onUserLeaveHint` path would both
+     * shrink a live call the moment the app starts its own activity.
+     */
+    private fun openOwnScreen(intent: Intent, after: () -> Unit = {}) {
+        CallWindow.open(pipHost, CallWindow.Target.OWN_SCREEN) {
+            startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NO_USER_ACTION))
+            after()
         }
     }
 
@@ -1230,8 +1426,10 @@ open class MainActivity : AppCompatActivity() {
         actionLine = show
         // With nothing to act on, the pill rests on the model's name: the header says who
         // you are talking to, the pill says what answers. It is no longer a blank line.
-        status.text = if (show) text else idleStatus()
-        status.visibility = android.view.View.VISIBLE
+        val resting = if (show) text else idleStatus()
+        status.text = resting
+        // The pill can now rest empty, when naming the model would only repeat the title.
+        status.visibility = if (resting.isBlank()) android.view.View.GONE else android.view.View.VISIBLE
         // A real phase/status replaces the models-warning pill: drop its tap
         // handler so phase pills never read as warnings or navigate to the model
         // store by accident (#12/#6).
@@ -1355,7 +1553,7 @@ open class MainActivity : AppCompatActivity() {
     }
 
     private fun openModelsStore() {
-        launchOutside { startActivity(Intent(this, ModelsActivity::class.java)) }
+        openOwnScreen(Intent(this, ModelsActivity::class.java))
     }
 
     private fun showModelsEmptyState() {
@@ -1628,11 +1826,16 @@ open class MainActivity : AppCompatActivity() {
     /** The quiet idle word — never "Connected" while the host has told us the profile is gone. */
     private fun idleStatus(): String = when {
         ProfileReach.isMissing() -> ProfileReach.line()
-        // With nothing to act on, the sub-pill names the model that answers — plainly, the
-        // way the catalogue names it. It is not the header's job: that is the agent's name.
-        else -> Header.modelLine(modelLabel.ifBlank {
-            ModelChoices.displayName(prefs.getString("model", "hermes-agent").orEmpty())
-        })
+        // With nothing to act on, the sub-pill names the model that answers — plainly, the way
+        // the catalogue names it. Unless that is the same name the title already carries: the
+        // header names the connection once, and this is the second place it used to appear.
+        else -> {
+            val model = Header.modelLine(modelLabel.ifBlank {
+                ModelChoices.displayName(prefs.getString("model", "hermes-agent").orEmpty())
+            })
+            val title = if (::agentName.isInitialized) agentName.text.toString() else ""
+            if (Header.sameName(model, title)) "" else model
+        }
     }
 
     /** DIALING: reach out to the configured gateway and let the answer move the pill.
@@ -2065,6 +2268,9 @@ open class MainActivity : AppCompatActivity() {
 
     // App-scoped call start time so a live call's timer survives activity recreation.
     companion object {
+        /** The readiness gate's ceiling for the ears and the voice: the old warm-wait's ~90 s
+         *  (180 ticks of 500 ms), after which it says what it always said. */
+        const val WARM_CEILING_MS = 90_000L
         // 0.5.0-A reveal pacing (see revealTask).
         const val REVEAL_TICK_MS = 80L    // ~12fps: fast enough to read as continuous, cheap
         const val MIN_REVEAL_MS = 220L    // floor on how briefly the reveal may be engaged
@@ -2212,11 +2418,11 @@ open class MainActivity : AppCompatActivity() {
      *  given the same words: one entity, one name. */
     private fun headerLabel(model: String): String {
         val agent = Header.agent(prefs.getString("agent_name", "").orEmpty())
-        val list = profiles.list()
         val active = profiles.activeName()
-        VoiceService.title = Header.callTitle(agent, active, list.size)
+        val name = Header.connection(agent, active)
+        VoiceService.title = Header.callTitle(name)
         modelLabel = ModelChoices.displayName(model)
-        return Profiles.headerLabel(agent, active, list.size)
+        return Profiles.headerLabel(agent, active)
     }
 
     /**
@@ -2559,8 +2765,10 @@ open class MainActivity : AppCompatActivity() {
                 // was pure GPU waste. The tool is NAMED so the aside can be topical, and
                 // the soul may decline — the token means silence, and it is parsed, never
                 // spoken.
-                val narrationWanted = presenceActive() && prefs.getBoolean("presence", true) &&
-                    liveController?.glueBlocked() != true
+                // (#413 nit: a `presence` boolean pref used to be read here too. Nothing has
+                // ever written it, so it was always true; PresenceGate via presenceActive() is
+                // the one switch.)
+                val narrationWanted = presenceActive() && liveController?.glueBlocked() != true
                 if (narrationWanted) {
                     val args = line.removePrefix("◆ tool: ").substringAfter(' ', "").take(60)
                     // 0.6.2: async render — the Gemma generation must never run on
@@ -2904,8 +3112,7 @@ open class MainActivity : AppCompatActivity() {
         else -> null
     }
 
-    private fun openSettings() = launchOutside {
-        startActivity(Intent(this, SettingsActivity::class.java))
+    private fun openSettings() = openOwnScreen(Intent(this, SettingsActivity::class.java)) {
         overridePendingTransition(R.anim.slide_in, R.anim.fade_out)
     }
 
@@ -3581,20 +3788,28 @@ open class MainActivity : AppCompatActivity() {
         val g = express as? GemmaExpress ?: return
         if (g.available || !ModelCatalog.isInstalled(this, "gemma-e2b")) return
         // Phase 5: a load is about to run, so a pending idle release would undo the work it
-        // is paying for. Cancelled only on the load path — a resident engine left idle keeps
-        // its timer (that is the arm's whole point).
-        g.cancelIdleUnload("presence-load")
+        // is paying for. GemmaExpress.load cancels it (#560: the load owns that direction).
+        // Cancelled only on the load path — a resident engine left idle keeps its timer.
         // #191: the load's cost on this phone, from the memory it started under to how
         // long it took — the two numbers the field report could not give.
         val mi = android.app.ActivityManager.MemoryInfo().also { getSystemService(android.app.ActivityManager::class.java)?.getMemoryInfo(it) }
         val t0 = android.os.SystemClock.uptimeMillis()
         VoxLog.d("event=presence-load phase=start availMb=${mi.availMem / 1048576} low=${mi.lowMemory}")
-        g.load { ok ->
-            // A second caller while a load is in flight is chained onto it and told false at once
-            // (GemmaExpress.load); that is not a failure, and must not read like one in the log.
-            val chained = !ok && !g.loadFailed
-            VoxLog.d("event=presence-load phase=${if (chained) "chained" else "end"} ok=$ok ms=${android.os.SystemClock.uptimeMillis() - t0}")
-            if (!chained) runOnUiThread {
+        g.loadFor { result ->
+            // A second caller while a load is in flight is chained onto it and told at once
+            // (GemmaExpress.load); a load asked for during a release is cancelled by it (#560).
+            // Neither is a failure, and neither may read like one in the log.
+            val ok = result == GemmaExpress.LoadResult.OK
+            val ran = ok || result == GemmaExpress.LoadResult.FAILED
+            val phase = when (result) {
+                GemmaExpress.LoadResult.CHAINED -> "chained"
+                GemmaExpress.LoadResult.CANCELLED -> "cancelled"
+                GemmaExpress.LoadResult.MISSING -> "missing"
+                else -> "end"
+            }
+            if (result != GemmaExpress.LoadResult.CANCELLED)   // the release already logged it
+                VoxLog.d("event=presence-load phase=$phase ok=$ok ms=${android.os.SystemClock.uptimeMillis() - t0}")
+            if (ran) runOnUiThread {
                 // #403 stage two: the first real load is the hardware check's second half. A
                 // failure demotes the Presence selection (off, never on); the Alpha panel says why.
                 if (HardwareCheck.noteFirstLoad(HardwareCheck.store(prefs), !g.loadFailed)) {
@@ -3615,6 +3830,32 @@ open class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * "Keep presence warm while charging" (MemoryBudget.PREF_WARM_CHARGING, off by default).
+     * [MemoryBudget.chargeWarm] decides; this only applies it: hold the engine (no idle
+     * release) while charging, load it if no call is live, and on leaving the charger hand it
+     * back to the ordinary idle rules — the same arms a hangup applies.
+     */
+    private fun applyChargeWarm(trigger: String) {
+        val g = express as? GemmaExpress ?: return
+        val setting = MemoryBudget.warmWhileCharging(
+            if (prefs.contains(MemoryBudget.PREF_WARM_CHARGING)) prefs.getBoolean(MemoryBudget.PREF_WARM_CHARGING, false) else null)
+        val want = MemoryBudget.chargeWarm(setting, charging, presenceActive(), callLive)
+        val was = g.holdWarm
+        g.holdWarm = want != MemoryBudget.ChargeWarm.OFF
+        if (was != g.holdWarm) {
+            VoxLog.d("event=presence-warm-charging hold=${g.holdWarm} charging=$charging trigger=$trigger")
+        }
+        when {
+            want == MemoryBudget.ChargeWarm.LOAD_AND_HOLD && !g.available && !g.isLoading ->
+                ensurePresenceLoading()
+            was && want == MemoryBudget.ChargeWarm.OFF && !callLive && g.available -> {
+                g.requestUnload("charge-off")
+                g.armIdleWhileOpen()
+            }
+        }
+    }
+
     // #222/D16: there is ONE normal operation — a hands-free open line (VAD + barge-in).
     // Presence is a layer on it, on by default, running only when its model is downloaded
     // and able to start. There is no mode to switch.
@@ -3623,6 +3864,9 @@ open class MainActivity : AppCompatActivity() {
         refreshModelsGate()
         PresenceGate.modelCanStart = (express as? GemmaExpress)?.loadFailed != true
         val presence = presenceActive()
+        // Before the branches below: Presence switched off must clear the charging hold so
+        // the presence-off release is not held back.
+        applyChargeWarm("resume")
         if (presence) {
             // Deferred load (MemoryBudget.PREF_LAZY_LOAD, default off = today): the engine is
             // NOT built at launch. It is built when a call starts — the only place the soul
@@ -3734,6 +3978,10 @@ open class MainActivity : AppCompatActivity() {
         if (pipReceiverRegistered) {
             try { unregisterReceiver(pipReceiver) } catch (_: Throwable) { }
             pipReceiverRegistered = false
+        }
+        if (powerReceiverRegistered) {
+            try { unregisterReceiver(powerReceiver) } catch (_: Throwable) { }
+            powerReceiverRegistered = false
         }
         // §B: the screen owns the offer. Leaving it stops the server and deletes the staged
         // copy — the spec's "deleted however the flow ends" includes this one.

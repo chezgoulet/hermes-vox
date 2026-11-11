@@ -187,7 +187,10 @@ class OnboardingActivity : AppCompatActivity() {
                     return@runOnUiThread
                 }
                 val name = HostEntity.name(probe, fallback).orEmpty()
-                val edit = prefs.edit().putString("url", u).putString("key", (SecureStore.encrypt(k) ?: k))
+                // L6: a refused encryption is said, never silent (SecureStore.seal).
+                val sealed = SecureStore.seal(k)
+                if (sealed.degraded) Toast.makeText(this, SecureStore.DEGRADED_LINE, Toast.LENGTH_LONG).show()
+                val edit = prefs.edit().putString("url", u).putString("key", sealed.stored)
                     .putString(SessionScope.PREF, SessionScope.normalize(sc))
                 // Only the host's own name is adopted. A 200 with no id keeps the
                 // fallback that is already displayed and stored; nothing is invented.

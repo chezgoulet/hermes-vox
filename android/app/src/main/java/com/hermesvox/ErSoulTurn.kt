@@ -96,8 +96,9 @@ object ErSoulTurn {
         // When the caller's voice rides the render, the soul reads their TONE first — the mood
         // (VoiceMood) that steers the voice's delivery and the vibe the mind is told.
         val ears = if (!heard) "" else
-            "You can hear the caller: their voice is attached. Start your reply with their tone as ONE tag — " +
-                "{calm}, {warm}, {lively} or {tense} — judged from HOW they sound, then continue. "
+            "You can hear the caller: their voice is attached. Start your reply with their tone as ONE tag " +
+                "in curly braces, written exactly as one of {calm}, {warm}, {lively} or {tense} — judged from " +
+                "HOW they sound, then continue. "
         return ears + "The caller just said: \"$callerText\".$ctx " +
             "The mind will answer them; you do not. Reply with $ESCALATE followed by two to six " +
             "words you would say out loud as you start to think about it, in your own voice — or " +
@@ -386,7 +387,11 @@ object ErSoulTurn {
     fun repairLine(raw: String?): String? = repairLine(raw, null)
 
     private fun repairLine(raw: String?, repairs: MutableList<String>?): String? {
-        val all = raw.orEmpty().lines()
+        // Field-2: a mood marker leading a line (`<<CALM>>`, `{calm}`, …) is never spoken; a
+        // line that was only a marker goes. Stripped before the markup refusal sees it.
+        val unmarked = VoiceMood.clean(raw).second
+        if (unmarked != raw.orEmpty()) repairs?.addOnce("markup")
+        val all = unmarked.lines()
             .map { it.trim() }
             .filter { it.isNotEmpty() }
         val lines = all.filterNot { FENCE_MARKER.matches(it) }

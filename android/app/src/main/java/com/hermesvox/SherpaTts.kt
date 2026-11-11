@@ -23,6 +23,11 @@ import kotlin.concurrent.thread
  * ~10x faster than real time on a desktop CPU with two threads (RTF 0.10-0.15), 44.1 kHz, ten
  * built-in voices, and every word of the test sentence intact on eight of ten voices. Kokoro
  * int8 was slower than real time; Pocket TTS dropped and misheard words.
+ *
+ * #559 reversed the recommendation from the field: on a Pixel 9, Supertonic dropped words
+ * through an ordinary call while Piper on the same call did not (Supertonic's chunks ran
+ * 56–126 characters against Piper's 19–29; chunking vs the model is not yet separated).
+ * PIPER is the recommended voice and the fresh-install default; SUPERTONIC is experimental.
  */
 enum class SherpaVoice(val modelId: String, val displayName: String) {
     PIPER("piper-lessac", "Piper"),
@@ -306,11 +311,18 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
                 val sr = audio.sampleRate
                 VoxLog.d("${voice.modelId} generated ${samples.size} samples @ ${sr}Hz (text ${text.length} chars)")
                 VoxLog.d("event=tts-speak engine=${voice.modelId} reason=one-shot chars=${text.length}")
-                play(samples, sr, token, text, onStart)
+                val played = play(samples, sr, token, text, onStart)
                 // #373: a fence bump during play means the utterance was cut (barge, hush,
                 // hang-up, or a newer utterance) — not that the engine failed.
-                onDone(if (streamFence.stopEpoch != token) TtsOutcome(TtsEnd.INTERRUPTED, "stopped")
-                    else TtsOutcome(TtsEnd.SPOKEN))
+                // #549: a play that never wrote a sample is a failure of the output path, not
+                // a success. It carries its own code so the host can tell it from engine death.
+                onDone(
+                    when {
+                        streamFence.stopEpoch != token -> TtsOutcome(TtsEnd.INTERRUPTED, "stopped")
+                        !played -> TtsOutcome(TtsEnd.FAILED, "track-unavailable")
+                        else -> TtsOutcome(TtsEnd.SPOKEN)
+                    }
+                )
             } catch (e: Throwable) {
                 VoxLog.e("${voice.modelId} speak: ${e.message}")
                 onDone(TtsOutcome(TtsEnd.FAILED, e.message ?: e::class.java.simpleName))
@@ -340,7 +352,7 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
      *  onAudioSegment so the speech-locked transcript can pace one-shot replies with the
      *  SAME cursor as streamed ones (a single segment — no special case). */
     private fun play(samples: FloatArray, sr: Int, cancelToken: Long = -1L, text: String = "",
-                     onStart: (() -> Unit)? = null) {
+                     onStart: (() -> Unit)? = null): Boolean {
         var at = 0
         try {
             val t: AudioTrack
@@ -349,9 +361,14 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
                 // Nothing is built and the fence is NOT re-opened.
                 if (cancelToken >= 0L && streamFence.stopEpoch != cancelToken) {
                     VoxLog.d("event=tts-speak-drop reason=stopped-during-synth samples=${samples.size}")
-                    return
+                    return false
                 }
-                val built = buildStreamTrack(sr) ?: return
+                // #549: no track means nothing could be played. Say so and answer honestly —
+                // returning normally here made "did not speak" indistinguishable from "spoke".
+                val built = buildStreamTrack(sr) ?: run {
+                    VoxLog.w("event=tts-fail reason=track-unavailable sr=$sr chunk=${samples.size}")
+                    return false
+                }
                 streamFence.start()          // open the fence for THIS utterance
                 streamTrack = built          // stop()/hush/call-end can now reach it
                 streamWritten = 0
@@ -370,7 +387,7 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
                 while (at < samples.size) {
                     if (!streamFence.allowed) {        // stop between sub-writes -> exit fast
                         VoxLog.d("event=tts-speak-cut at=$at of=${samples.size}")
-                        return
+                        return false
                     }
                     val n = minOf(twoSec, samples.size - at)
                     // D30: the first write is the first audible sample — the start witness.
@@ -385,8 +402,10 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
             // wait is the fence-aware one: a stop skips it and the track is already gone.
             finishStreaming()
             VoxLog.d("${voice.modelId} played $at samples")
+            return true
         } catch (e: Throwable) {
             VoxLog.e("${voice.modelId} play: ${e.message}")
+            return false
         }
     }
 
@@ -404,7 +423,6 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
             }
             VoxLog.d("${voice.modelId} gen ${samples.size} samples @${audio.sampleRate}Hz (${text.length} ch)")
             play(samples, audio.sampleRate, token, text)
-            true
         } catch (e: Throwable) { VoxLog.e("${voice.modelId} speakBlocking: ${e.message}"); false }
     }
 
@@ -444,6 +462,18 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
                 .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
                     .setSampleRate(sr).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
                 .setBufferSizeInBytes(bufBytes).setTransferMode(AudioTrack.MODE_STREAM).build()
+            // #538 (field log 2026-11-10): a streaming track waits for its start threshold —
+            // by default the WHOLE buffer — before it renders a sample. With 4 s of capacity a
+            // short reply never got there and sat silent until the 120 s drain ceiling. Start
+            // after a quarter-second, as the 0.25 s track did. API 31+; older APIs rely on the
+            // forced play-out in finishStreaming (StreamDrain).
+            val startFrames = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                val capacity = try { t.bufferCapacityInFrames } catch (_: Throwable) { bufBytes / 4 }
+                try { t.setStartThresholdInFrames(StreamDrain.startThresholdFrames(sr, minBuf / 4, capacity)) }
+                catch (e: Throwable) { VoxLog.w("event=tts-track start-threshold-failed err=${e.message?.take(80)}"); -1 }
+            } else -1
+            VoxLog.d("event=tts-track sr=$sr capacityMs=${StreamDrain.audioMs((bufBytes / 4).toLong(), sr)} " +
+                "startFrames=${if (startFrames >= 0) startFrames.toString() else "default"}")
             t.play()
             t
         } catch (e: Throwable) { VoxLog.e("buildStreamTrack: ${e.message}"); null }
@@ -454,18 +484,20 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
      *  chunk is sliced into ~2s sub-writes with a fence check before every slice, so a
      *  stop that lands mid-chunk exits between sub-writes instead of draining the whole
      *  sentence's WRITE_BLOCKING write (F2: bounds the drain-wait to ~2s). */
-    fun streamChunk(text: String): Boolean {
-        if (!streamFence.allowed) return false   // #D1: fence closed -> no synth, no rebuild
+    internal fun streamChunk(text: String): ChunkResult {
+        // #D1: fence closed -> no synth, no rebuild. #538: a fence that was never opened is a
+        // fresh engine (installed after the stream began), not a stop — the caller adopts it.
+        if (!streamFence.allowed) return if (streamFence.opened) ChunkResult.CUT else ChunkResult.NOT_OPEN
         // #240: the chunk's token. A stop that lands while it synthesizes kills it for good,
         // even if the next turn re-opens the fence before the synthesis returns.
         val epoch = streamFence.stopEpoch
-        val eng = tts ?: return false
+        val eng = tts ?: return ChunkResult.NO_ENGINE
         return try {
             val audio = synth(eng, text)
-            val samples = audio.samples ?: return false
+            val samples = audio.samples ?: return ChunkResult.SILENT
             if (audioIsSilent(samples)) {
                 VoxLog.w("event=tts-fail engine=${voice.modelId} reason=silent-stream samples=${samples.size}")
-                return false
+                return ChunkResult.SILENT
             }
             val sr = audio.sampleRate   // #25: the ACTUAL model rate, not a hardcoded one
             val t: AudioTrack
@@ -475,14 +507,18 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
                 // treated as "first chunk" (that rebuild is the resurrection bug).
                 if (!streamFence.allows(epoch)) {
                     if (streamFence.allowed) VoxLog.d("event=tts-drop reason=stale-epoch chars=${text.length}")
-                    return false
+                    return ChunkResult.CUT
                 }
                 if (streamTrack == null) {
                     val built = buildStreamTrack(sr)
                     streamTrack = built; streamWritten = 0
-                    t = built ?: return false
+                    // #538: #549's track failure, on the streaming path — named, not engine death.
+                    t = built ?: run {
+                        VoxLog.w("event=tts-fail engine=${voice.modelId} reason=track-unavailable source=stream sr=$sr chunk=${samples.size}")
+                        return ChunkResult.TRACK_UNAVAILABLE
+                    }
                 } else {
-                    t = streamTrack ?: return false
+                    t = streamTrack ?: return ChunkResult.CUT
                 }
                 streamSR = sr
                 // previewB: this chunk starts where the track has been written to so far
@@ -503,34 +539,61 @@ class SherpaTts(private val context: Context, private val voice: SherpaVoice = S
                 val twoSec = sr * 2                    // ~2s of audio per sub-write (44100 @22050Hz)
                 var at = 0
                 while (at < samples.size) {
-                    if (!streamFence.allows(epoch)) return false   // F2: stop between sub-writes exits fast
+                    if (!streamFence.allows(epoch)) return ChunkResult.CUT   // F2: stop between sub-writes exits fast
                     val n = minOf(twoSec, samples.size - at)
                     t.write(samples, at, n, AudioTrack.WRITE_BLOCKING)
                     at += n
                 }
                 streamWritten += samples.size
-                true
+                ChunkResult.WROTE
             } finally { synchronized(trackLock) { writing = false; trackLock.notifyAll() } }
         } catch (e: Throwable) {
             VoxLog.e("streamChunk: ${e.message}")
             VoxLog.w("event=tts-fail engine=${voice.modelId} reason=stream code=${e.message ?: e::class.java.simpleName}")
-            false
+            ChunkResult.ERROR
         }
     }
 
-    /** Wait for the whole reply to play out, then release the persistent track. */
+    /** Wait for the whole reply to play out, then release the persistent track.
+     *
+     *  #538: the wait is [StreamDrain]'s — bounded by the audio actually owed, and a head that
+     *  never moves (a short reply below the track's start threshold) is played out with
+     *  `stop()` instead of waited on for [timeoutMs]. One `event=tts-drain` line per reply. */
     fun finishStreaming(timeoutMs: Int = 120000) {
         if (!streamFence.allowed) return          // #D1: stopped — nothing left to play out or release
         val t = streamTrack ?: return
+        val written = streamWritten.toLong()
+        val sr = if (streamSR > 0) streamSR else try { t.sampleRate } catch (_: Throwable) { 0 }
+        val start = android.os.SystemClock.uptimeMillis()
+        var head = 0L
+        var drain: StreamDrain? = null
         try {
-            var waited = 0
-            while (t.playState == AudioTrack.PLAYSTATE_PLAYING && waited < timeoutMs) {
-                if (t.getPlaybackHeadPosition().toLong() >= streamWritten.toLong() - 1L) break
-                Thread.sleep(8); waited += 8
+            head = headOf(t)
+            val d = StreamDrain(written, sr, start, head).also { drain = it }
+            while (android.os.SystemClock.uptimeMillis() - start < timeoutMs) {
+                head = headOf(t)
+                val step = d.step(android.os.SystemClock.uptimeMillis(), head,
+                    t.playState == AudioTrack.PLAYSTATE_PLAYING)
+                if (step == StreamDrain.Step.DONE) break
+                // Streaming stop(): "audio stops after the last buffer written has played" —
+                // it forces a track still filling toward its threshold to render. Every write
+                // of this reply has returned (the caller is the writer), so #7 holds.
+                if (step == StreamDrain.Step.FORCE) try { t.stop() } catch (_: Throwable) {}
+                Thread.sleep(8)
             }
         } catch (_: Throwable) {}
+        val d = drain
+        val result = d?.result?.label ?: "timeout"
+        val line = "event=tts-drain result=$result forced=${d?.forced ?: false} " +
+            "writtenMs=${StreamDrain.audioMs(written, sr)} headMs=${StreamDrain.audioMs(head, sr)} " +
+            "waitedMs=${android.os.SystemClock.uptimeMillis() - start}"
+        if (result == "played" || result == "not-playing") VoxLog.d(line) else VoxLog.w(line)
         stopStreaming()
     }
+
+    /** The playback head in frames, read as the unsigned 32-bit value it is. */
+    private fun headOf(t: AudioTrack): Long = t.playbackHeadPosition.toLong() and 0xFFFFFFFFL
+
     /** Pause-first stop (0.3.32.4): cut the AUDIBLE audio immediately, then hand the
      *  teardown to a single cleanup thread. Closing the fence + pause() run on the
      *  caller's thread and return in ms — the old stop waited SYNCHRONOUSLY on main

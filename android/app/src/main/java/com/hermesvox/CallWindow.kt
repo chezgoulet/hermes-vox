@@ -61,6 +61,26 @@ object CallWindow {
      * straight away. Returns the [Plan], which is what the tests assert and the engine uses to
      * decide whether it is a start, a pending handoff, or a refusal.
      */
+    /**
+     * Where a start lands. Only [OUTSIDE] — a browser, another app, the system file picker —
+     * covers the call and earns the PiP funnel. [OWN_SCREEN] is one of ours (Settings,
+     * Models, Sessions, About): the user chose to look at it, the call carries on behind it,
+     * and shrinking the call into a floating window there is wrong (field-2, item 1).
+     */
+    enum class Target { OWN_SCREEN, OUTSIDE }
+
+    /**
+     * Start [start] for a [target]. [Target.OWN_SCREEN] starts immediately and never asks the
+     * host anything — not `callLive`, not `enterPip`. [Target.OUTSIDE] is [launch].
+     */
+    fun open(host: Host, target: Target, start: () -> Unit): Plan = when (target) {
+        Target.OWN_SCREEN -> {
+            start()
+            Plan(Order.LAUNCH_NOW, posted = true)
+        }
+        Target.OUTSIDE -> launch(host, start)
+    }
+
     fun launch(host: Host, start: () -> Unit): Plan {
         if (!host.callLive() || !host.enterPip()) {
             start()

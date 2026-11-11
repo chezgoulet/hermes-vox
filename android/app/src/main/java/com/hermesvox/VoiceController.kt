@@ -647,8 +647,8 @@ class VoiceController(private val context: Context, private val session: HermesS
         // TtsPolicy (requested engine when its model is installed, else the system voice
         // WITH the reason kept), replaces an engine that dies, and is the only thing that
         // ever releases one.
-        // Blessed default: auto-use the best installed on-device voice — Supertonic (the
-        // bake-off winner), else Piper — and System only when neither is present. An explicit
+        // Blessed default: auto-use the best installed on-device voice — Piper (#559: the
+        // consistent one in the field), else Supertonic — and System only when neither is present. An explicit
         // user choice in Settings always wins.
         val host = TtsEngineHost(
             requested = { prefString("tts", ModelCatalog.defaultTts(context)) },
@@ -777,6 +777,17 @@ class VoiceController(private val context: Context, private val session: HermesS
      *  readiness is deliberately not part of warmth — a broken output leg must not keep
      *  the call from starting (#330). Use [ttsStatus]/[callGate] to report it separately. */
     fun isWarm() = sttReady && (vad?.isAvailable != false) && (ttsHost?.state?.settled != false)
+
+    /** The readiness gate's hearing leg: the recogniser answered ready (`sttReady=true`) and
+     *  the VAD, when one is installed, is up. Observed state only. */
+    fun hearingReady(): Boolean = sttReady && (vad?.isAvailable != false)
+
+    /** The readiness gate's voice leg: an engine is warm (`event=tts-ready`), not merely
+     *  selected. */
+    fun voiceWarm(): Boolean = ttsHost?.state?.speaking == true
+
+    /** The voice leg's refusal in TtsPolicy's own words, or null while it is not refused. */
+    fun voiceRefusal(): String? = callGate().takeIf { !it.starts }?.line
 
     /** Non-empty when spoken replies are unavailable, with the reason to show the user. */
     fun ttsStatus(): String = if (ttsReady) "" else ttsIssue.ifBlank { "text-to-speech unavailable" }
@@ -1900,7 +1911,7 @@ class VoiceController(private val context: Context, private val session: HermesS
      * run lane parks the request in the run's own state; the card must outlive the poller,
      * and it does — [ApprovalGate] owns it from [approvalArrived] on.
      *
-     * Reachable only from the FLAG_DEBUGGABLE intent harness.
+     * Reachable only from the debug harness (DebugHarnessActivity, debug source set, DUMP-gated; absent from release).
      */
     fun armApproval(runId: String) {
         if (runId.isEmpty()) return
@@ -1946,11 +1957,13 @@ class VoiceController(private val context: Context, private val session: HermesS
             }
             if (status in ApprovalArm.TERMINAL_STATUSES) {
                 VoxLog.d("event=approval-arm-end run=$runId status=$status requested=false")
+                armRunId = ApprovalArm.armedAfter(armRunId, runId)
                 return
             }
             sleepArm()
         }
         VoxLog.w("event=approval-arm-timeout run=$runId watched_ms=${ApprovalArm.WATCH_MS}")
+        armRunId = ApprovalArm.armedAfter(armRunId, runId)
     }
 
     private fun sleepArm() {
@@ -2019,6 +2032,8 @@ class VoiceController(private val context: Context, private val session: HermesS
         approvalNudge.reset()
         // The request is decided, so this run no longer needs to be held past a loop end.
         heldApprovalRuns.remove(answer.request.runId)
+        // #413 nit: nor exempted as the debug arm's run — its one card is answered.
+        armRunId = ApprovalArm.armedAfter(armRunId, answer.request.runId)
         VoxLog.d(answer.logLine())
         val prompt = promptOf(answer.request)
         main.post {
@@ -2977,6 +2992,13 @@ class VoiceController(private val context: Context, private val session: HermesS
                     main.post { listener?.onLog("// response completed") }
                 }
                 "response.failed", "error", "response.incomplete" -> runEnded = true
+                // L3 (#413 second pass): a reattach could not replay everything it missed. The
+                // reader replaces the gapped text with the run's final answer (or fails the
+                // turn); this says so where the user and a field report can see it.
+                "replay.truncated" -> {
+                    VoxLog.w("event=stream-replay-truncated gen=$gen oldest=${e.optString("output").ifEmpty { "-" }}")
+                    main.post { listener?.onLog(REPLAY_TRUNCATED_LINE) }
+                }
                 "approval.request" -> {
                     val request = approvalFrom(e)
                     if (request == null) {
@@ -3045,14 +3067,21 @@ class VoiceController(private val context: Context, private val session: HermesS
         val holdAlive = gen == erHoldReleasedGen && gen == turnGen
         if (holdAlive) { erHoldReleasedGen = -1L }   // consume the witness exactly once
         val cancelled = (gen != turnGen || voiceState.released()) && !holdAlive
-        when (ReplySettleRule.decide(
+        val streamingEngine = tts?.supportsStreaming == true
+        val settle = ReplySettleRule.decide(
             streamed = streamed,
-            streamingEngine = tts?.supportsStreaming == true,
+            streamingEngine = streamingEngine,
             genSpokeAudio = firstAudioPushed,
             gateReleased = cancelled,
             speakAllowed = shouldSpeak(),
             hasText = finalText.isNotBlank(),
-        )) {
+        )
+        // #538: the witness for a reply whose engine was replaced mid-stream. Before, this
+        // shape was a DROP that left the stream worker waiting and the turn "working".
+        if (settle == ReplySettle.RETIRE_STREAM && !streamingEngine)
+            VoxLog.w("event=settle-retire gen=$gen reason=engine-swapped " +
+                "engine=${ttsHost?.state?.engine?.ifBlank { "-" } ?: "-"} ready=${ttsHost?.state?.speaking == true}")
+        when (settle) {
             // STREAMED reply (R1 single-owner retirement): the text/settle side is NO
             // LONGER an owner of "done". It only marks the queue final (sFinal) + wakes
             // the worker; the streaming worker drains every queued sentence, then on its
@@ -3243,7 +3272,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                             // barge check the instant `speaking` flips true (playback mode,
                             // past the grace window).
                             // C4 K1 firstAudio seam (controller-side flag, no SherpaTts<->controller
-                            // callback churn): SherpaTts.streamChunk() returns TRUE only after it
+                            // callback churn): SherpaTts.streamChunk() returns WROTE only after it
                             // synthesized the chunk AND completed the first blocking write to the
                             // persistent playback AudioTrack — which buildStreamTrack() has already
                             // put into PLAYING state before the write — so true == the first real
@@ -3251,14 +3280,30 @@ class VoiceController(private val context: Context, private val session: HermesS
                             // firstAudioPushed (reset per turn in runStreamedTurn) makes the push
                             // exactly-once; the timestamp is measured from the same t0 (turnStartedAt)
                             // as firstByte/firstText, keeping the fields comparable within a version.
-                            val wrote = try { (tts as? SherpaTts)?.streamChunk(chunk.text) ?: false } catch (_: Throwable) { false }
-                            if (StreamSynthResult.failed(wrote, genCancelled, sClosed)) {
+                            fun chunkOnce(): ChunkResult = try {
+                                (tts as? SherpaTts)?.streamChunk(chunk.text) ?: ChunkResult.NO_ENGINE
+                            } catch (_: Throwable) { ChunkResult.ERROR }
+                            var result = chunkOnce()
+                            // #538: the host replaced the engine under this reply (re-warm or
+                            // degradation). Its fence was never opened, so every chunk read as
+                            // a failure and one bad phrase spent the whole voice budget. The
+                            // stream adopts the new engine and the phrase is tried once on it.
+                            if (StreamSynthResult.adopt(result, genCancelled, sClosed)) {
+                                VoxLog.w("event=tts-stream-adopt engine=${ttsHost?.state?.engine ?: "-"} gen=$turnGen chunkIdx=$chunkIdx")
+                                try { (tts as? SherpaTts)?.startStreaming() } catch (_: Throwable) {}
+                                result = chunkOnce()
+                            }
+                            val wrote = result == ChunkResult.WROTE
+                            val failure = StreamSynthResult.failureCode(result, genCancelled, sClosed)
+                            if (failure != null) {
                                 // A streaming synth that returned no audio is an engine failure,
                                 // not a cut — and not the end of the reply. The phrase is lost,
                                 // the turn keeps draining, and the host runs the same bounded
                                 // lifecycle the one-shot path uses: one re-warm, one degradation,
-                                // then a stated reason.
-                                ttsHost?.noteFailure("stream-synth")
+                                // then a stated reason. A track failure is named but costs nothing.
+                                ttsHost?.noteFailure(failure)
+                            } else if (!wrote && !genCancelled && !sClosed) {
+                                VoxLog.d("event=tts-drop reason=${result.name.lowercase()} source=stream gen=$turnGen chunkIdx=$chunkIdx")
                             }
                             if (wrote && !firstAudioPushed) {
                                 firstAudioPushed = true
@@ -3595,8 +3640,11 @@ class VoiceController(private val context: Context, private val session: HermesS
     /** Speak low-priority Gemma "phone-call glue" (acknowledgment/narration).
      *  Preempted by the authoritative Hermes reply (see speak). If the controller
      *  isn't in a reply, this just voices the presence glue. */
-    fun speakGlue(text: String, critical: Boolean = false, source: String = "unspecified",
+    fun speakGlue(raw: String, critical: Boolean = false, source: String = "unspecified",
                   onPlayed: (() -> Unit)? = null, onDone: (() -> Unit)? = null) {
+        // Field-2: the boundary. A mood marker (`<<CALM>>`, `{calm}`, `[CALM]`, …) leading any
+        // line never reaches TTS or the transcript — everything below sees the cleaned words.
+        val text = VoiceMood.clean(raw).second.trim()
         if (text.isBlank()) return
         // 0.8/M3: RECORD the glue text and its source. The 09-10 field session produced a
         // 60-character spoken line during the mind-work window that matched no ErFillers
@@ -3606,6 +3654,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         // Gemma's acknowledgements and narration are written from the caller's words
         // ("checking your bank balance") — so it rides the log_transcripts backstop like
         // every other line that carries what was said. Source and length always log.
+        if (text != raw.trim()) VoxLog.er("event=er-glue-marker stripped source=$source")
         VoxLog.er("event=er-glue source=$source critical=$critical chars=${text.length} " +
             "text=${if (logTranscripts()) text.take(120) else "<hidden>"}")
         // M2 (0.9.1 review): D29's false-action-claim guard, on EVERY lane. It used to run
@@ -4257,6 +4306,9 @@ class VoiceController(private val context: Context, private val session: HermesS
         const val SOURCE_APPROVAL_PROMPT = "approval-prompt"
         /** F8: the mind's own progress narration, spoken as the working line. */
         const val SOURCE_COMMENTARY = "mind-commentary"
+        /** L3: the transcript line for a truncated reattach replay. */
+        const val REPLAY_TRUNCATED_LINE =
+            "// reconnected, but part of the reply was lost in transit — the run's final answer replaces it"
         /** How long a LIVE auth observation vouches for the connection (K1). Long
          *  enough to cover a whole conversation, short enough that a key/endpoint
          *  change is not underwritten by yesterday's success. */

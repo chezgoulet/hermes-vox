@@ -36,6 +36,9 @@ gate, not the name. "Enhanced Realtime" is retired as vocabulary.
 agent actually writes, and a profile's local label can be corrected after its address changes.
 `0.9.1.2` corrects that patch's default rule: only the built-in `default` answers at the host
 root, so a name the gateway does not serve is reported rather than saved.
+`0.9.1.3` is the cleanup cut: the short-reply drain that held calls for two minutes, the readiness
+gate that says what a call is waiting for, Piper as the recommended voice, and the profile and
+Settings repairs.
 
 ## 0.9.1 — the release in acceptance
 
@@ -86,7 +89,46 @@ Presence it stays off, with one line saying why and where to turn it on.
 #179 (co-residency), #165 (store rail), #249 (render budget). Done in 0.9.1 if achievable;
 otherwise they close in whatever release closes them.
 
+## 0.9.1.3 — the cleanup cut
+
+Set 2026-11-10 by the owner: **0.9.1.3 is a cleanup release.** It carries the repairs and the
+polish owed to 0.9.1 and does not wait for a feature. `versionCode` 150.
+
+**In the cut.**
+
+- *The voice leg.* #549 (an unbuilt track read as a dead engine), the re-warmed engine adopted
+  by the open reply, the stuck-turn wedge retired, and `event=run-admit` so the next field log
+  can say whether a turn reached the gateway (#553).
+- *A connection named once.* The title is the connection — **Hermes-Agent** for the built-in
+  default, the profile's own label otherwise — and the pill never repeats it (#552).
+- *A saved profile can be removed.* Long-press a row; the host keeps its profile, the phone
+  forgets the address, key, model and VOX.md (#554).
+- *#533 — the profile ask stops travelling on a route with no approval notifier.*
+- *#202 — truncation after a barge-in.*
+- *#413's remaining findings*, each fixed or declined with a reason.
+- *The measurements that need no room full of speech*: #249's render budget and #209's baseline.
+
+**Moved out of the cut, deliberately.**
+
+- **#228 and #229, continuous listening.** A feature, not a cleanup. It gets its own release, and
+  Presence on by default waits for it.
+- **#404, #376 and #282, the approvals route.** A transport change with a device proof of its
+  own; it is a release, not a patch.
+- **#405's talk-heavy soak.** It needs speech in the room, and the numbers it produces belong to
+  the feature above.
+
+**After the cut: the governance review.** Set 2026-11-11. When 0.9.1.3 is published the owner
+turns to governance and process — the release rhythm, what quality gates are adopted rather than
+proposed, the commercial position, and the community space — and the outcome is published to the
+community rather than decided in private. Nothing in that review blocks this release.
+
+**Gate for the cut.** The standing checklist, plus: the voice witnesses on a real Supertonic
+call; a removed row gone from a real sheet; an approval-free profile ask that still names what
+the host serves; and every number quoted in the release note measured on this build.
+
 ## 0.9.2 — the gate opens, and whatever we have learned by then
+
+**Not open.** 0.9.1.3 ships first; this milestone opens when 0.9.1 is signed off.
 
 A living milestone, not a promise. What it holds today:
 

@@ -30,6 +30,17 @@ import javax.crypto.spec.GCMParameterSpec
  *  * [storageUpgrade] is the next-start retry: a plaintext fallback (an encrypt
  *    that failed) and an unversioned ciphertext are both rewritten in the marked
  *    form. A failure to encrypt is logged; it is never silent.
+ *  * L6 (second pass): a failure is also never silent to the USER. Every save goes
+ *    through [seal], which says whether the value went to disk unencrypted, and the
+ *    save sites show [DEGRADED_LINE]; Settings keeps saying it ([isDegraded]) for as
+ *    long as the stored value is still plaintext.
+ *
+ *    Why save-and-say rather than refuse: refusing would lock a user whose Keystore is
+ *    broken (it happens on some ROMs and after some restores) out of the app entirely,
+ *    with no way to work around it. The value lands in this app's private storage, the
+ *    manifest excludes it from backup (`allowBackup=false`, `fullBackupContent=false`),
+ *    and every start retries the encryption. A plaintext key the user was not told
+ *    about was the defect; a plaintext key the user is told about is a choice.
  */
 object SecureStore {
     /** The device-wide gateway key, and the alias of every pre-0.9.1 value. */
@@ -80,7 +91,41 @@ object SecureStore {
         return gen.generateKey()
     }
 
-    /** Encrypt a value for storage under [alias]. Returns null on failure (caller keeps plaintext). */
+    /** What a save site writes, and whether it had to write it unencrypted. */
+    data class Sealed(val stored: String, val degraded: Boolean)
+
+    /** The line a save site shows when [Sealed.degraded]. Never contains the value. */
+    const val DEGRADED_LINE =
+        "Saved, but NOT encrypted: this phone's Keystore refused the key. It is kept in " +
+            "Vox's private storage (never backed up), and Vox tries to encrypt it again on " +
+            "every start."
+
+    /** The short form Settings shows beside the connection while the key is plaintext. */
+    const val DEGRADED_TAG = "key not encrypted"
+
+    /**
+     * The one way to store a secret: the marked ciphertext, or — when the Keystore refuses —
+     * the plaintext with [Sealed.degraded] set so the caller tells the user. A blank value
+     * is stored blank and is not degraded (there is nothing to protect).
+     */
+    fun seal(value: String, alias: String = ALIAS, encrypt: (String, String) -> String? = ::encrypt): Sealed {
+        if (value.isBlank()) return Sealed(value, degraded = false)
+        val ct = encrypt(value, alias)
+        return if (ct != null) Sealed(ct, degraded = false) else Sealed(value, degraded = true)
+    }
+
+    /**
+     * True when [stored] is on disk as plaintext: unmarked, and [decrypt] hands it back
+     * unchanged (a legacy unmarked ciphertext decrypts to something else, so it is not
+     * flagged). Pure, so Settings' persistent marker is pinned off-device.
+     */
+    fun isDegraded(stored: String?, decrypt: (String) -> String? = { s -> SecureStore.decrypt(s) }): Boolean {
+        if (stored.isNullOrBlank() || isVersioned(stored)) return false
+        return decrypt(stored) == stored
+    }
+
+    /** Encrypt a value for storage under [alias]. Returns null on failure — callers go
+     *  through [seal], which turns that null into a visible degraded state. */
     fun encrypt(plaintext: String, alias: String = ALIAS): String? {
         if (plaintext.isBlank()) return plaintext
         return try {

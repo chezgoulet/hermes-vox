@@ -40,10 +40,10 @@
   match: 'DEFAULT_MASTER\s*=\s*false'
 
 - id: version-name
-  says: "0.9.1.2"
+  says: "0.9.1.3"
   doc: docs/MILESTONES.md
   file: android/app/build.gradle
-  match: 'versionName\s+"0\.9\.1\.2"'
+  match: 'versionName\s+"0\.9\.1\.3"'
 
 - id: claim-guard-every-lane
   says: "false-action-claim"

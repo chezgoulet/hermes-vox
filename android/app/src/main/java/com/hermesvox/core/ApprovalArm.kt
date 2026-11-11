@@ -49,8 +49,8 @@ package com.hermesvox.core
  *
  * This object is pure JVM so the wire reading is pinned by unit tests; the Android edges
  * (place the run, poll, show the card) live in [VoiceController.armApproval]. The whole
- * path is reachable ONLY from the FLAG_DEBUGGABLE intent harness in `MainActivity`, never
- * from a shipped surface.
+ * path is reachable ONLY from the debug harness (`DebugHarnessActivity`, debug source set,
+ * DUMP-gated, absent from the release APK), never from a shipped surface.
  */
 internal object ApprovalArm {
 
@@ -82,6 +82,14 @@ internal object ApprovalArm {
      * The run's status string, or "" when the body is not the run-status object. Used only
      * for the arm's log line, so an unreadable body is a fact to print, never a crash.
      */
+    /**
+     * #413 nit: the arm's run id after [ended] is over. The id is cleared for its own run and
+     * kept for any other, so [VoiceController.closeApprovals] stops exempting a run that has
+     * finished, been answered or timed out, and a later turn's sweep can close it.
+     */
+    fun armedAfter(armed: String, ended: String): String =
+        if (armed.isNotEmpty() && armed == ended) "" else armed
+
     fun statusOf(json: String): String = root(json)?.let { Json.str(it, "status") } ?: ""
 
     /**

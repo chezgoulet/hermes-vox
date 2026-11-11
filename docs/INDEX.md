@@ -47,6 +47,7 @@ build.
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | What a change needs to be reviewable. |
 | [`docs/RELEASE-PROCESS.md`](RELEASE-PROCESS.md) | How a release is cut, gated, signed and verified. |
 | [`docs/REPRODUCIBLE.md`](REPRODUCIBLE.md) | The reproducible-build status and the commands that prove it. |
+| [`docs/REGRESSION.md`](REGRESSION.md) | The per-cut regression set, the witness lines, and what CI cannot see. |
 | [`docs/FDROID.md`](FDROID.md) | The F-Droid rail: the source-built runtime, the draft recipe, and what is still missing. |
 | [`docs/GIT-FLOW.md`](GIT-FLOW.md) | Which branches exist and what merges where. |
 | [`DEVICE_VERIFY.md`](../DEVICE_VERIFY.md) | Sideloading and verifying the app on a phone. |
@@ -67,7 +68,7 @@ build.
 |---|---|
 | [`docs/MILESTONES.md`](MILESTONES.md) | The milestone map: what the current beta means, what the alpha gate (the switch for unfinished features) holds, and what is open. |
 | [`docs/0.9.1-SCOPE.md`](0.9.1-SCOPE.md) | Every item in the current release, by real status. |
-| [`docs/RELEASE-0.9.1.2.md`](RELEASE-0.9.1.2.md) | The current release's contents: the correction to the profile-default rule, with its evidence. |
+| [`docs/RELEASE-0.9.1.3.md`](RELEASE-0.9.1.3.md) | The current release's contents: the short-reply drain, the readiness gate, and the cleanup, with its evidence. |
 | [`docs/RELEASE-NOTES-0.9.1.md`](RELEASE-NOTES-0.9.1.md) | the published note for 0.9.1, as written by the owner: what changed, grouped by what the reader is trying to do, with contributors named |
 | [`docs/BUDGETS-0.9.1.md`](BUDGETS-0.9.1.md) | The CPU, GPU, battery and memory budget for the continuous listening lane. |
 
@@ -105,8 +106,8 @@ performance baseline instrument and the numbers recorded for each cut · [`ROADM
 `RELEASE-0.6.3.md` · `RELEASE-0.6.4.md` · `RELEASE-0.6.5.md` · `RELEASE-0.6.6.md` ·
 `RELEASE-0.7.0.md` · `RELEASE-0.7.2.md` · `RELEASE-0.7.3.md` · `RELEASE-0.8.0.md` ·
 `RELEASE-0.8.1.md` · `RELEASE-0.9.0.md` · `RELEASE-0.9.0.1.md` · `RELEASE-0.9.0.2.md` ·
-`RELEASE-0.9.0.3.md` · `RELEASE-0.9.1.md` · `RELEASE-0.9.1.1.md` — one record per cut, saying what
-that version contained.
+`RELEASE-0.9.0.3.md` · `RELEASE-0.9.1.md` · `RELEASE-0.9.1.1.md` · `RELEASE-0.9.1.2.md` — one record
+per cut, saying what that version contained.
 
 ### Plans, briefs, directives and sprints
 

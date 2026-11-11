@@ -57,8 +57,10 @@ class HeaderNoticeTest {
         assertTrue("the notice is the blue token", main.contains("R.color.hv_notice"))
         assertTrue("a model switch announces the catalogue name", main.contains("showHeaderNotice(line)"))
         assertTrue("a session switch announces the session's title", main.contains("showHeaderNotice(row.label)"))
-        // With nothing to act on, the sub-pill is the model's name — it is not blanked.
-        assertTrue(main.contains("status.text = if (show) text else idleStatus()"))
+        // With nothing to act on, the sub-pill is the model's name — unless that would only
+        // repeat the title, in which case it rests empty rather than saying it twice.
+        assertTrue(main.contains("val resting = if (show) text else idleStatus()"))
         assertTrue(main.contains("Header.modelLine("))
+        assertTrue(main.contains("Header.sameName(model, title)"))
     }
 }

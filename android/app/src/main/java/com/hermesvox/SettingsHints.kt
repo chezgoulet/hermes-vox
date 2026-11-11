@@ -68,6 +68,7 @@ object SettingsHints {
         // Presence
         "row_presence_enabled" to "The being, its voice and its asides on the phone; on by default",
         "row_er_presence" to "Short asides while the agent works; off keeps Presence quiet",
+        "row_presence_warm_charging" to "Holds Presence in memory (≈2.6 GB) while charging, so a call starts warm",
         "row_er_semantic_barge" to "\"Take your time\" lets the agent keep working; \"stop\" cancels",
         "row_er_hears" to "Presence reads your tone of voice, on the phone only",
         "row_er_voice" to "Silent, sounds (mm, a breath) or short spoken lines",

@@ -106,4 +106,25 @@ class CallWindowTest {
             CallWindow.AFTER_PIP_MS in 1..500,
         )
     }
+
+    /** Field-2, item 1: Settings/Models/Sessions/About mid-call start directly, never PiP. */
+    @Test
+    fun an_own_screen_starts_now_and_never_asks_for_pip_even_mid_call() {
+        val host = FakeHost(live = true)
+        var launched = 0
+        val plan = CallWindow.open(host, CallWindow.Target.OWN_SCREEN) { launched++ }
+
+        assertEquals(CallWindow.Order.LAUNCH_NOW, plan.order)
+        assertEquals(1, launched)
+        assertTrue("the host was never touched: ${host.events}", host.events.isEmpty())
+    }
+
+    @Test
+    fun an_outside_target_still_takes_the_pip_funnel() {
+        val host = FakeHost(live = true)
+        val plan = CallWindow.open(host, CallWindow.Target.OUTSIDE) { host.events += "launch" }
+        assertEquals(CallWindow.Order.PIP_THEN_LAUNCH, plan.order)
+        host.runPosted()
+        assertEquals(listOf("pip", "post", "launch"), host.events)
+    }
 }

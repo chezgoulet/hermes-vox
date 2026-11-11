@@ -58,6 +58,14 @@ internal class TtsEngineHost(
     }
 
     companion object {
+        /**
+         * #549: failures of the output path rather than of the engine. A track that could not
+         * be built is retried on the next utterance; it must not spend the one re-warm or the
+         * one degradation, and it must never reach [steadyOff] — a transient audio failure used
+         * to turn a working voice into a silent call until the next session.
+         */
+        val NOT_THE_ENGINE = setOf("track-unavailable")
+
         /** Re-warm attempts per call. A second warm failure degrades instead of trying
          *  the same engine again. */
         const val MAX_REWARMS = 1
@@ -155,7 +163,11 @@ internal class TtsEngineHost(
                 TtsEnd.INTERRUPTED -> debug("event=tts-cut engine=$engineToken code=${out.code}")
                 TtsEnd.FAILED -> {
                     warn("event=tts-fail engine=$engineToken code=${out.code}")
-                    recover(if (silent) "silent" else "speak-failed")
+                    if (out.code in NOT_THE_ENGINE) {
+                        debug("event=tts-recover-skip engine=$engineToken reason=${out.code}")
+                    } else {
+                        recover(if (silent) "silent" else "speak-failed")
+                    }
                 }
             }
             onDone(out)
@@ -344,7 +356,7 @@ internal class TtsEngineHost(
         if (wanted != null && wanted != current && modelPresent(wanted)) return wanted
         // An explicit "system" preference still has a usable local voice installed: the
         // point of a degradation is that SOMETHING speaks, and the line names it.
-        return listOf("supertonic", "piper").firstOrNull { it != current && modelPresent(it) }
+        return listOf("piper", "supertonic").firstOrNull { it != current && modelPresent(it) }
     }
 
     /**
@@ -355,6 +367,11 @@ internal class TtsEngineHost(
         synchronized(lock) {
             if (state.released) return
             warn("event=tts-fail engine=${state.engine} code=$reason")
+            // #538: the streaming path's track failures are #549's, and cost the same: nothing.
+            if (reason in NOT_THE_ENGINE) {
+                debug("event=tts-recover-skip engine=${state.engine} reason=$reason")
+                return
+            }
             recover(reason)
         }
     }

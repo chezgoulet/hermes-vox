@@ -64,9 +64,25 @@ class ReplySettleRuleTest {
     }
 
     @Test fun a_streamed_flag_without_a_streaming_engine_is_not_a_stream() {
-        // streamBegin() only arms for a streaming engine; if the engine changed under
-        // us this is an ordinary text-only settle, exactly as before 0.4.0.4.
+        // streamBegin() arms `streamed` on every engine; with a non-streaming one (the
+        // system voice) and nothing heard yet this is an ordinary text-only settle.
         assertEquals(ReplySettle.SPEAK, decide(streamed = true, streamingEngine = false))
+    }
+
+    @Test fun an_engine_swapped_under_a_heard_stream_still_retires() {
+        // #538: a re-warm (or the degradation to the system voice) landed mid-reply, so the
+        // engine no longer streams — but the worker is still open on this queue and the
+        // reply was already audible. DROP never marked the queue final: the worker waited,
+        // the gate stayed shut, and the screen said "The entity is working…" with nothing
+        // running on the gateway. It must retire through the worker like any open stream.
+        assertEquals(ReplySettle.RETIRE_STREAM,
+            decide(streamed = true, streamingEngine = false, genSpokeAudio = true))
+        assertEquals(ReplySettle.RETIRE_STREAM,
+            decide(streamed = true, streamingEngine = false, genSpokeAudio = true, speakAllowed = false))
+        // Unchanged: nothing heard yet -> the full reply speaks on the new engine.
+        assertEquals(ReplySettle.SPEAK, decide(streamed = true, streamingEngine = false, genSpokeAudio = false))
+        // Unchanged: a closed stream that was heard is never re-spoken.
+        assertEquals(ReplySettle.DROP, decide(streamed = false, streamingEngine = false, genSpokeAudio = true))
     }
 
     @Test fun speech_off_settles_quietly_and_still_releases() {
@@ -98,8 +114,8 @@ class ReplySettleRuleTest {
                                     ReplySettle.SILENT_SETTLE -> silent++
                                 }
         assertEquals(64, speak + drop + retire + silent)
-        assertEquals(16, retire)   // streamed && engine: all 16 such combinations
-        assertEquals(36, drop)     // of the other 48: released || audio (3 of 4)
+        assertEquals(24, retire)   // streamed && engine: 16; #538: streamed && !engine && audio: 8
+        assertEquals(28, drop)     // of the other 40: released || audio
         assertEquals(9, silent)    // of the 12 live+unspoken: !allowed || !text
         assertEquals(3, speak)     // live, unspoken, allowed, with text
     }

@@ -107,6 +107,12 @@ object VoxMirror {
     }
 
     /** Read the mirrored document (null when absent/unreadable). */
+    /** Delete this profile's own document. Removing a saved profile removes what it wrote. */
+    fun removeSlot(root: File, profile: String): Boolean = try {
+        val f = file(root, profile)
+        f.parentFile?.deleteRecursively() ?: false
+    } catch (_: Throwable) { false }
+
     fun read(root: File, profile: String): String? = try {
         val f = file(root, profile)
         if (f.exists()) f.readText().ifBlank { null } else null

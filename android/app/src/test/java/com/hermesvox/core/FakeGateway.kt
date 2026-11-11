@@ -65,6 +65,13 @@ internal class FakeGateway(private val faults: Faults = Faults.NONE) : AutoClose
 
         /** Every `/p/<name>` request answers the host's exact missing-profile 404. */
         UNKNOWN_PROFILE,
+
+        /** #538: the first `POST /v1/runs` is read and never answered — a request that went
+         *  out on a connection nothing answers on. Later admissions behave. */
+        ADMISSION_UNANSWERED_ONCE,
+
+        /** #538: no `POST /v1/runs` is ever answered. */
+        ADMISSION_UNANSWERED,
     }
 
     private val server: HttpServer =
@@ -190,6 +197,9 @@ internal class FakeGateway(private val faults: Faults = Faults.NONE) : AutoClose
                 when (faults) {
                     Faults.NO_RUNS_ROUTE -> rejectJson(ex, 404, "unknown route: /v1/runs")
                     Faults.RUNS_500 -> rejectJson(ex, 500, "runs route failed")
+                    Faults.ADMISSION_UNANSWERED -> unanswered(ex)
+                    Faults.ADMISSION_UNANSWERED_ONCE ->
+                        if (runAdmissions.get() == 1) unanswered(ex) else admit(ex)
                     else -> admit(ex)
                 }
             }
@@ -202,6 +212,13 @@ internal class FakeGateway(private val faults: Faults = Faults.NONE) : AutoClose
                 runEvents(ex, path.removePrefix("/v1/runs/").removeSuffix("/events"))
             else -> reject(ex, 405)
         }
+    }
+
+    /** Reads the request and sends nothing back until the client gives up (bounded). */
+    private fun unanswered(ex: HttpExchange) {
+        ex.requestBody.use { it.readBytes() }
+        try { Thread.sleep(3000) } catch (_: InterruptedException) { }
+        try { ex.close() } catch (_: Throwable) { }
     }
 
     private fun admit(ex: HttpExchange) {

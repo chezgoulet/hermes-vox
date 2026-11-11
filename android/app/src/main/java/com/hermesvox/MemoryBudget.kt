@@ -53,6 +53,43 @@ object MemoryBudget {
     const val PREF_IDLE_OPEN_MIN = "presence_idle_open_min"
 
     /**
+     * `hv` pref: **Keep presence warm while charging** (Settings → Presence). **Off by default.**
+     * On, and with the phone charging and no call live, the engine loads and stays resident —
+     * no idle release fires while the charger is in. Off the charger it follows the idle rules
+     * above again. The measured price: a 2,588 MB model file, ~2,646 MB PSS while loaded, and a
+     * cold load of 5.6 s median (13 s on a Pixel 9 under load) that a warm call no longer pays.
+     */
+    const val PREF_WARM_CHARGING = "presence_warm_charging"
+
+    /** The resident cost the setting names, rounded the way a person reads it. */
+    const val WARM_COST_LABEL = "≈2.6 GB"
+
+    /** Whether the charging-warm setting is on. Absent pref = off (shipped). */
+    fun warmWhileCharging(pref: Boolean?): Boolean = pref ?: false
+
+    /**
+     * What the charging-warm rule asks of the engine right now. One function so the three
+     * inputs cannot be combined differently in two places:
+     *  - [ChargeWarm.OFF]  — the setting is off, Presence is not running, or the phone is not
+     *    charging: the existing idle rules apply;
+     *  - [ChargeWarm.HOLD] — charging with a call live: keep what is resident (no release), but
+     *    the call owns loading;
+     *  - [ChargeWarm.LOAD_AND_HOLD] — charging, no call: load if needed and keep it resident.
+     */
+    enum class ChargeWarm { OFF, HOLD, LOAD_AND_HOLD }
+
+    fun chargeWarm(setting: Boolean, charging: Boolean, presenceActive: Boolean, callLive: Boolean): ChargeWarm = when {
+        !setting || !charging || !presenceActive -> ChargeWarm.OFF
+        callLive -> ChargeWarm.HOLD
+        else -> ChargeWarm.LOAD_AND_HOLD
+    }
+
+    /** The row's subtitle: what it does and what it costs, in both states. */
+    fun warmChargingLabel(on: Boolean): String =
+        if (on) "On · holds $WARM_COST_LABEL of memory while charging, so a call starts warm"
+        else "Off · a call loads presence when it starts (about 5–13 s); on holds $WARM_COST_LABEL while charging"
+
+    /**
      * Shipped idle-release delay: **one minute after hangup** (D27). Long enough that a redial
      * inside the window finds the engine warm — the measured reload is 5.6–7.7 s — and short
      * enough that a phone which is not being used gets ~1.75 GB back.

@@ -641,8 +641,11 @@ class SettingsActivity : AppCompatActivity() {
                     }
                     // The display is not a setting: Save writes the connection, never
                     // the host-derived name back into the request route (`model`).
+                    // L6: never a silent plaintext fallback — the save says so (SecureStore.seal).
+                    val sealed = SecureStore.seal(ekey.text.toString().trim())
+                    if (sealed.degraded) Toast.makeText(this, SecureStore.DEGRADED_LINE, Toast.LENGTH_LONG).show()
                     prefs.edit().putString("url", u)
-                        .putString("key", (SecureStore.encrypt(ekey.text.toString().trim()) ?: ekey.text.toString().trim()))
+                        .putString("key", sealed.stored)
                         .putString(SessionScope.PREF, SessionScope.normalize(escope.text.toString())).apply()
                     // L9 (0.9.1 review): a live call belonged to the connection it opened
                     // on. Saving Entity ends it, exactly as a profile switch does, and the
@@ -800,6 +803,7 @@ class SettingsActivity : AppCompatActivity() {
         val tvEcho = findViewById<TextView>(R.id.set_er_echo_val)
 
         bindPresenceEnabled()
+        bindWarmCharging()
         // A2: how hard the mind thinks on a voice turn. The gateway takes it per request
         // (model_options.reasoning), so this needs no model change and no restart: the next
         // turn runs at the chosen effort. Low is the default because a spoken turn is waiting.
@@ -944,6 +948,21 @@ class SettingsActivity : AppCompatActivity() {
             } else maybeBootstrapVox()
         }
         refreshPresenceRow()
+    }
+
+    /** "Keep presence warm while charging" — off by default, and the row says what it costs. */
+    private fun bindWarmCharging() {
+        val sw = findViewById<SwitchCompat>(R.id.sw_presence_warm_charging) ?: return
+        val sub = findViewById<TextView>(R.id.set_presence_warm_charging)
+        sw.setOnCheckedChangeListener(null)
+        sw.isChecked = MemoryBudget.warmWhileCharging(
+            if (prefs.contains(MemoryBudget.PREF_WARM_CHARGING)) prefs.getBoolean(MemoryBudget.PREF_WARM_CHARGING, false) else null)
+        sub?.text = MemoryBudget.warmChargingLabel(sw.isChecked)
+        sw.setOnCheckedChangeListener { _, on ->
+            prefs.edit().putBoolean(MemoryBudget.PREF_WARM_CHARGING, on).apply()
+            sub?.text = MemoryBudget.warmChargingLabel(on)
+            VoxLog.d("event=presence-warm-charging setting=$on")
+        }
     }
 
     private fun presenceState(): PresenceGate.State = PresenceGate.state(
@@ -1134,7 +1153,9 @@ class SettingsActivity : AppCompatActivity() {
                 " · no certificate (${reason.token})"
             else -> ""
         }
-        findViewById<TextView>(R.id.set_entity_val).text = "$u · ${storedEntityName()} · $who$mtls"
+        // L6: while the stored key is plaintext (the Keystore refused it), the row says so.
+        val plain = if (SecureStore.isDegraded(prefs.getString("key", null))) " · ${SecureStore.DEGRADED_TAG}" else ""
+        findViewById<TextView>(R.id.set_entity_val).text = "$u · ${storedEntityName()} · $who$mtls$plain"
     }
 
     /** The host's adopted name, or the old `model` value until a verify gives one. */
@@ -1220,15 +1241,17 @@ class SettingsActivity : AppCompatActivity() {
         }
         findViewById<LinearLayout>(R.id.row_tts).setOnClickListener {
             pick("Text-to-speech",
+                // #559: Piper is recommended, Supertonic experimental — one honest line
+                // each. Both stay selectable; a stored choice is never rewritten.
                 arrayOf(
-                    "Supertonic (on-device, recommended)",
+                    "Piper · en-US (recommended) — most consistent in the field",
+                    "Supertonic (experimental) — may drop words; under investigation",
                     "Piper · fr-FR Siwis (on-device, French)",
                     "Piper · fr-FR Tom (on-device, French)",
                     "Piper · fr-FR UPMC (on-device, French, two voices)",
-                    "Piper · en-US (on-device, lighter)",
                     "System (fallback)"
                 ),
-                arrayOf("supertonic", "piper-siwis", "piper-tom", "piper-upmc", "piper", "system"),
+                arrayOf("piper", "supertonic", "piper-siwis", "piper-tom", "piper-upmc", "system"),
                 "tts", R.id.set_tts_val) { syncSpeakerRow(); previewVoice() }
         }
         // Voice = the SYNTHESIS REGISTER (system/bright/deep). The old "warm"
@@ -1779,9 +1802,21 @@ class SettingsActivity : AppCompatActivity() {
         loadSttRemoteFields()
         bindRemoteTextField(R.id.stt_remote_url, KEY_STT_REMOTE_URL) { it.trim() }
         bindRemoteTextField(R.id.stt_remote_model, KEY_STT_REMOTE_MODEL) { it.trim() }
-        bindRemoteTextField(R.id.stt_remote_key, KEY_STT_REMOTE_KEY) { SecureStore.encrypt(it) ?: it }
+        bindRemoteTextField(R.id.stt_remote_key, KEY_STT_REMOTE_KEY) { sealSttKey(it) }
         findViewById<LinearLayout>(R.id.row_test_stt_conn).setOnClickListener { testRemoteStt() }
         refreshSttRemotePanel()
+    }
+
+    /** L6: the STT key saves on every keystroke, so a refused encryption is said once per
+     *  screen, not once per character. The value is still never stored silently in plaintext. */
+    private var sttDegradedShown = false
+    private fun sealSttKey(raw: String): String {
+        val sealed = SecureStore.seal(raw)
+        if (sealed.degraded && !sttDegradedShown) {
+            sttDegradedShown = true
+            Toast.makeText(this, SecureStore.DEGRADED_LINE, Toast.LENGTH_LONG).show()
+        }
+        return sealed.stored
     }
 
     private fun loadSttRemoteFields() {
@@ -1811,7 +1846,7 @@ class SettingsActivity : AppCompatActivity() {
         prefs.edit()
             .putString(KEY_STT_REMOTE_URL, url)
             .putString(KEY_STT_REMOTE_MODEL, model)
-            .putString(KEY_STT_REMOTE_KEY, SecureStore.encrypt(key) ?: key)
+            .putString(KEY_STT_REMOTE_KEY, sealSttKey(key))
             .apply()
         if (sttBaseUrl(url).isBlank()) {
             VoxLog.dd("event=stt-remote-test ok=false reason=no-url")
@@ -2402,8 +2437,11 @@ class SettingsActivity : AppCompatActivity() {
     /** DEBUG-ONLY (#275/#225 convention): make a capture deterministic without taps.
      *  Extras: `section` (already honoured), `being_advanced` (open the fine-look panel),
      *  `preview_state` (hold the preview on idle|listening|thinking|speaking) and `scroll_to`
-     *  (a row or seek-bar resource name to scroll the section to). Inert in a release build,
-     *  because it is guarded by the same FLAG_DEBUGGABLE test MainActivity's harness uses. */
+     *  (a row or seek-bar resource name to scroll the section to). M3: these extras only ever
+     *  arrive from DebugHarnessActivity (debug source set, DUMP-gated); this activity is not
+     *  exported, so no other app can deliver them, and in release the FLAG_DEBUGGABLE test
+     *  below makes the method inert. It changes only what the screen shows — no endpoint,
+     *  key, turn or file. */
     private fun applyDebugHarness() {
         if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) == 0) return
         intent?.getStringExtra("being_advanced")?.let { want ->
@@ -2813,6 +2851,7 @@ class SettingsActivity : AppCompatActivity() {
                 .putString(PresenceCadence.PREF, PresenceCadence.DEFAULT.key)
                 .putFloat("er_echo_skip_ms", 700f)
                 .putString("er_presence_voice", "sounds")
+                .putBoolean(MemoryBudget.PREF_WARM_CHARGING, false)
             // UI/UX pass: Appearance is one section — the screen, then the being on it — so
             // its one restore covers both.
             GROUP_VISUALS -> e
