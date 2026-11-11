@@ -39,6 +39,8 @@ root, so a name the gateway does not serve is reported rather than saved.
 `0.9.1.3` is the cleanup cut: the short-reply drain that held calls for two minutes, the readiness
 gate that says what a call is waiting for, Piper as the recommended voice, and the profile and
 Settings repairs.
+`0.9.1.4` puts the call back on the speaker: voice output runs on the communication strategy, and
+with no headset attached the platform's default for it is the earpiece.
 
 ## 0.9.1 — the release in acceptance
 
