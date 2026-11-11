@@ -905,6 +905,8 @@ add it with a reference; if it contradicts a row here, the code wins.
 | Event | Meaning | Bad values | Reference |
 |---|---|---|---|
 | `event=tts-retire` | The streaming synthesis worker retired after the last chunk | — | (android/app/src/main/java/com/hermesvox/VoiceController.kt `tts-retire`) |
+| `event=tts-drain` | #538: how a reply's track was played out before release — `result=played` (the head reached the end), `forced` (the head was stuck, so `stop()` played it out), `timeout`, or `not-playing`; with `writtenMs=`, `headMs=`, `waitedMs=` | `result=forced` on API 31+ = the start threshold did not take; `waitedMs` far above `writtenMs` = a slow route. Before #538 there was no line: a short reply waited ~124 s and `event=tts-retire … ms=` showed it | (android/app/src/main/java/com/hermesvox/SherpaTts.kt `event=tts-drain result=`) |
+| `event=tts-track` | #538: the stream track was built — `sr=`, `capacityMs=`, and `startFrames=` (the frames written before it starts; `default` below API 31, where the platform starts it only when the buffer is full) | `startFrames=default` on API 31+ | (android/app/src/main/java/com/hermesvox/SherpaTts.kt `event=tts-track sr=`) |
 | `event=reply-end` | A reply's one end event: `reason=done` or `reason=cancelled cause=<barge-in / hush / stop / …>`. Exactly one per `gen` | A second line for the same `gen` is a bug | (android/app/src/main/java/com/hermesvox/VoiceController.kt `reason=cancelled cause`) |
 | `event=tts-drop` | A sentence of a reply that already ended was discarded instead of played: `reason=reply-ended` (queued) or `reason=stale-epoch` (it was synthesizing across the cut); with `source=stream`, `reason=cut` / `no_engine` is a streamed chunk that wrote nothing for a reason that is not the engine's | Normal after a barge; it is the fix for audio carried into the next turn | (android/app/src/main/java/com/hermesvox/VoiceController.kt `VoxLog.d("event=tts-drop reason=reply-ended gen=$gen source=begin")`) (android/app/src/main/java/com/hermesvox/SherpaTts.kt `reason=stale-epoch`) |
 | `event=tts-stop … cancelToSilenceMs=` | On a cut: `msSinceBarge` is the barge decision to the cut; `cancelToSilenceMs` is the cut to the track paused | `cancelToSilenceMs` over ~50 | (android/app/src/main/java/com/hermesvox/VoiceController.kt `cancelToSilenceMs=`) |
@@ -1269,6 +1271,12 @@ log), then match the signature.
   records (docs/RELEASE-0.9.0.md `spoken transcript keeps its place`).
 - **Do:** if only `reveal-hold` appears, nothing is wrong. `reveal-fallback` means the cursor
   was lost; include the surrounding `tts-` lines when reporting it.
+- **Except a short reply on 0.9.1 (#538).** A reply with under 4 s of audio whose `reveal-hold`
+  shows `samples=` *above* `of=` had a playback head that never moved: the clock fallback ran
+  past the end. On 0.9.1 that reply never played, and the turn held "The entity is working…"
+  until `event=tts-retire … ms=` ≈ 124 000 (the old 120 s drain ceiling) or a hang-up. Fixed
+  builds write `event=tts-drain result=played` within seconds
+  (android/app/src/main/java/com/hermesvox/SherpaTts.kt `event=tts-drain result=`).
 
 ### 8.14 A call wedges and the mic never reopens
 
