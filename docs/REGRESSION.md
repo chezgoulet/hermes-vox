@@ -31,9 +31,11 @@ Worked examples:
    Cheap, and they name the defect in the failure message.
 3. **Device smoke, per cut** — `scripts/regression-smoke.sh` for the automatable half, then the
    manual set below. Ten minutes with a phone.
-4. **Release-candidate soak** — an RC is published and used for 48 hours by the owner and at least
-   one field reporter before the tag. A release is not a build that passed; it is a build that was
-   *used*.
+4. **Release-candidate soak — PROPOSED, not adopted.** The suggestion is an RC used for a day or
+   two by the owner and a field reporter before the tag, because a release is not a build that
+   passed; it is a build that was used. The owner has not set a duration and this document must not
+   imply he has: it goes to the governance and process review after 0.9.1.3, and until then a cut
+   is not blocked on it.
 
 ## The per-cut procedure
 
@@ -44,7 +46,8 @@ Worked examples:
 3. Walk the manual set; record the evidence (a log line, a screenshot) in the release document.
 4. Any red is fixed, or deferred in writing with a reason and a linked issue. **No tag with an
    unexplained red.**
-5. 48 hours of ordinary use with no new severe. Then tag, then announce.
+5. Ordinary use with no new severe before the tag — the duration is the owner's to set, and is
+   under review (see the layer above). Then tag, then announce.
 
 ## The regression set — twelve paths, every cut
 

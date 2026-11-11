@@ -114,6 +114,11 @@ polish owed to 0.9.1 and does not wait for a feature. `versionCode` 150.
 - **#405's talk-heavy soak.** It needs speech in the room, and the numbers it produces belong to
   the feature above.
 
+**After the cut: the governance review.** Set 2026-11-11. When 0.9.1.3 is published the owner
+turns to governance and process — the release rhythm, what quality gates are adopted rather than
+proposed, the commercial position, and the community space — and the outcome is published to the
+community rather than decided in private. Nothing in that review blocks this release.
+
 **Gate for the cut.** The standing checklist, plus: the voice witnesses on a real Supertonic
 call; a removed row gone from a real sheet; an approval-free profile ask that still names what
 the host serves; and every number quoted in the release note measured on this build.
