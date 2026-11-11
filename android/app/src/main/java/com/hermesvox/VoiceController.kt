@@ -2977,6 +2977,13 @@ class VoiceController(private val context: Context, private val session: HermesS
                     main.post { listener?.onLog("// response completed") }
                 }
                 "response.failed", "error", "response.incomplete" -> runEnded = true
+                // L3 (#413 second pass): a reattach could not replay everything it missed. The
+                // reader replaces the gapped text with the run's final answer (or fails the
+                // turn); this says so where the user and a field report can see it.
+                "replay.truncated" -> {
+                    VoxLog.w("event=stream-replay-truncated gen=$gen oldest=${e.optString("output").ifEmpty { "-" }}")
+                    main.post { listener?.onLog(REPLAY_TRUNCATED_LINE) }
+                }
                 "approval.request" -> {
                     val request = approvalFrom(e)
                     if (request == null) {
@@ -4280,6 +4287,9 @@ class VoiceController(private val context: Context, private val session: HermesS
         const val SOURCE_APPROVAL_PROMPT = "approval-prompt"
         /** F8: the mind's own progress narration, spoken as the working line. */
         const val SOURCE_COMMENTARY = "mind-commentary"
+        /** L3: the transcript line for a truncated reattach replay. */
+        const val REPLAY_TRUNCATED_LINE =
+            "// reconnected, but part of the reply was lost in transit — the run's final answer replaces it"
         /** How long a LIVE auth observation vouches for the connection (K1). Long
          *  enough to cover a whole conversation, short enough that a key/endpoint
          *  change is not underwritten by yesterday's success. */

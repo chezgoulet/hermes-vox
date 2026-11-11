@@ -183,6 +183,9 @@ internal object Streams {
     /** `/v1/runs` reattaches once from its recorded backlog after a dropped socket. */
     private const val REATTACH_ATTEMPTS = 1
 
+    /** L3 (#413 second pass): the ceiling of the reattach backoff ([Backoff]). */
+    private const val REATTACH_CAP_MS = 4_000L
+
     const val STALLED = "hermes stream: connection lost (no data from the gateway)"
 
     private val streams = HashMap<String, StreamState>()
@@ -496,6 +499,10 @@ internal object Streams {
 
         var attempt = 0
         var recoveries = 0
+        // L3 (#413 second pass): every drop in this turn, never reset by progress. It is the
+        // backoff's exponent, so a socket that delivers one event and drops again, over and
+        // over, waits longer each time instead of reconnecting in a hot loop.
+        var drops = 0
         var readErr: Exception?
         while (true) {
             readErr = null
@@ -523,6 +530,11 @@ internal object Streams {
             if (synchronized(st.lock) { st.lastSeq } > seqBefore) { attempt = 0; recoveries = 0 }
             val drop = readErr == null || (readErr is IOException && readErr !is SocketTimeoutException)
             if (drop && attempt < REATTACH_ATTEMPTS) {
+                // L3 (#413 second pass): never at once. Bounded, jittered, exponential in the
+                // turn's drops (Backoff); a cancel during the wait ends the reader.
+                val wait = Backoff.delayMs(reattachBaseMs, drops, REATTACH_CAP_MS, jitter())
+                drops++
+                if (!sleepUnlessCancelled(st, wait)) return
                 attempt++
                 continue
             }
@@ -568,7 +580,10 @@ internal object Streams {
             recoverOutcome?.invoke(runId, "stop=$verdict")
             return if (verdict == "stopped" || verdict == "already finished") Recovery.ENDED else Recovery.LOST
         }
-        if (!sleepUnlessCancelled(st, backoff[minOf(round, backoff.size - 1)])) return Recovery.CANCELLED
+        // L3 (#413 second pass): the round's wait is jittered within its upper half, so phones
+        // that lost the same gateway together do not ask its status in lockstep.
+        val step = backoff[minOf(round, backoff.size - 1)]
+        if (!sleepUnlessCancelled(st, Backoff.delayMs(step, 0, step, jitter()))) return Recovery.CANCELLED
         val status = try { runStatus(client, runId) } catch (_: Exception) { "" }
         if (st.cancelled) return Recovery.CANCELLED
         recoverOutcome?.invoke(runId, "status=${status.ifEmpty { "unreadable" }}")
@@ -617,6 +632,15 @@ internal object Streams {
      */
     @Volatile
     internal var recoverBackoffMs: LongArray = longArrayOf(1_000, 2_000, 4_000)
+
+    /** L3: the first reattach step (the wait is 125–250 ms, doubling per drop to [REATTACH_CAP_MS]).
+     *  Tests shorten it. */
+    @Volatile
+    internal var reattachBaseMs: Long = 250L
+
+    /** L3: the random draw in `[0, 1)` behind every backoff. Tests pin it. */
+    @Volatile
+    internal var jitter: () -> Double = { java.util.concurrent.ThreadLocalRandom.current().nextDouble() }
 
     /** Observes each recovery step (run id, what was learned). Diagnostics and tests only. */
     @Volatile
@@ -910,7 +934,10 @@ internal object Streams {
                 "replay.truncated" -> {
                     st.replayTruncated = true
                     recoverOutcome?.invoke(st.runId, "replay.truncated oldest=${env.oldestRetainedSeq}")
-                    emit = false
+                    // L3 (#413 second pass): the hole is surfaced, not silent. The event goes to
+                    // the poller, which logs it and puts a line in the transcript; `output`
+                    // carries the oldest seq the gateway still holds (-1 when it did not say).
+                    ev.output = env.oldestRetainedSeq.toString()
                 }
 
                 "run.completed", "done" -> {
