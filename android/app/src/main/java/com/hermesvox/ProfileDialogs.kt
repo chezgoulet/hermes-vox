@@ -398,7 +398,9 @@ class ProfileDialogs(
             if (scope.isNotEmpty()) c.setRequestProperty(SessionScope.HEADER, scope)
             val code = c.responseCode
             val stream = if (code in 200..299) c.inputStream else c.errorStream
-            val body = stream?.use { readAtMost(it, HostProfiles.BODY_MAX) }.orEmpty()
+            val read = stream?.use { ProfilesAsk.readAtMost(it, HostProfiles.BODY_MAX) }
+            read?.error?.let { throw it }   // unchanged: a broken fast-path read is no answer
+            val body = read?.text.orEmpty()
             ProfileReach.observe(code, body, base)
             code to body
         } finally { c.disconnect() }
@@ -440,31 +442,51 @@ class ProfileDialogs(
         key: String,
         model: String,
         answeredBy: String,
-    ): Chat = try {
-        val c = URL(urlBase.trimEnd('/') + ProfilesAsk.PATH).openConnection() as HttpURLConnection
-        try {
-            c.requestMethod = "POST"
-            c.connectTimeout = ProfilesAsk.TIMEOUT_MS
-            c.readTimeout = ProfilesAsk.TIMEOUT_MS
-            c.useCaches = false
-            c.doOutput = true
-            c.setRequestProperty("Authorization", "Bearer $key")
-            c.setRequestProperty("Content-Type", "application/json")
-            // #533: ask for the stream that registers the approval notifier.
-            c.setRequestProperty("Accept", "text/event-stream")
-            val body = ProfilesAsk.requestBody(model).toByteArray(Charsets.UTF_8)
-            c.setFixedLengthStreamingMode(body.size)
-            c.outputStream.use { it.write(body) }
-            val code = c.responseCode
-            val stream = if (code in 200..299) c.inputStream else c.errorStream
-            val text = stream?.use { readAtMost(it, ProfilesAsk.BODY_MAX) }.orEmpty()
-            ProfileReach.observe(code, text, observedBase)
-            Chat(code, text, false, answeredBy)
-        } finally { c.disconnect() }
-    } catch (_: SocketTimeoutException) {
-        Chat(-1, "", true, answeredBy)
-    } catch (_: Throwable) {
-        Chat(-1, "", false, answeredBy)
+    ): Chat {
+        // Field-2, item 3: `status=-1` used to be every transport failure at once. The phase,
+        // the exception class and the bytes read now say which one it was.
+        var phase = "connect"
+        val t0 = System.currentTimeMillis()
+        return try {
+            val c = URL(urlBase.trimEnd('/') + ProfilesAsk.PATH).openConnection() as HttpURLConnection
+            try {
+                c.requestMethod = "POST"
+                c.connectTimeout = ProfilesAsk.TIMEOUT_MS
+                c.readTimeout = ProfilesAsk.TIMEOUT_MS
+                c.useCaches = false
+                c.doOutput = true
+                c.setRequestProperty("Authorization", "Bearer $key")
+                c.setRequestProperty("Content-Type", "application/json")
+                // #533: ask for the stream that registers the approval notifier.
+                c.setRequestProperty("Accept", "text/event-stream")
+                val body = ProfilesAsk.requestBody(model).toByteArray(Charsets.UTF_8)
+                c.setFixedLengthStreamingMode(body.size)
+                phase = "write"
+                c.outputStream.use { it.write(body) }
+                phase = "status"
+                val code = c.responseCode
+                phase = "read"
+                val stream = if (code in 200..299) c.inputStream else c.errorStream
+                val read = stream?.use { ProfilesAsk.readAtMost(it, ProfilesAsk.BODY_MAX) }
+                val text = read?.text.orEmpty()
+                read?.error?.let { e ->
+                    VoxLog.w("event=profiles-net cut err=${e.javaClass.simpleName} status=$code " +
+                        "bytes=${text.length} done=${ProfilesAsk.streamDone(text)} ms=${System.currentTimeMillis() - t0}")
+                    if (e is SocketTimeoutException) throw e
+                    // A 200 cut short keeps what arrived: the parser decides whether it holds a
+                    // whole block (it never reads an unterminated one). Anything else is no answer.
+                    if (code !in 200..299) throw e
+                }
+                ProfileReach.observe(code, text, observedBase)
+                Chat(code, text, false, answeredBy)
+            } finally { c.disconnect() }
+        } catch (e: SocketTimeoutException) {
+            VoxLog.w("event=profiles-net fail err=timeout phase=$phase ms=${System.currentTimeMillis() - t0}")
+            Chat(-1, "", true, answeredBy)
+        } catch (e: Throwable) {
+            VoxLog.w("event=profiles-net fail err=${e.javaClass.simpleName} phase=$phase ms=${System.currentTimeMillis() - t0}")
+            Chat(-1, "", false, answeredBy)
+        }
     }
 
     /**
@@ -490,16 +512,6 @@ class ProfileDialogs(
         return out
     }
 
-    private fun readAtMost(stream: java.io.InputStream, max: Int): String {
-        val buf = java.io.ByteArrayOutputStream()
-        val chunk = ByteArray(4096)
-        while (buf.size() < max) {
-            val n = stream.read(chunk, 0, minOf(chunk.size, max - buf.size()))
-            if (n < 0) break
-            buf.write(chunk, 0, n)
-        }
-        return buf.toByteArray().toString(Charsets.UTF_8)
-    }
 
     /** One probe at a full URL, with the probe budget. */
     private fun statusOfUrl(url: String, key: String): Int = try {
