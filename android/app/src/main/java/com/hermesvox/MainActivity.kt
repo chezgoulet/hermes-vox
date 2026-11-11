@@ -134,6 +134,21 @@ open class MainActivity : AppCompatActivity() {
     private var compact = false
     /** The Stop receiver exists only where PiP does; unregistered with the surface. */
     private var pipReceiverRegistered = false
+    /** "Keep presence warm while charging": the charger state, and the receiver that tracks it. */
+    @Volatile private var charging = false
+    private var powerReceiverRegistered = false
+    private val powerReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val now = when (intent.action) {
+                Intent.ACTION_POWER_CONNECTED -> true
+                Intent.ACTION_POWER_DISCONNECTED -> false
+                else -> return
+            }
+            if (now == charging) return
+            charging = now
+            runOnUiThread { applyChargeWarm(if (now) "plugged" else "unplugged") }
+        }
+    }
 
     /** The being the window can see: the compact one while floating, the full one otherwise. */
     private val being: AvatarView
@@ -914,6 +929,9 @@ open class MainActivity : AppCompatActivity() {
         // default (MemoryBudget.release) — whether the trade is worth it is the owner's
         // decision, not this branch's.
         (express as? GemmaExpress)?.requestUnload("call-end")
+        // Still on the charger with the setting on: the hold kept the engine; make sure it is
+        // there for the next call (and the hold re-evaluated now that no call is live).
+        applyChargeWarm("call-end")
         // A dial handoff ends the call from inside PiP. Leaving an idle app floating
         // contradicts CallWindow's own rule: an idle app must never float (H1).
         if (Build.VERSION.SDK_INT >= Pip.MIN_API && isInPictureInPictureMode) finish()
@@ -1012,6 +1030,18 @@ open class MainActivity : AppCompatActivity() {
             pipReceiverRegistered = true
         } catch (e: Throwable) {
             VoxLog.w("event=pip receiver-failed err=${e.message}")
+        }
+        // The charger state for "Keep presence warm while charging". The sticky battery
+        // broadcast gives the state now; the two power broadcasts give every change after.
+        try {
+            val battery = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            charging = (battery?.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
+            ContextCompat.registerReceiver(this, powerReceiver,
+                IntentFilter().apply { addAction(Intent.ACTION_POWER_CONNECTED); addAction(Intent.ACTION_POWER_DISCONNECTED) },
+                ContextCompat.RECEIVER_NOT_EXPORTED)
+            powerReceiverRegistered = true
+        } catch (e: Throwable) {
+            VoxLog.w("event=presence-warm-charging receiver-failed err=${e.message}")
         }
     }
 
@@ -3632,6 +3662,32 @@ open class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * "Keep presence warm while charging" (MemoryBudget.PREF_WARM_CHARGING, off by default).
+     * [MemoryBudget.chargeWarm] decides; this only applies it: hold the engine (no idle
+     * release) while charging, load it if no call is live, and on leaving the charger hand it
+     * back to the ordinary idle rules — the same arms a hangup applies.
+     */
+    private fun applyChargeWarm(trigger: String) {
+        val g = express as? GemmaExpress ?: return
+        val setting = MemoryBudget.warmWhileCharging(
+            if (prefs.contains(MemoryBudget.PREF_WARM_CHARGING)) prefs.getBoolean(MemoryBudget.PREF_WARM_CHARGING, false) else null)
+        val want = MemoryBudget.chargeWarm(setting, charging, presenceActive(), callLive)
+        val was = g.holdWarm
+        g.holdWarm = want != MemoryBudget.ChargeWarm.OFF
+        if (was != g.holdWarm) {
+            VoxLog.d("event=presence-warm-charging hold=${g.holdWarm} charging=$charging trigger=$trigger")
+        }
+        when {
+            want == MemoryBudget.ChargeWarm.LOAD_AND_HOLD && !g.available && !g.isLoading ->
+                ensurePresenceLoading()
+            was && want == MemoryBudget.ChargeWarm.OFF && !callLive && g.available -> {
+                g.requestUnload("charge-off")
+                g.armIdleWhileOpen()
+            }
+        }
+    }
+
     // #222/D16: there is ONE normal operation — a hands-free open line (VAD + barge-in).
     // Presence is a layer on it, on by default, running only when its model is downloaded
     // and able to start. There is no mode to switch.
@@ -3640,6 +3696,9 @@ open class MainActivity : AppCompatActivity() {
         refreshModelsGate()
         PresenceGate.modelCanStart = (express as? GemmaExpress)?.loadFailed != true
         val presence = presenceActive()
+        // Before the branches below: Presence switched off must clear the charging hold so
+        // the presence-off release is not held back.
+        applyChargeWarm("resume")
         if (presence) {
             // Deferred load (MemoryBudget.PREF_LAZY_LOAD, default off = today): the engine is
             // NOT built at launch. It is built when a call starts — the only place the soul
@@ -3751,6 +3810,10 @@ open class MainActivity : AppCompatActivity() {
         if (pipReceiverRegistered) {
             try { unregisterReceiver(pipReceiver) } catch (_: Throwable) { }
             pipReceiverRegistered = false
+        }
+        if (powerReceiverRegistered) {
+            try { unregisterReceiver(powerReceiver) } catch (_: Throwable) { }
+            powerReceiverRegistered = false
         }
         // §B: the screen owns the offer. Leaving it stops the server and deletes the staged
         // copy — the spec's "deleted however the flow ends" includes this one.

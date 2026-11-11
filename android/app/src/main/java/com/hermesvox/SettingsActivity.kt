@@ -803,6 +803,7 @@ class SettingsActivity : AppCompatActivity() {
         val tvEcho = findViewById<TextView>(R.id.set_er_echo_val)
 
         bindPresenceEnabled()
+        bindWarmCharging()
         // A2: how hard the mind thinks on a voice turn. The gateway takes it per request
         // (model_options.reasoning), so this needs no model change and no restart: the next
         // turn runs at the chosen effort. Low is the default because a spoken turn is waiting.
@@ -947,6 +948,21 @@ class SettingsActivity : AppCompatActivity() {
             } else maybeBootstrapVox()
         }
         refreshPresenceRow()
+    }
+
+    /** "Keep presence warm while charging" — off by default, and the row says what it costs. */
+    private fun bindWarmCharging() {
+        val sw = findViewById<SwitchCompat>(R.id.sw_presence_warm_charging) ?: return
+        val sub = findViewById<TextView>(R.id.set_presence_warm_charging)
+        sw.setOnCheckedChangeListener(null)
+        sw.isChecked = MemoryBudget.warmWhileCharging(
+            if (prefs.contains(MemoryBudget.PREF_WARM_CHARGING)) prefs.getBoolean(MemoryBudget.PREF_WARM_CHARGING, false) else null)
+        sub?.text = MemoryBudget.warmChargingLabel(sw.isChecked)
+        sw.setOnCheckedChangeListener { _, on ->
+            prefs.edit().putBoolean(MemoryBudget.PREF_WARM_CHARGING, on).apply()
+            sub?.text = MemoryBudget.warmChargingLabel(on)
+            VoxLog.d("event=presence-warm-charging setting=$on")
+        }
     }
 
     private fun presenceState(): PresenceGate.State = PresenceGate.state(
@@ -2835,6 +2851,7 @@ class SettingsActivity : AppCompatActivity() {
                 .putString(PresenceCadence.PREF, PresenceCadence.DEFAULT.key)
                 .putFloat("er_echo_skip_ms", 700f)
                 .putString("er_presence_voice", "sounds")
+                .putBoolean(MemoryBudget.PREF_WARM_CHARGING, false)
             // UI/UX pass: Appearance is one section — the screen, then the being on it — so
             // its one restore covers both.
             GROUP_VISUALS -> e

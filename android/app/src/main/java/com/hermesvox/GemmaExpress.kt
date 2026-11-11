@@ -363,6 +363,10 @@ class GemmaExpress(private val context: Context) : VoxExpress {
      * next hangup without a reload.
      */
     fun requestUnload(trigger: String) {
+        // "Keep presence warm while charging": no release while the charger is in. A setting
+        // turned off, Presence switched off, or the charger pulled clears the hold first, so
+        // this never keeps an engine the owner asked to drop.
+        if (holdWarm) { cancelIdleUnload("charging"); VoxLog.d("event=presence-unload-hold trigger=$trigger reason=charging"); return }
         val prefs = context.getSharedPreferences("hv", Context.MODE_PRIVATE)
         val delayMin = prefs.getInt(MemoryBudget.PREF_UNLOAD_DELAY, MemoryBudget.DELAY_DEFAULT)
         when (MemoryBudget.release(prefs.getBoolean(MemoryBudget.PREF_UNLOAD, false), delayMin)) {
@@ -374,6 +378,18 @@ class GemmaExpress(private val context: Context) : VoxExpress {
             MemoryBudget.Release.AFTER_DELAY -> armIdleUnload(trigger, MemoryBudget.unloadDelayMinutes(delayMin))
         }
     }
+
+    /**
+     * Set by the activity from [MemoryBudget.chargeWarm]: while true, no idle release is armed
+     * or fires. Clearing it does not release anything by itself — the caller then applies the
+     * ordinary idle rules ([requestUnload] / [armIdleWhileOpen]), exactly as after a call.
+     */
+    @Volatile var holdWarm: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            if (value) cancelIdleUnload("charging")
+        }
 
     /** Main-thread handler for the idle timer: a call can start from the UI, and the timer must
      *  be cancelled by the same thread discipline that posted it. */
@@ -430,6 +446,7 @@ class GemmaExpress(private val context: Context) : VoxExpress {
     /** Arm the open-idle release. Called when a load finishes and no call is live; a no-op
      *  unless the pref names a delay, so today's behaviour costs one pref read. */
     fun armIdleWhileOpen() {
+        if (holdWarm) return
         val prefs = context.getSharedPreferences("hv", Context.MODE_PRIVATE)
         val minutes = MemoryBudget.idleOpenMinutes(prefs.getInt(MemoryBudget.PREF_IDLE_OPEN_MIN, 0))
         if (minutes <= 0 || !loaded) return
