@@ -11,9 +11,14 @@ package com.hermesvox
  * playback head stays at 0, and the old drain loop (`head >= written - 1`, 120 s ceiling) waited
  * the full two minutes. Every one of those minutes held the turn gate: the screen said "The
  * entity is working…", the mic did not take a turn, barge-in had nothing to hear, and the gateway
- * — which had answered in two seconds — was idle. In the reporter's log, 28 of the 29 replies
- * under 4 s waited until that ceiling or until the caller hung up; every reply of 4 s or more
- * drained in under 6 s.
+ * — which had answered in two seconds — was idle. In the reporter's log (0.9.1 block, counted by
+ * `scripts/field-log-turns.py --since-field speechEndToRenderDone`), 12 replies of 14–50
+ * characters ran to the ceiling (render done 126.8–128.8 s), and 25 of the 44 replies estimated
+ * under 4 s were held more than 15 s after their text arrived — the ceiling, or the caller giving
+ * up. Whether longer replies drained promptly is not measurable from that log: it predates
+ * `event=tts-drain` and records no audio length for a streamed reply. (An earlier version of this
+ * comment said "28 of the 29 … every reply of 4 s or more drained in under 6 s"; neither count
+ * reproduces.)
  *
  * Two fixes, two places:
  * - the cause: [startThresholdFrames] — on API 31+ the track starts after a quarter-second,
