@@ -3404,7 +3404,7 @@ class VoiceController(private val context: Context, private val session: HermesS
     }
     private fun stopStreaming() {
         streamed = false
-        synchronized(sLock) { sQueue.clear(); sClosed = true; sFinal = false; sAccum.setLength(0); sLock.notifyAll() }
+        synchronized(sLock) { sQueue.clear(); sQueued = 0; sClosed = true; sFinal = false; sAccum.setLength(0); sLock.notifyAll() }
     }
 
     // ---- 0.5.0-previewA: speech-locked transcript (display only) ----
@@ -3586,7 +3586,9 @@ class VoiceController(private val context: Context, private val session: HermesS
     /** #240: a queued sentence, stamped with the reply it belongs to. */
     private class Chunk(val gen: Long, val text: String)
     private val sQueue = java.util.ArrayDeque<Chunk>()
-    /** Regression path 5 ([RetireWitness]): chunks queued for this stream since it began. Under sLock. */
+    /** Regression path 5 ([RetireWitness]): chunks queued for this stream since it began. Under sLock,
+     *  and reset **wherever `sQueue` is cleared** — the start of a stream and the close path both do,
+     *  and a counter that survives one of them reports a cut reply as a lost phrase. */
     private var sQueued = 0
     private val sLock = Object()
     @Volatile private var sClosed = false
