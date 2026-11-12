@@ -22,7 +22,7 @@ Published where the release would have been announced.
 
 ## What happens next
 
-- New date set within 7 days: `<date or "set by <date>">`
+- No new date: the release ships when its gates are green (D42, D47).
 - The fix ships as its own cut: `<issue>` — or the same cut, with the ground
   cleared and the checklist re-run.
 - The schedule moved. No gate was lowered. Nothing that a gate refused was

@@ -1291,7 +1291,8 @@ Set 2026-11-11.
 **The decision.** The owner's quality veto may be exercised on one of four grounds: a gate red or
 unexplained; a claim in the release note not measured on that build; an unresolved defect on the
 candidate with a reproduction; or the owner used the candidate and it is not ready. The ground is
-recorded in the cut tracker, published within 24 hours, and a new date is set within 7 days. **A veto
+recorded in the cut tracker and published within 24 hours. *(Amended by D47: the clause setting a new
+date within a fixed number of days is removed; D42 sets no dates.)* **A veto
 with no ground recorded in 24 hours lapses and the cut proceeds.** The schedule moves; no gate is
 lowered, and no veto can ship what a gate refused.
 
@@ -1315,19 +1316,19 @@ tag, and the release page links it. An issue the release fixes is closed by the 
 evidence line, or it stays open.
 
 **Why.** These are the two that would have stopped 0.9.1. The note written to end that class of
-failure then quoted a count that does not reproduce from the only surviving log — 12 of 78 short
-replies, against the note's 22 of 40 and the code comment's 28 of 29 — and the tracker's own gate
+failure then quoted a count that does not reproduce from the only surviving log — 12 short replies
+at the ceiling, of about 44 by a character estimate, against the note's 22 of 40 and the code
+comment's 28 of 29 (the recount's own first version said "of 78", counting gateway time as audio;
+corrected the same day, `docs/REVIEW-0.9.1.md` §4) — and the tracker's own gate
 list was open at the tag with four items unticked. A rule that catches prose and misses arithmetic is
 half a rule.
 
-## D45 — Consensus on a major: 14 days' note, 7 days' call, dissent recorded
+## D45 — Consensus on a major: a design note, a call, dissent recorded
 
 Set 2026-11-11.
 
 **The decision.** A major — a version that changes a default people rely on, removes a capability,
-changes the licence or the CLA, or opens the Alpha gate by default — requires a design note published
-at least 14 days before the release candidate is cut, a consensus call open at least 7 days in the
-community space, no sustained objection that names a defect or a broken promise, and the outcome
+changes the licence or the CLA, or opens the Alpha gate by default — requires a design note published before the release candidate is cut, a consensus call in the community space open until the cut *(amended by D47: the fixed waiting windows this decision first set are removed)*, no sustained objection that names a defect or a broken promise, and the outcome
 recorded here with the dissent and why it did not prevail. Silence after an announced window is
 consent. The maintainer decides, having published the argument. **Money never buys a vote:** a
 membership, sponsorship or bounty carries no franchise.
@@ -1358,3 +1359,28 @@ the ops cost is the argument that decides it.
 history, and the record is split between GitHub and a platform the project does not control. The
 answer is discipline rather than infrastructure: every field report that turns into work is mirrored
 to a GitHub issue by whoever triages it, so the durable record stays where the project controls it.
+
+## D47 — No release waits on a person: the walkthrough and the functional suite are the verification
+
+Set 2026-11-11, the same day as D41–D46, by the owner after the 0.9.x review.
+
+**The decision.** No release, and no decision, waits a fixed number of days on anyone. Verification
+is two instruments: the **test walkthrough** — the House app that presents the owner with the cards
+for a build and records his verdicts — and the **functional suite** the steward runs against the
+phone. Where something cannot be verified before a cut (a reporter's retest, a device-only check, a
+volunteer's run), the release ships with that verification marked **pending**, a card is queued for
+the next walkthrough, and the release document says so in those words. A reporter's confirmation is
+welcome and recorded; it is never a gate.
+
+**What it replaces.** The fixed reply window for strangers (GOVERNANCE §3, adopted earlier the same day); D43's clause
+setting a new date after a veto; and D45's fixed note and call windows, which now run alongside the
+work until the candidate is cut. No document in the tree encodes a number of days for any of these.
+
+**Why.** In an agentic setup the waiting was the cost, not the safeguard: a window protects nobody
+when the verification it waits for can be queued as a card and the release can say plainly what is
+still pending. The evidence rule (G5) is unchanged — a pending verification is a stated limitation,
+never a claim.
+
+**What it does not change.** D41 (the human run before a tag), D42 (no calendar), D43's grounds and
+24-hour lapse, D44 (the evidence rule and the closed tracker block a tag).
+

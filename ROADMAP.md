@@ -65,9 +65,10 @@ From `docs/GOVERNANCE.md`, not negotiable per release:
   volunteer exists, with whose run it was recorded in the release document.
 - **Twelve regression paths**, the closed tracker, and the evidence rule: no claim in a release note
   that was not measured on that build, and no number without the file and the count behind it.
-- **No release waits more than seven days on a person.** A report or a retest with no reply in a week
-  closes with its limitation recorded and a link to the issue. A release whose scope depends on
-  strangers is a release that cannot start.
+- **No release waits on a person** (D47). What cannot be verified before the cut ships marked
+  *pending*, with a card queued for the next test walkthrough and the release document saying so.
+  The functional suite the steward runs against the phone, and the owner's walkthrough, are the
+  verification; a reporter's confirmation is welcome and never a gate.
 - **Every release is small enough to finish.** A second theme becomes the next release.
 
 ## The series
@@ -82,7 +83,7 @@ A release is finished when it removes a question, not when it adds a feature.
 **In:** the instruments into the cut checklist with their first rows — `#208`, `#209`, `#279`, F4, F5,
 F8; `#569` the recogniser's real-time factor on the field device; `#179`'s last two numbers (RTF and
 stutter under a live turn); the retest batch `#538`, `#496`, `#373`, `#374`, each closed with its
-evidence line or with its limitation under the seven-day rule; `#562`'s bench — a smaller presence
+evidence line or marked pending with a walkthrough card (D47); `#562`'s bench — a smaller presence
 model, or most lines produced without one — because it decides the headroom every later release
 assumes; and `#528`'s contract agreed, so string extraction can start in every release after this.
 

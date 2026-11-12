@@ -127,26 +127,41 @@ Two documents, one log, different counts. I recounted it, and the count is in
 word for it. The only log that survives is
 `/home/robot/Downloads/hermes-vox-merged.log`; the `0.9.1` block in it can be
 identified because `speechEndToRenderDone` exists in `LatencyStats` at `v0.9.1`
-and not at `v0.9.0.3`, so the field appears exactly at that build's boundary.
-Counting from the first line that carries it:
+and not at `v0.9.0.3`, so the field appears at that build's boundary (strictly:
+"0.9.1 or later" — 0.9.1.1 and 0.9.1.2 carry it too). Counting from the first
+line that carries it (`--since-field speechEndToRenderDone`, line 48958):
 
 ```
-turns 152 · short replies (<4 s of audio) 78 · long replies 42
-short: 32 drained under 15 s · 11 in 15–60 s · 12 ran 126.8–128.8 s · 23 not measured
-long:  3 under 15 s · 15 in 15–60 s · 1 in 60–120 s · 5 ran 151.5–290.4 s · 18 not measured
+turns 149 · gateway time: fast (<4 s) 78 · slow 42 · absent 29
+reply audio (est. chars / 15.3 per s): short (<4 s) 44 · long 74 · no length 31
+short replies at the 120 s budget: 12 (14–50 chars, render 126.8–128.8 s, all stream-done)
+short replies held >15 s after their text arrived: 25 (12 at the budget, 11 stop, 2 focus-loss)
+long replies with render >= 120 s: 5 (1,506–2,694 chars: playback, not a stall)
 ```
 
-So: **twelve** short replies ran to the ceiling, not twenty-two; seventy-eight
-were short, not forty; and five long replies also ran past two minutes, which
-contradicts the code comment's *"every reply of 4 s or more drained in under
-6 s"*. If the whole merged file is counted as one build instead, the figures are
+*Corrected 2026-11-11.* The first version of this section, and of the script,
+counted `fullReply` as "seconds of audio". It is the time from turn launch to the
+gateway's `done` (`VoiceController.kt`, `pushFullReply` on the done event), so its
+"78 short" was 78 *fast gateway* answers; and it counted `turn-dropped` lines as
+turns. It also read the five long renders past two minutes as contradicting the
+code comment. They do not: they are replies of 1,506–2,694 characters, roughly
+100–175 seconds of speech, and a render-done time includes playing it. The
+stall count did not change — twelve, under every definition — because the stalled
+replies are both short and fast.
+
+So: **twelve** short replies ran to the ceiling, not twenty-two; about
+forty-four were short, by the character estimate (the log records no audio length
+for a streamed reply); and whether every longer reply drained in under six
+seconds, as the code comment claimed, **cannot be measured from this log** — it
+predates `event=tts-drain`. If the whole merged file is counted as one build instead, the figures are
 different again — which is the point: the file cannot tell you which build a line
 came from, and no document in the tree says which rule produced the number it
 quotes.
 
 **What this does not change:** the defect is real and the mechanism is confirmed
-twelve times over, with a signature that cannot be anything else — 1.6 to 2.4
-seconds of audio, a render that ended at 126.8 to 128.8 seconds, and no error.
+twelve times over, with a signature that cannot be anything else — replies of
+14 to 50 characters (roughly one to three seconds of speech), a render that ended
+at 126.8 to 128.8 seconds, and no error.
 The fix is right. **What it does change:** the release document that was written
 *after* the fact, to end this class of failure, repeated it. The evidence rule
 needs a second clause — a quoted number names the file it came from, the rule
@@ -155,7 +170,8 @@ misses arithmetic.
 
 **What now prevents it:** the log is dated from `0.9.1.3` onward, which fixes the
 merge problem at the source. `scripts/field-log-turns.py` now prints its
-denominator. Nothing yet requires either to be used.
+denominator, names what each field measures, and is pinned by
+`scripts/test_field_log_turns.py` in the gate. Nothing yet requires either to be used.
 
 ### 5. Excitement set the date, and nothing in the process could say no
 

@@ -1,9 +1,11 @@
 # Governance — Hermes Vox
 
-**Status: adopted in part, 2026-11-11.** Six decisions are in force and recorded as
-D41–D46 in `docs/DECISIONS.md`: the confirmed human run, readiness rather than a
+**Status: adopted in part, 2026-11-11.** Seven decisions are in force and recorded as
+D41–D47 in `docs/DECISIONS.md`: the confirmed human run, readiness rather than a
 calendar, the veto with its clock and lapse, the evidence rule and the closed
-tracker as blocking gates, and consensus on a major. The clauses that were not
+tracker as blocking gates, consensus on a major, the community space, and (D47) no
+release waiting on a person — the walkthrough and the functional suite verify, and
+what cannot be verified before a cut ships marked pending. The clauses that were not
 among the six are still marked, because a document that overstates what was
 decided is the same failure it was written to prevent.
 
@@ -63,10 +65,13 @@ is answered **within 72 hours** as a point release; the human run (G4)
 still applies, which is why 72 hours is a target and not a promise. Nothing in
 public copy names a date for a release.
 
-**No release waits on a stranger for more than seven days.** A report, a retest or a confirmation
-with no reply in a week closes with its limitation recorded and a link to the issue — the scope of a
-release is never held open by somebody else's inbox. **ADOPTED, 2026-11-11.** Three of the first
-release's five items were waiting on other people, which is not a scope, it is a hope.
+**No release waits on a person.** Verification is the test walkthrough (the House app that
+presents the owner with the cards for a build and records his verdicts) and the functional suite
+the steward runs against the phone. Where something cannot be verified before a cut — a reporter's
+retest, a device-only check — the release ships with that verification marked **pending**, a card
+queued for the next walkthrough, and the release document saying so. **ADOPTED, 2026-11-11 (D47),
+replacing the fixed reply window adopted earlier the same day.** Three of the first release's five items
+were waiting on other people, which is not a scope, it is a hope.
 
 **Why readiness and not the calendar.** This was the owner's decision on
 2026-11-11, taken against Torc's recommendation of an 18th/25th/29th/1st month —
@@ -164,7 +169,7 @@ called that, not a veto.
 
 **Procedure.** The ground is written into the cut tracker when the veto is used.
 Within **24 hours** the reason is published where the release would have been
-announced. Within **7 days** a new date is set.
+announced. There is no new date to set: a release ships when its gates are green (D42).
 
 **Consequence.** The build is not tagged. The fix ships as its own cut, by the
 normal route. **The schedule moves; the gate does not.** A veto never lowers a
@@ -178,8 +183,9 @@ unlimited one.
 **Limit.** The veto is on the release, never on a person. The critique is of the
 plan, and the record says so in those words.
 
-**ADOPTED, 2026-11-11 (D43):** grounds 1–4 as the list, 24 hours to record the
-ground, 7 days to set a new date, and an unrecorded veto lapses. The 24-hour clock
+**ADOPTED, 2026-11-11 (D43, amended by D47):** grounds 1–4 as the list, 24 hours to
+record the ground, and an unrecorded veto lapses. (The original clause set a new date
+within a fixed number of days; D47 removed it, since D42 sets no dates.) The 24-hour clock
 was the owner's, taken against Torc's offer of 48.
 
 ## 6. How consensus on a major is expressed
@@ -191,10 +197,11 @@ already depends on.
 
 **The four conditions.**
 
-1. A design note published at least **14 days** before the release candidate is
-   cut.
-2. A consensus call open at least **7 days** in the community space, with the
-   design note as its only subject.
+1. A design note published **before the release candidate is cut**, naming the
+   default that changes and who it affects.
+2. A consensus call in the community space, with the design note as its only
+   subject, open **until the candidate is cut**. (D47 removed the fixed windows this
+   clause first carried: the call runs alongside the work, not in front of it.)
 3. **No sustained objection that names a defect or a broken promise.** Consensus
    is not unanimity and it is not a vote: it is the absence of an unanswered
    technical objection after the window closes. Silence is consent, and the
@@ -216,10 +223,10 @@ keep if only one is kept.
 ## 7. Amendments
 
 - The maintainer amends with a published reason, recorded as the next D-number.
-- Anyone may propose an amendment in the community space. A proposal with no
-  objection in 14 days is adopted; one with an objection is answered in writing.
-- **The veto (§5) and the evidence rule (§4, G5) need 14 days' notice before they
-  are amended.** They are the two clauses that protect people who are not in the
+- Anyone may propose an amendment in the community space. The maintainer answers
+  it in writing: adopted, with its D-number, or declined with the reason.
+- **The veto (§5) and the evidence rule (§4, G5) are amended only by a published
+  D-number that names the clause and the reason, before the change takes effect.** They are the two clauses that protect people who are not in the
   room: the person who installs the APK, and the person who reports the bug.
 - If this document stops matching practice, it is corrected to match practice or
   practice is corrected to match it. A governance document that describes a
@@ -243,16 +250,20 @@ keep if only one is kept.
    says what they saw. It defaults to the owner until a volunteer takes the role
    (G4, D41, amended the same day).
 2. **No calendar.** A release ships when its gates are green (D42).
-3. **The veto:** four grounds, a 24-hour clock to record the ground, a new date
-   within 7 days, and an unrecorded veto lapses (D43).
+3. **The veto:** four grounds, a 24-hour clock to record the ground, and an
+   unrecorded veto lapses (D43, amended by D47).
 4. **The evidence rule and the closed tracker block a tag**, and a number that
    cannot be reproduced blocks it rather than being corrected afterwards (D44).
-5. **Consensus on a major:** 14 days' design note, 7 days' call, no unanswered
+5. **Consensus on a major:** a design note and a call open until the cut, no unanswered
    objection naming a defect, silence as consent, dissent recorded, and money never
    buys a vote (D45).
 6. **The community** is Discord, with no bridge and no migration plan; the platform
    question reopens only if someone brings a compelling alternative
    (`docs/COMMUNITY.md`, D46).
+7. **No release waits on a person.** The test walkthrough and the functional suite
+   verify; what cannot be verified before a cut ships marked pending with a card
+   queued, and the release document says so (D47). No clause encodes a number of
+   days.
 
 **Still open, and marked as such in the clauses above:**
 
