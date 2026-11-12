@@ -572,3 +572,9 @@
   doc: docs/TTS-FIDELITY.md
   file: scripts/tts-fidelity.py
   match: 'def split_ways'
+
+- id: matrix-row-is-evidence
+  says: "docs/BEHAVIOUR-MATRIX.md"
+  doc: docs/templates/RELEASE-CUT.md
+  file: docs/BEHAVIOUR-MATRIX.md
+  match: 'conn-test: verdict=ok'
