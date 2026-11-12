@@ -28,10 +28,10 @@ band the candidate has to be *worse*, not merely different.
 | cold start → first frame | +30% or +150 ms | dominated by process start and ART warm-up, which vary with what else the phone was doing; a fifth of a second is the smallest visible step on a cold open |
 | model warm: loadMs | +40% or +500 ms | a cold load reads the model from disk; disk contention on one handset is the noise, half a second is the smallest change a user feels |
 | model warm: warmMs | +50% or +300 ms | the cache path is short and should be stable; half again its time is a real change, not jitter |
-| speech → text p50 | +20% or +60 ms | the recogniser is the one leg where a config change (whisper-base vs a larger model) moves the number in whole hundreds of ms |
-| first byte p50 | +20% or +60 ms | gateway leg; noise on a tailnet is tens of ms, a config change is not |
-| first text p50 | +25% or +80 ms | parser + first token; tolerates a gateway that streams the first token slightly later |
-| first audio p50 | +20% or +80 ms | **the perceived number** — the one a user calls "slow". Tightest relative band of the latency rows |
+| speech → text p50 | — **not compared** | see below: anchored at the microphone, not at the end of speech |
+| first byte p50 | +20% or +60 ms, **n≥5 a side** | gateway leg; noise on a tailnet is tens of ms. Under five turns a side there is no verdict |
+| first text p50 | +25% or +80 ms, **n≥5 a side** | parser + first token; tolerates a gateway that streams the first token slightly later |
+| first audio p50 | +20% or +80 ms, **n≥5 a side** | **the perceived number** — the one a user calls "slow". Tightest relative band of the latency rows |
 | presence render p50 | +25% or +120 ms | a render is an on-device model call; 120 ms is about one short word of speech |
 | peak RSS | +250 MB | a resident model is hundreds of MB; a leak shows as a trend over cuts, a regression as a step of this size |
 | lowest MemAvailable | −200 MB | headroom, the thing that decides whether a second model can co-reside. Falling by this much is a budget change |
@@ -39,11 +39,27 @@ band the candidate has to be *worse*, not merely different.
 | failed turns | any increase | a failed turn (`reply-error`, `stream-lost`, `empty-reply`) is never noise; one more is one more |
 | dropped turns | any increase — **warn** | a drop can be the caller hanging up (`reason=stopped`), which is not the build's fault. Reported, does not fail the diff |
 
-**Not compared, stated rather than dropped:** `fullReply`. It is `uptimeMillis() - t0` at the
-gateway's `done` (`VoiceController.kt` → `LatencyStats.pushFullReply`) — gateway time, not
-audio, and it grows with the length of the reply. Two runs of different replies cannot be
-differenced on it; the 0.9.1 post-mortem's first recount compared it as audio and got the
-denominator wrong (`docs/REVIEW-0.9.1.md`). It stays in the report as context.
+**Not compared, stated rather than dropped:**
+
+- `fullReply` — `uptimeMillis() - t0` at the gateway's `done` (`VoiceController.kt` →
+  `LatencyStats.pushFullReply`): gateway time, not audio, and it grows with the length of the
+  reply. Two runs of different replies cannot be differenced on it; the 0.9.1 post-mortem's
+  first recount compared it as audio and got the denominator wrong (`docs/REVIEW-0.9.1.md`).
+- `stt` — `now - segStart`, anchored where the microphone opened, not where speech ended
+  (`docs/BASELINE.md:82`, `docs/BARGE-REGRESSION-ANALYSIS.md:99`). In a quiet room the mic
+  stays open for the whole call and the value is the call's length. The two rows that
+  prompted this rule were taken on one handset, one evening, with no speech in the room:
+  0.9.1.4 read 17.7 s and `testing` read 66.9 s for clips of three to five seconds. That is
+  the room, not the build. `sttDecodeMs` is the recogniser's own time; the field named `stt`
+  is not.
+
+**Which rows may carry a verdict.** The build decides cold start, a model's load, the resident
+set, the thermal trace and whether a turn failed: those are judged. The gateway and the room
+decide the conversational latencies, so they are judged only at **five turns a side or more**
+(`CONVERSATIONAL_MIN_N`); below that they are printed as context and the verdict line says how
+many rows it could not judge. The latency verdict for a cut belongs to **F8** — ten fixed
+utterances, spoken in the same order against the same gateway — which is why F8 is a line in the
+cut checklist beside this one.
 
 ## Which rows are required
 
@@ -93,20 +109,30 @@ class Row:
 
     kind: `up` (higher is worse), `down` (lower is worse), `count` (any increase is worse),
     `thermal` (worse rank is worse).
+    basis: `build` (the APK decides it) or `gateway` (the model and the room decide it).
     """
 
-    def __init__(self, key, label, get, kind="up", rel=0.0, abs_=0, unit=" ms", why="", warn=False):
+    def __init__(self, key, label, get, kind="up", rel=0.0, abs_=0, unit=" ms", why="",
+                 warn=False, basis="build"):
         self.key, self.label, self.get, self.kind = key, label, get, kind
         self.rel, self.abs, self.unit, self.why, self.warn = rel, abs_, unit, why, warn
+        self.basis = basis
 
 
 # The order is the order #209 lists them in, so the table reads like the issue.
+#
+# `basis=build` rows carry a verdict: the APK decides cold start, a model load, the resident
+# set, the thermal trace and whether a turn failed. `basis=gateway` rows are the model's and
+# the room's to decide — see CONVERSATIONAL_MIN_N.
 ROWS = [
     Row("cold", "cold start → first frame (p50)", _cold, rel=0.30, abs_=150),
-    Row("stt", "speech → text (p50)", lambda r: _pct(r, "stt"), rel=0.20, abs_=60),
-    Row("firstByte", "first byte (p50)", lambda r: _pct(r, "firstByte"), rel=0.20, abs_=60),
-    Row("firstText", "first text (p50)", lambda r: _pct(r, "firstText"), rel=0.25, abs_=80),
-    Row("firstAudio", "first audio (p50)", lambda r: _pct(r, "firstAudio"), rel=0.20, abs_=80),
+    Row("stt", "speech → text (p50)", lambda r: _pct(r, "stt"), rel=0.20, abs_=60, basis="gateway"),
+    Row("firstByte", "first byte (p50)", lambda r: _pct(r, "firstByte"), rel=0.20, abs_=60,
+        basis="gateway"),
+    Row("firstText", "first text (p50)", lambda r: _pct(r, "firstText"), rel=0.25, abs_=80,
+        basis="gateway"),
+    Row("firstAudio", "first audio (p50)", lambda r: _pct(r, "firstAudio"), rel=0.20, abs_=80,
+        basis="gateway"),
     Row("presence", "presence render (p50)", lambda r: (
         (r.get("presence_render") or {}).get("p50"),
         int((r.get("presence_render") or {}).get("n") or 0)), rel=0.25, abs_=120),
@@ -122,7 +148,16 @@ ROWS = [
 EXCLUDED = [
     ("fullReply", "gateway time (`uptimeMillis() - t0` at the gateway's `done`), not audio; "
                   "it grows with reply length, so two runs differ on reply size, not on the build"),
+    ("stt", "`now - segStart` — anchored at the microphone opening, not at the end of speech "
+            "(`docs/BASELINE.md:82`, `docs/BARGE-REGRESSION-ANALYSIS.md:99`). In a quiet room the "
+            "mic stays open and the value is the whole call: two runs of the same build differ by "
+            "minutes. `sttDecodeMs` is the recogniser's own time; this is not it"),
 ]
+
+# A percentile of two or three turns is one model's reply, not a distribution. The
+# conversational rows need this many samples a side before they are allowed a verdict; below
+# it they are printed as context and the verdict line says how many rows it could not judge.
+CONVERSATIONAL_MIN_N = 5
 
 
 def warm_rows(base):
@@ -143,8 +178,11 @@ def allowance(row, base):
     return max(abs(row.rel) * base, row.abs)
 
 
-def judge(row, base, cand):
-    """(verdict, allowed, note). verdict ∈ pass, regressed, unknown, no-baseline, n/a."""
+def judge(row, base, cand, bn=None, cn=None):
+    """(verdict, allowed, note). verdict ∈ pass, regressed, unknown, no-baseline, n/a, context."""
+    # Presence is settled before anything else: a row that is simply not in one of the runs
+    # must never be reclassified as "context", or a row could stop being reported and the
+    # diff would call that a pass. That is the failure this instrument exists to catch.
     if row.kind == "thermal":
         if base is None and cand is None:
             return "n/a", None, "the phone never said"
@@ -162,6 +200,12 @@ def judge(row, base, cand):
         return "no-baseline", None, "first measurement"
     if cand is None:
         return "unknown", None, "the baseline measured it; the candidate did not report it"
+    # A conversational row is the model's and the room's to decide. Below
+    # CONVERSATIONAL_MIN_N samples a side, it is printed and not judged: two replies are not a
+    # distribution, and a verdict from them would be about the run, not about the build.
+    if row.basis == "gateway" and min(bn or 0, cn or 0) < CONVERSATIONAL_MIN_N:
+        return "context", None, (f"n={bn or 0}/{cn or 0} — a reply, not a distribution; "
+                                 f"the latency verdict is F8's")
     if row.kind == "count":
         return ("regressed" if cand > base else "pass"), 0, ("any increase is worse"
                                                             if cand > base else "")
@@ -245,17 +289,19 @@ def main(argv):
                   f"{', '.join(r.key for r in ROWS + warm_rows(base))}", file=sys.stderr)
             return USAGE
 
-    out, worst, compared, weak, unknown_rows, bad = [], OK, 0, [], [], []
+    out, worst, compared, weak, unknown_rows, bad, context_rows = [], OK, 0, [], [], [], []
     for row in rows:
         b, bn = row.get(base)
         c, cn = row.get(cand)
-        verdict, allowed, note = judge(row, b, c)
+        verdict, allowed, note = judge(row, b, c, bn, cn)
         if verdict in ("pass", "regressed"):
             compared += 1
             if bn is not None and cn is not None and min(bn, cn) < 3:
                 weak.append(f"{row.key} (n={bn}/{cn})")
         elif verdict == "unknown":
             unknown_rows.append(row.key)
+        elif verdict == "context":
+            context_rows.append(row.key)
         # A warned row (a dropped turn) is printed and counted, but does not by itself turn
         # the diff red: a drop can be the caller hanging up, and that is not the build's fault.
         if verdict == "regressed":
@@ -303,7 +349,9 @@ def main(argv):
               f"{'s' if len(unknown_rows) != 1 else ''} the candidate did not report: "
               f"{', '.join(unknown_rows)})")
     else:
-        print(f"BASELINE-DIFF PASS ({compared} rows compared)")
+        tail = f", {len(context_rows)} row{'s' if len(context_rows) != 1 else ''} printed as " \
+               f"context and not judged" if context_rows else ""
+        print(f"BASELINE-DIFF PASS ({compared} rows compared{tail})")
     return worst
 
 

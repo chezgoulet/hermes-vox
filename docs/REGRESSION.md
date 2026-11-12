@@ -78,11 +78,26 @@ line. Its exit code is the instrument:
   report it. **This is not a green.** Unknown is not healthy (D44); the row is either restored
   or the cut says in writing why it is gone.
 
+The row's own label is checkable: the app writes `event=alpha-gate state=off|on …` at the start
+of every call, so "gate off" in a release document can be read back out of the log that produced
+the numbers, instead of being a memory of what the switch said.
+
 The tolerances, and the reason for each number, are in the script's header — one table, in the
-code, where a change to a number is a visible diff. `fullReply` is deliberately **not** compared:
-it is gateway time, not audio, and it grows with the length of the reply, so two runs of
-different replies cannot be differenced on it (`docs/REVIEW-0.9.1.md` records the recount that
-got this wrong).
+code, where a change to a number is a visible diff. Two things are deliberately **not** compared,
+and one set of rows is compared only with enough samples:
+
+- **`fullReply` is not compared.** It is gateway time, not audio, and it grows with the length of
+  the reply, so two runs of different replies cannot be differenced on it
+  (`docs/REVIEW-0.9.1.md` records the recount that got this wrong).
+- **`stt` is not compared.** It is `now - segStart` — anchored where the microphone opened, not
+  where speech ended (`docs/BASELINE.md:82`). In a quiet room it is the length of the call. The
+  two rows taken on 2026-11-12 proved it: 0.9.1.4 read 17.7 s and `testing` read 66.9 s for clips
+  of three to five seconds, on the same handset, an hour apart.
+- **The conversational latencies** (first byte, first text, first audio) carry a verdict only at
+  **five turns a side or more**; below that they are printed as context and the verdict line says
+  how many rows it could not judge. The latency verdict for a cut is **F8**'s: ten fixed
+  utterances, in the same order, against the same gateway, which is why F8 sits beside this line
+  in the cut checklist.
 
 **The cold row has no 0.9.1.4 baseline, and this document does not pretend otherwise.**
 `ColdFrame` — the app's own `event=lat label=cold metric=first-frame` line — merged into

@@ -123,6 +123,27 @@ dropped["dropped_turns"] = 2
 out = case("a dropped turn warns but passes", BASE, dropped, 0, "BASELINE-DIFF PASS")
 assert "| warn |" in out, out
 
+# A conversational row with fewer than five turns a side is context, not a verdict: two
+# replies are one model's answer, not a distribution. It is printed, and the diff passes
+# because the rows the build owns are clean.
+thin_run = json.loads(json.dumps(BASE))
+for k in ("stt", "firstByte", "firstText", "firstAudio"):
+    thin_run["latency"][k] = {"p50": BASE["latency"][k]["p50"] * 3, "p95": None, "n": 2}
+out = case("a two-turn run leaves the latency rows unjudged", BASE, thin_run, 0,
+           "BASELINE-DIFF PASS")
+assert "printed as context and not judged" in out, out
+assert "| context |" in out
+
+# ...but the same rows at eight turns a side ARE judged, and a 3x slower first audio fails.
+assert "| **REGRESSED** |" in run(["BASE", "CAND"], BASE, regressed)[1]
+
+# A row the candidate lost is UNKNOWN even when it is a conversational row: 'not reported' is
+# never allowed to become 'context', or a row could silently stop being measured.
+for k in ("firstAudio",):
+    lost = json.loads(json.dumps(BASE))
+    lost["latency"][k] = {"p50": None, "p95": None, "n": 0}
+    case(f"a lost conversational row is UNKNOWN ({k})", BASE, lost, 3, "BASELINE-DIFF UNKNOWN")
+
 # 3. Unknown is not healthy. The baseline measured first audio; the candidate's log has no
 #    turn rows at all (a truncated export, or the row stopped being logged). Exit 3, named.
 silent = json.loads(json.dumps(BASE))

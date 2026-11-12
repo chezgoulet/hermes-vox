@@ -670,6 +670,15 @@ class VoiceController(private val context: Context, private val session: HermesS
             vad = SileroVadGate(context, micFloat("vad_threshold", 0.5f)); vad?.init {}
         }
         VoxLog.d("pipeline: stt=${stt?.name} sttReady=$sttReady vad=${vad?.isAvailable}")
+        // #209: the per-release baseline is taken "gate off, on a fresh install", and until now
+        // nothing wrote that state down — a row labelled gate-off was a claim about a switch no
+        // one could read back out of the log. One line, at assembly, says what the gate was on
+        // this call: the master, and each set with the dependency rule already applied.
+        val gatePrefs = context.getSharedPreferences("hv", Context.MODE_PRIVATE)
+        VoxLog.d("event=alpha-gate state=${if (AlphaGate.masterOn(gatePrefs)) "on" else "off"} " +
+            AlphaGate.FeatureSet.entries.joinToString(" ") {
+                "${it.name.lowercase()}=${AlphaGate.allows(gatePrefs, it)}"
+            })
     }
 
     /**

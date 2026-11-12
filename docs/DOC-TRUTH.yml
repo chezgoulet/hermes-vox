@@ -550,7 +550,7 @@
   match: 'BASELINE-DIFF REGRESSED'
 
 - id: baseline-diff-fullreply-excluded
-  says: "is deliberately **not** compared"
+  says: "**`fullReply` is not compared.**"
   doc: docs/REGRESSION.md
   file: scripts/baseline-diff.py
   match: 'EXCLUDED = \['
@@ -560,3 +560,9 @@
   doc: docs/templates/RELEASE-CUT.md
   file: scripts/baseline-diff.py
   match: 'def main\('
+
+- id: baseline-row-names-the-gate
+  says: "event=alpha-gate state=off"
+  doc: docs/REGRESSION.md
+  file: android/app/src/main/java/com/hermesvox/VoiceController.kt
+  match: 'event=alpha-gate state='
