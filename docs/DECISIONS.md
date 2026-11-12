@@ -1189,13 +1189,22 @@ registry and nothing else, so a mutating capability is absent from its type, not
 acting on the phone. Either can be taken without the other, and no dependency is added between
 them. **Continuous listening** belongs with Presence because it is how the being hears: it cannot be
 selected without Presence, `AlphaGate.allows()` refuses a stored preference from an earlier build,
-and turning Presence off leaves it inert with the picker saying why. **Turn-taking** needs
+and turning Presence off leaves it inert with the picker saying why. *(Amended 2026-11-12: this
+coupling is removed when continuous listening graduates — see the amendment at the end of D38.)* **Turn-taking** needs
 continuous listening for its acknowledgements but adds no second gate dependency. **Sessions** and
 **Switching profiles** left the gate on 2026-11-06, their passes having been made.
 
 **What it does not decide.** Whether a future foreground model ever gets a safe, separate voice
 action lane (it would be a new decision and would need its own always-on guarantee), and whether the
 gateway's own approval surface changes. Both stay open.
+
+**Amended 2026-11-12 — continuous listening graduates alone.** The gate dependency above was a
+gate-time convenience, not a runtime fact: the capture lane, the partials and the endpointing all work
+with Presence off, and Presence hears the per-turn segment audio either way
+(`VoiceController.kt:2460`). Requiring the two together would let the least stable work in the project
+hold the substrate hostage, so the dependency is removed when continuous listening graduates at 0.9.4
+(`ROADMAP.md`), and `AlphaGate.dependencyRefusal` loses its one entry. Signed off by the owner on
+2026-11-12 with the rest of the 0.9.x rescopes.
 
 ## D39 — Sessions and Profiles leave Alpha after a device pass, not on a build
 

@@ -80,12 +80,15 @@ A release is finished when it removes a question, not when it adds a feature.
 
 **No set graduates.** This release exists to make "stable" a number.
 
-**In:** the instruments into the cut checklist with their first rows — `#208`, `#209`, `#279`, F4, F5,
-F8; `#569` the recogniser's real-time factor on the field device; `#179`'s last two numbers (RTF and
-stutter under a live turn); the retest batch `#538`, `#496`, `#373`, `#374`, each closed with its
-evidence line or marked pending with a walkthrough card (D47); `#562`'s bench — a smaller presence
-model, or most lines produced without one — because it decides the headroom every later release
-assumes; and `#528`'s contract agreed, so string extraction can start in every release after this.
+**In:** the instruments into the cut checklist with their first rows — `#208` (a **single-device**
+matrix, as D29 ruled), `#209`, F4, F5, F8; `#569` the recogniser's real-time factor on the field
+device; `#179`'s last two numbers (RTF and stutter under a live turn); the retest batch `#538`, `#496`,
+`#373`, `#374`, each closed with its evidence line or marked pending with a walkthrough card (D47);
+`#404`'s device pass and `#281`'s acceptance, both on the default path every user already runs;
+`#559`'s host bench — does Supertonic stay, or is "experimental" its answer; `#562`'s bench — a smaller
+presence model, or most lines produced without one — because it decides the headroom every later
+release assumes; and the localisation contract, already agreed, so **string extraction starts here and
+runs as a standing lane** (below).
 
 **Closes off:** "we cannot tell stable from working", and "we do not know whether this phone can carry
 what we have built".
@@ -98,52 +101,59 @@ value is the rest of the series. `#569`'s cause may turn out to be `#562` — co
 
 **Sets out:** Phone tools, Digital assistant. **Also:** Wake word leaves the panel.
 
-**In:** the device passes that promote Phone tools (a timer set by voice through the agent, and one
-refusal) and Digital assistant (the assistant gesture opening Vox on a phone we have); the promotion
-itself — gate rows removed, settings un-dimmed, skill and docs updated; and Wake word removed until a
-detector exists, because today it records enrolment and listens to nothing (`#45`).
+**In:** the device passes that promote Phone tools and Digital assistant; the promotion itself — gate
+rows removed, settings un-dimmed, skill and docs updated; and Wake word removed until a detector
+exists, because today it records enrolment and listens to nothing (`#45`).
+
+The Phone-tools pass covers **one action per tier** — a Tier-0 timer, the D36 message/call handoff, and
+the D37 uninstall card — because thirteen capability groups are not proved by one of them. It **waits
+on `#578`**: the setup sheet can read *Connected* while the agent's registered entry points at another
+handset, and a set cannot be promoted on a connection nobody has proved.
 
 **Closes off:** "alpha" meaning "we have not decided". After this the panel lists **three** sets — the
 three that are genuinely unfinished — and a newcomer can read the project's state off one screen.
 
 **Why here:** both sets are independent of Presence and of the hearing leg, so nothing blocks them, and
-promoting them exercises the promotion ritual before the sets that need it most. Days of work for the
-project's credibility.
+promoting them exercises the promotion ritual before the sets that need it most.
 
 ### 0.9.4 — Hearing graduates
 
-**Sets out:** Continuous listening.
+**Sets out:** Continuous listening — **continuous capture only**.
 
-**In:** `#228` continuous capture, `#229` semantic endpointing with the eagerness preset, `#405` the
-memory, thermal and battery budgets re-measured with the lane live, `#242` overlap classification, and
-F3b's adaptive barge floor. Then the promotion, with its pass: a long call, partials arriving, a turn
-ending on a judgement rather than a silence, and the budget numbers recorded.
+**In:** `#228` continuous capture, `#405` the memory, thermal and battery budgets re-measured with the
+lane live, `#326` audio environment modes (same thresholds, same release), and F3b's adaptive barge
+floor. Then the promotion, with its pass: a long call, partials arriving, and the budget numbers
+recorded.
+
+**What is not in it, and why.** **`#229` semantic endpointing stays default-off** and moves to 0.10: its
+candidate list is English and its own bench shows at most 100 ms of gain over the fixed pause
+(`SemanticEndpoint.kt:35-36, 59-74`), so promoting it now would schedule a localisation regression.
+**`#242` overlap classification stays future**, as the owner ruled on 2026-11-06 — its acceptance needs
+two devices and speaker enrolment (`#46`), neither of which exists.
 
 **Closes off:** "can the mic stay open and the recogniser keep up, on a phone, for a long call". The cut
 after this holds to the re-measured budgets, not to `BUDGETS-0.9.1.md`.
 
-**Why here:** it is the substrate. Every conversation feature below assumes it, so it must be measured
-and shipped before turn-taking or the being can be judged at all.
+**The coupling is amended, signed off 2026-11-12.** The gate refuses continuous listening unless
+Presence is selected (D38). Continuous listening graduates **alone**: the dependency is a gate-time
+convenience, not a runtime fact — the lane, the partials and the endpointing work with Presence off,
+and Presence hears per-turn audio (`VoiceController.kt:2460`) either way. D38 is amended accordingly;
+leaving it in place would let the least stable work in the project hold the substrate hostage.
 
-**One decision it needs first.** The gate says continuous listening requires Presence, because
-continuous listening is how the being hears (D38). If that coupling stays, this set cannot leave the
-gate until Presence does — the least stable work in the project holding the substrate hostage. Two ways
-through:
-
-- **Decouple (recommended, for stability).** Continuous listening graduates alone. The dependency is a
-  gate-time convenience, not a runtime fact: the lane, the partials and the endpointing work with
-  Presence off, and it is those that matter here.
-- **Graduate as a pair.** Presence and continuous listening leave together at 0.9.5, honouring D38
-  without amending it. The cost is that the substrate waits on the most uncertain piece of work, and
-  the series gains a release.
+**This is a D45 major, and under D47 that costs a note and a call, not a waiting period.** The promotion
+turns continuous capture **on** for every user — a change to a default people rely on — so a design note
+is published before the candidate is cut, a consensus call stays open until the cut, and the dissent is
+recorded.
 
 ### 0.9.5 — Turn-taking graduates
 
 **Sets out:** Turn-taking.
 
-**In:** the acknowledgement while you speak, the yielding when you interrupt, the resume after — each
-judged against `#217`'s bar on a long run: two thirds of offered slots speak, nothing repeats, nothing
-lands after the first text, p95 under three seconds. Then the promotion, with its pass.
+**In:** the acknowledgement while you speak, the yielding when you interrupt, the resume after — judged
+against **a bar written for turn-taking itself**, before the work starts: acknowledgement rate per long
+utterance, false-yield rate, and resume-without-repeat rate, each from log events that already exist
+(`resume-mark`, `resume-offer`, `backchannel`). `#217`'s bar measures Presence's working lines rather
+than these, which is why `#217` moved to 0.9.6. Then the promotion, with its pass.
 
 **Closes off:** "does the being keep up mid-conversation". Panel after this: **one set**.
 
@@ -154,40 +164,45 @@ hears immediately.
 
 **Sets out:** Presence. **Panel after this: empty.**
 
-**In:** the model decision from `#562` built in; the aside's minimal directive and repairing guard
-tuned on a long run; backchannels; and `#217`'s bar as its acceptance. Carried here without an issue
-number, each needing one opened: **pre-rendered personality stems** (so the opening beat is free rather
-than a live render), **F6a** narration into the presence loop, and **truncation after a barge** in
-session history.
+**In:** the model decision from `#562` built in; the aside's minimal directive and repairing guard tuned
+on a long run; backchannels; and `#217`'s bar — two thirds of offered slots speak, nothing repeats,
+nothing lands after the first text, p95 under three seconds — as its acceptance. Carried here without
+an issue number, each needing one opened: **pre-rendered personality stems** (so the opening beat is
+free rather than a live render), **F6a** narration into the presence loop, and **truncation after a
+barge** in session history.
+
+**Scoped after `#562` decides.** If the answer is a catalogue rather than a model, the set is rebuilt in
+the release that promotes it, which this roadmap's own rule forbids — so the decision lands first and the
+release is written against it.
 
 **Closes off:** "does the being hold a conversation worth having". After this release there is no alpha
 gate.
 
 **Why here:** last of the sets, because it is the largest and the most uncertain — and because it is the
-one set whose work adds no screens, so if it slips it can slip past the freeze without touching it (see
-below).
+one set whose work adds no screens, so if it slips it can slip past the freeze without touching it.
 
 ### 0.9.7 — The loop closes
 
 **No set graduates.** This is the release that makes the product usable by someone who was not taught.
 
-**In:** `#404` the turn route on `/v1/runs`, `#282` approvals on the phone, `#376` the evidence that an
-approval reached a phone and was answered, `#281` operations — which tool is running, in plain
-language, and what it is acting on — and `#279`'s stranger's real task, run here as acceptance rather
-than as an instrument.
+**In:** `#376` approvals on the phone — one device proof of a request that arrives, is answered by touch
+and by voice, and times out to *no* — and `#279`'s stranger's real task, run here as **acceptance**
+rather than as a standing instrument.
 
-**Closes off:** the last **new interaction surface** built from scratch, and the last of the two things
-a person needs before letting an agent act: seeing what it does, and being asked first.
+The runs route (`#404`) and the operations line (`#281`) left this release for 0.9.2: both are on the
+default path today, so proving them is floor work rather than a milestone.
 
-**Why here:** it needs the conversation settled (an approval arrives mid-turn) and it creates screens,
-so it must follow the sets and precede the freeze.
+**Closes off:** the last new interaction surface built from scratch, and the two things a person needs
+before letting an agent act: seeing what it does, and being asked first.
+
+**Why here:** it needs the conversation settled (an approval arrives mid-turn) and it creates screens, so
+it must follow the sets and precede the freeze.
 
 ### 0.9.8 — First run, and the last words
 
-**In:** `#230` first run — gateway, microphone, models, Presence, a first call, honest when a step
-cannot be completed; the **copy pass**, which by now is the last strings only, because every release
-since 0.9.2 extracted its own as it went; `#388` the speech-rate slider; `#326` audio environment modes
-decided in or out; `#514` per-profile mTLS.
+**In:** `#230` first run — gateway, microphone, models, Presence, a first call, honest when a step cannot
+be completed; the **copy pass**, which by now is the last strings only, because the extraction lane has
+run since 0.9.2; `#388` the speech-rate slider; `#514` per-profile mTLS.
 
 **Closes off:** UI and copy construction. Onboarding is the last surface that did not exist; the copy
 pass is the last time a sentence may be rewritten freely.
@@ -231,9 +246,20 @@ in the repository, which must not be smuggled into a release that is trying to f
 
 ## Standing instruments — not release content
 
-`#208`, `#209`, `#279`, F4, F5 and F8 run on every release and belong in the cut checklist, not in a
-milestone. A milestone label on an instrument hides the fact that it is not running, which is exactly
-what happened to the last three.
+`#208` (single-device), `#209`, F4, F5 and F8 run on every release and belong in the cut checklist. Both
+open issues carry `milestone/0.9.2` until they are checklist lines and then close: a milestone label on
+an instrument hides that it is not running, which is what happened to the last three, while an issue
+with no milestone breaks the rule that every open issue is in a release or in `future`.
+
+`#279` is **not** a standing instrument. It needs a stranger, calendar and mail tools, and an approval —
+it is acceptance at 0.9.7, run once, with the result recorded.
+
+## The standing extraction lane
+
+String extraction is a **lane, not a theme**: it runs beside every release from 0.9.2 until the freeze,
+and it is exempt from the one-theme rule precisely because a rule that forces it into one release would
+make the freeze a big-bang. Each release extracts its own strings as it goes; 0.9.8 carries only the
+last of them, and 0.10 carries the coverage checks and the first language packs.
 
 ## How a contributor plugs in
 
