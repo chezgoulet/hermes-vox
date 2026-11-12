@@ -57,8 +57,11 @@ Each names the thing that proves it. "Device" means a human, because the bench c
 
 1. **Install over the previous release** — data, profiles, keys and settings intact. Proves:
    `versionName` shows the new build and the switcher still lists what it did.
-2. **Cold start** — time to first frame within the recorded baseline (#209). Proves:
-   `am start -W` and the `event=lat` cold row.
+2. **Cold start** — time to first frame. Proves: `am start -W` TotalTime and the app's own
+   `event=lat label=cold metric=first-frame ms=…` row (`ColdFrame`), both printed by
+   `regression-smoke.sh start`. Judged against the #209 baseline's gate-off row once it exists;
+   until then the number is recorded in the release document and the judgement is marked
+   pending (D47).
 3. **A call reaches green** — gateway, hearing and voice all ready; the readiness overlay clears.
    Proves: the gate's own states and `event=tts-ready`.
 4. **A short reply speaks and ends promptly** — the #538 class. Proves:
