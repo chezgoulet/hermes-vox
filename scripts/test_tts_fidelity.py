@@ -72,6 +72,15 @@ assert set(nocomma) == {"whole", "mid"}, nocomma
 # A one-word sentence cannot be split mid-phrase, and must not produce an empty chunk.
 assert "mid" not in tf.split_ways("Yes"), tf.split_ways("Yes")
 
+# The sweep holds the words constant and varies only how many pieces they arrive in.
+for n in (1, 2, 3, 4):
+    pieces = tf.equal_splits(S, n)
+    assert len(pieces) == n, (n, pieces)
+    assert " ".join(pieces) == S, (n, pieces)
+    assert all(p.strip() for p in pieces), (n, pieces)
+assert tf.equal_splits(S, 1) == [S]
+assert tf.equal_splits("one two", 5) == ["one", "two"]   # more pieces than words cannot invent words
+
 # The resampler changes length by the ratio and leaves a constant signal alone.
 flat = [0.5] * 44_100
 out = tf.resample(flat, 44_100, 16_000)

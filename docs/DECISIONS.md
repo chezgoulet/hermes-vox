@@ -1402,16 +1402,18 @@ Set 2026-11-12, after the host bench in `docs/TTS-FIDELITY.md` (#559).
 not under pressure to be faultless. The owner's ruling: it stays for the foreseeable future and is
 not something to perfect overnight. The recommended voice remains Piper.
 
-**What the bench changed.** It separated the two hypotheses the field report could not. Supertonic
-handed a whole sentence loses **fewer** words than Piper (4 of 118 against 9); handed the same
-sentence as two chunks split at a comma it loses four times as many (15 of 118, two-sided
-p = 0.015 against its own one-chunk arm, p = 0.033 against Piper at the same split, which went the
-other way). So the loss is at the **chunk boundary**, not in the model — and the catalogue may say
-that instead of the vaguer "may drop words".
+**What the bench changed, and what it corrected.** Supertonic handed a whole sentence loses no more
+words than Piper (4 of 118 against 5). Fed the same sentence in **more, shorter pieces** it degrades
+sharply — 13 words at two pieces, 27 at three (22.9 %) — while Piper stays flat at 6–8 %. The loss
+is **per synthesis on short fragments**, not at the join: inserting 250 ms of silence between two
+chunks changed nothing (17 lost, was 15).
 
-**What it sets up.** The next investigation is a chunker probe (`StreamTextChunker`,
-`SherpaTts.streamChunk`): what happens to a large chunk at a boundary, and why the drain reports
-`played` with a word missing. That is candidate work for a later release, **not a 0.9.2 blocker**.
+The app's `StreamTextChunker.CHUNK_CAP_CHARS = 30` is tuned for Piper, which does not care, and is
+close to the worst size for Supertonic. The concrete candidate fix is therefore a **per-engine
+chunk cap** — 60, then 90 characters, measured the same way — which is a settings change, not a
+model change and not a chunker rewrite. *(This decision was first written saying "the boundary is
+the defect, the model is not"; the gap and sweep experiments in `docs/TTS-FIDELITY.md` replaced
+that reading rather than being allowed to sit beside it.)*
 
 **What it does not do.** It does not remove Supertonic, does not change the default voice, and does
 not claim the ten-sentence bench is decisive: the script is committed so a wider run can settle the

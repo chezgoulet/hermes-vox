@@ -135,6 +135,26 @@ def split_ways(text: str) -> dict[str, list[str]]:
     return ways
 
 
+def equal_splits(text: str, n: int) -> list[str]:
+    """[text] cut into [n] near-equal pieces at word boundaries — the fragment-size sweep.
+
+    The comma and mid arms each cut the sentence **once**, so they conflate "one cut" with
+    "shorter pieces". This sweep holds the text and the number of words constant and varies only
+    how many syntheses it is fed in, which is the question the gap experiment left open: does
+    Supertonic lose words because a *join* is bad, or because each short piece is?
+    """
+    if n <= 1:
+        return [text]
+    words = text.split(" ")
+    if n >= len(words):
+        return [w for w in words]
+    pieces, per = [], len(words) / n
+    for i in range(n):
+        lo, hi = round(i * per), round((i + 1) * per)
+        pieces.append(" ".join(words[lo:hi]))
+    return [p for p in pieces if p]
+
+
 def resample(samples: list[float], sr_in: int, sr_out: int = 16_000) -> list[float]:
     """Linear resample. The recogniser wants 16 kHz; the voices are 22.05/44.1 kHz."""
     if sr_in == sr_out or not samples:
@@ -226,15 +246,20 @@ def transcribe(rec, samples: list[float], sr: int) -> str:
     return s.result.text.strip()
 
 
-def render(tts, chunks: list[str], sid: int = 0):
-    """Synthesise each chunk and concatenate — what the app's stream does with a chunk list."""
+def render(tts, chunks: list[str], sid: int = 0, gap_ms: int = 0):
+    """Synthesise each chunk and concatenate — what the app's stream does with a chunk list.
+
+    [gap_ms] inserts silence between chunks. It exists for one experiment: if a gap makes the
+    words come back, the loss is at the *seam* — where one synthesis ends and the next begins,
+    and how the two are joined — and not in the text that reached the engine.
+    """
     samples: list[float] = []
     rate = 0
-    for c in chunks:
-        if not c.strip():
-            continue
+    for i, c in enumerate([c for c in chunks if c.strip()]):
         a = tts.generate(c, sid=sid, speed=1.0)
         rate = a.sample_rate
+        if i and gap_ms > 0:
+            samples.extend([0.0] * (rate * gap_ms // 1000))
         samples.extend(a.samples)
     return samples, rate
 
@@ -249,6 +274,10 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--json", default="", help="write the table as JSON here")
     ap.add_argument("--wav-dir", default="", help="keep the rendered wavs here")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--sweep", action="store_true",
+                    help="render each sentence as 1..4 equal pieces (fragment-size sweep)")
+    ap.add_argument("--gap-ms", type=int, default=0,
+                    help="silence between chunks — the seam experiment")
     args = ap.parse_args(argv)
 
     sentences = ([l.strip() for l in open(args.sentences) if l.strip()]
@@ -265,10 +294,11 @@ def main(argv: list[str]) -> int:
 
     rows = []
     for sentence in sentences:
-        ways = split_ways(sentence)
+        ways = ({f"{n}piece": equal_splits(sentence, n) for n in (1, 2, 3, 4)}
+                if args.sweep else split_ways(sentence))
         for way, chunks in ways.items():
             for vname, tts in voices:
-                samples, sr = render(tts, chunks)
+                samples, sr = render(tts, chunks, gap_ms=args.gap_ms)
                 if not samples:
                     rows.append({"sentence": sentence, "way": way, "voice": vname,
                                  "error": "no audio"})
@@ -279,6 +309,7 @@ def main(argv: list[str]) -> int:
                 heard = transcribe(asr, samples, sr)
                 r = compare(sentence, heard)
                 r.update({"sentence": sentence, "way": way, "voice": vname,
+                          "gap_ms": args.gap_ms,
                           "seconds": round(len(samples) / sr, 2), "heard_text": heard})
                 rows.append(r)
                 print(f"[{way:5}] {vname:12} {len(chunks)} chunk(s) {r['seconds']:5.2f}s  "
