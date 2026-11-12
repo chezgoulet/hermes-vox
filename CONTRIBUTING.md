@@ -44,9 +44,9 @@ Two long-lived branches:
   `main`, and the release is cut from `main`. `docs/RELEASE-PROCESS.md` is the
   step-by-step version of that cut.
 
-Every push to `testing` builds a **nightly**: a prerelease tagged
-`nightly-<date>-<time>-<sha>` with the signed APK attached
-(`.github/workflows/nightly.yml`). A nightly never becomes the repository's latest
+Every push to `testing` builds a **testing release**: the rolling pre-release of active
+development, tagged `nightly-<date>-<time>-<sha>` with the signed APK attached
+(`.github/workflows/nightly.yml`). It never becomes the repository's latest
 release, and a red gate publishes nothing.
 
 A hotfix for a broken release branches from `main`, merges there, and is
@@ -230,7 +230,7 @@ read.
   the change.
 - Nothing else on your first pull request: signing writes no file and changes no
   configuration. The CLA workflow reads your comment and turns a check green.
-- A nightly prerelease on `testing` after the merge, signed with the release key,
+- A testing release on `testing` after the merge, signed with the release key,
   with the APK attached.
 - Local build output under `android/app/build/` and the fetched runtime under
   `android/app/libs/`. Both are gitignored.
