@@ -128,7 +128,7 @@ None merged; merging is the owner's.
 | **#574** | `fix/field-log-record` → `testing` | The field-log counter counts what it says. `fullReply` is gateway time, and audio is estimated from characters. It reproduces 12 stalls (14–50 chars, 126.8–128.8 s). It corrects `RELEASE-0.9.1.3.md:16-18` and `StreamDrain.kt`'s comment. `test_field_log_turns.py` is in the gate. | `GATE-GREEN` |
 | **#576** | `fix/regression-cold-frame` → `testing` | Regression path 2 has its witness: `event=lat label=cold metric=first-frame ms= createMs=` (`ColdFrame`, `ColdFrameTest` 3/3), printed by `regression-smoke.sh start`. | `GATE-GREEN` |
 | **#577** | `fix/regression-retire-count` → `testing` | Regression path 5 has its witness: `event=tts-retire … queued= wrote= full=` (`RetireWitness`, `RetireWitnessTest` 4/4), counted by `regression-smoke.sh finish`. | `GATE-GREEN` |
-| docs | `docs/roadmap-0.9.x` → `testing` | The plan of record and its governance as written. D47. The 0.9.1 recount correction. `docs/WATCH.md`. The 0.9.x review with errata. `SPRINT-PLAN.md`, this file, and the INDEX front door. Merged with `testing` at 0.9.1.4. | see the PR body |
+| **#580** | `docs/roadmap-0.9.x` → `testing` | The plan of record and its governance as written. D47. The 0.9.1 recount correction. `docs/WATCH.md`. The 0.9.x review with errata. `SPRINT-PLAN.md`, this file, and the INDEX front door. Merged with `testing` at 0.9.1.4. | `GATE-GREEN` |
 
 **Not done, and why.**
 
