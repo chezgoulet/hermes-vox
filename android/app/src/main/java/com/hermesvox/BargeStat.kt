@@ -26,8 +26,8 @@ internal class BargeStat(private val windowMs: Long = 1000L) {
     ) {
         fun render(): String =
             "frames=$frames floorPct=$floorPct barPct=$barPct vadPct=$vadPct " +
-                "peak=${"%.3f".format(peak)} mean=${"%.3f".format(mean)} " +
-                "floor=${"%.3f".format(floor)} refPeak=${"%.3f".format(refPeak)}"
+                "peak=${VoxLog.num(peak, 3)} mean=${VoxLog.num(mean, 3)} " +
+                "floor=${VoxLog.num(floor, 3)} refPeak=${VoxLog.num(refPeak, 3)}"
     }
 
     private var startedAt = -1L

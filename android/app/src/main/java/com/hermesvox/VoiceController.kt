@@ -916,7 +916,7 @@ class VoiceController(private val context: Context, private val session: HermesS
             val hardMs = micInt("vad_max_hard_ms", EndpointRule.DEFAULT_HARD_MS).toLong()
             val minSpeechMs = micInt("vad_min_speech_ms", 300)
             val sourceName = if (source == MediaRecorder.AudioSource.VOICE_COMMUNICATION) "VOICE_COMMUNICATION(AEC/NS)" else "MIC"
-            VoxLog.d("mic: source=$sourceName threshold=${"%.2f".format(micFloat("vad_threshold", 0.5f))} silence=${silenceMs}ms minSpeech=${minSpeechMs}ms max=${maxMs}ms hard=${hardMs}ms")
+            VoxLog.d("mic: source=$sourceName threshold=${VoxLog.num(micFloat("vad_threshold", 0.5f))} silence=${silenceMs}ms minSpeech=${minSpeechMs}ms max=${maxMs}ms hard=${hardMs}ms")
             // 0.5.0.1 / H3: route the capture-loop submit through the guard. It re-checks
             // stopped/isShutdown AND catches the RejectedExecutionException from the check-
             // then-act race, so a start() racing teardown bails to `false` (don't open the
@@ -1278,7 +1278,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                         val feedMs = liveFeedDecodeMs.get()
                         val tailMs = if (finishAt > 0L) android.os.SystemClock.uptimeMillis() - finishAt else 0L
                         VoxLog.d("event=stt-rtf seg=$segId audioMs=$audioMs feedDecodeMs=$feedMs finishMs=$tailMs " +
-                            "rtf=${"%.2f".format(feedMs.toFloat() / audioMs)} feeds=${liveFeeds.get()} " +
+                            "rtf=${VoxLog.num(feedMs.toFloat() / audioMs)} feeds=${liveFeeds.get()} " +
                             "cadenceMs=${ContinuousCapture.cadenceMs(continuous)} reused=$reused")
                     }
                     val t = (text ?: "").trim()
@@ -1363,7 +1363,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                     val bargeGraceMs = micInt("barge_grace_ms", BargeGate.DEFAULT_GRACE_MS).toLong()
                     val levelOnlyMs = micInt("barge_level_only_ms", BargeGate.DEFAULT_LEVEL_ONLY_MS.toInt()).toLong()
                     val vadAvailable = (vad?.isAvailable == true)
-                    VoxLog.d("event=barge-watch mode=single-capture vad=${if (vadAvailable) "on" else "off"} rmsMin=${"%.2f".format(bargeRmsMin)} gen=$myGen")
+                    VoxLog.d("event=barge-watch mode=single-capture vad=${if (vadAvailable) "on" else "off"} rmsMin=${VoxLog.num(bargeRmsMin)} gen=$myGen")
                     // Fix 4: show what Hermes is about to be sent, before the reply exists.
                     main.post { listener?.onHeard(cleaned) }
                     main.post { runStreamedTurn(cleaned, myGen, fromVoice = true) }
@@ -1544,14 +1544,14 @@ class VoiceController(private val context: Context, private val session: HermesS
                                 // debug-file toggle on — the 0.6.4 field bug (the ER
                                 // verdict lines were invisible in the export for
                                 // exactly this reason). One line a second is cheap.
-                                VoxLog.d("event=barge-stat gen=$myGen ${it.render()} sustainedMs=${bf.sustainedMs} levelSustain=${bf.sustainedLevelMs} echo=${if (echoFloor.calibrated) "%.3f".format(echoFloor.echoLevel) else "-"}")
+                                VoxLog.d("event=barge-stat gen=$myGen ${it.render()} sustainedMs=${bf.sustainedMs} levelSustain=${bf.sustainedLevelMs} echo=${if (echoFloor.calibrated) VoxLog.num(echoFloor.echoLevel, 3) else "-"}")
                             }
                         } else bargeStat.reset()
                         // 0.6.2 echo guard: track glue playback end so the capture skip
                         // window (erEchoSkipMs) starts when the filler's tail is dying.
                         if (glueSpeaking) erEchoSkipSinceMs = readAt
                         if (bf.fired) {
-                            VoxLog.d("event=barge-in source=single-capture mode=${if (spk) "playback" else "generation"} rms=${"%.3f".format(bf.level)} vad=$vadSpeech gen=$myGen speaking=$spk")
+                            VoxLog.d("event=barge-in source=single-capture mode=${if (spk) "playback" else "generation"} rms=${VoxLog.num(bf.level, 3)} vad=$vadSpeech gen=$myGen speaking=$spk")
                             bargeDecisionAt = android.os.SystemClock.uptimeMillis()   // #D1: measure main-queue delay to the gate release
                             main.post { bargeIn() }
                         } else if (spk && bf.nearMiss &&
@@ -1564,7 +1564,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                             // accumulator (levelBar= its bar), which 0.4.0.2 never printed —
                             // sustainedMs= alone could not show why the escape stayed silent.
                             nearMissLoggedAtMs = readAt
-                            VoxLog.dd("event=barge-nearmiss gen=$myGen peakRms=${"%.3f".format(bf.peakRms)} vad=$vadSpeech sustainedMs=${bf.sustainedMs} floor=${"%.3f".format(bargeAudio.floor)} levelSustain=${bf.sustainedLevelMs} levelBar=${"%.3f".format(bargeAudio.levelFloor)} need=$levelOnlyMs")
+                            VoxLog.dd("event=barge-nearmiss gen=$myGen peakRms=${VoxLog.num(bf.peakRms, 3)} vad=$vadSpeech sustainedMs=${bf.sustainedMs} floor=${VoxLog.num(bargeAudio.floor, 3)} levelSustain=${bf.sustainedLevelMs} levelBar=${VoxLog.num(bargeAudio.levelFloor, 3)} need=$levelOnlyMs")
                         }
                     }
                     val gateLockedNow = android.os.SystemClock.uptimeMillis()

@@ -26,6 +26,19 @@ import java.util.Locale
  */
 object VoxLog {
     const val TAG = "HermesVox"
+
+    /**
+     * A decimal for a log line, always with a dot and never with the device's separator.
+     *
+     * `"%.2f".format(x)` uses the *default* locale: on a French handset the same line reads
+     * `rtf=0,68`, and every reader of a field log — a grep, `scripts/field-log-turns.py`, an
+     * issue quoting a number — takes the comma as the end of the value. #569 found it on
+     * `event=stt-rtf`; the same expression sat on seven other log lines that are parsed the
+     * same way. Display text (a slider's value, a clock) stays locale-aware — it is read by a
+     * person, not by a parser; only the log pins the separator.
+     */
+    fun num(x: Float, decimals: Int = 2): String =
+        String.format(Locale.ROOT, "%.${decimals}f", x)
     private var file: File? = null
     // Single persistent writer held across appends (opened lazily in append mode,
     // closed only by rotation). Guards the reopen-per-line syscall churn the old
