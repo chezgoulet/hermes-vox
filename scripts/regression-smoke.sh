@@ -86,6 +86,9 @@ finish() {
   drains_timeout=$(count "event=tts-drain result=timeout")
   startvals=$(grep -o "event=tts-track sr=[0-9]* capacityMs=[0-9]* startFrames=[0-9]*" "$LOG" | sed 's/.*startFrames=//' | sort -un | tr '\n' ' ')
   pip=$(count "event=pip enter ok=true")
+  local retire_full retire_short
+  retire_full=$(count "event=tts-retire .*full=true")
+  retire_short=$(count "event=tts-retire .*full=false")
   mood=$(grep -c "event=\(er-glue\|tts-speak\).*<<[A-Z/]" "$LOG" || true)
 
   say "replies drained cleanly (played)" "$drains_played" \
@@ -96,6 +99,10 @@ finish() {
       "$([ "$drains_timeout" -eq 0 ] && echo PASS || echo FAIL)"
   say "streamed track start thresholds (frames)" "${startvals:-none}" \
       "$([ -n "${startvals:-}" ] && echo "CHECK <= rate/4" || echo UNKNOWN)"
+  say "replies retired whole (path 5, full=true)" "$retire_full" \
+      "$([ "$retire_full" -ge 1 ] && echo PASS || echo UNKNOWN)"
+  say "replies retired short of their chunks" "$retire_short" \
+      "$([ "$retire_short" -eq 0 ] && echo PASS || echo "FAIL unless a barge or stop cut it")"
   say "picture-in-picture entries during the smoke" "$pip" \
       "$([ "$pip" -eq 0 ] && echo PASS || echo "FAIL if Settings was opened")"
   say "mood markers reaching the voice" "$mood" \

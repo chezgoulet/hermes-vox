@@ -61,7 +61,9 @@ Each names the thing that proves it. "Device" means a human, because the bench c
    Proves: the gate's own states and `event=tts-ready`.
 4. **A short reply speaks and ends promptly** — the #538 class. Proves:
    `event=tts-drain result=played` and a turn under ~15 s; never `result=timeout`.
-5. **A long reply streams and completes** — proves: `event=tts-retire` with the full chunk count.
+5. **A long reply streams and completes** — proves: `event=tts-retire … full=true`: every chunk
+   the reply was cut into (`queued=`) was handed to the engine (`chunks=`) and wrote audio
+   (`wrote=`). `full=false` on a reply that was not cut is a lost phrase (`RetireWitness`).
 6. **Barge-in** — speaking over the reply cuts it and takes the turn. Proves: `outcome=barge-in`.
 7. **Presence on** — a line is produced, spoken once, and never repeats. Proves:
    `event=er-soul`, `event=er-glue-reject reason=repeat` when it should.
