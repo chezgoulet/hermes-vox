@@ -3186,7 +3186,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         streamReplyGen = gen
         replyOwnsTrack = false
         if (sRunning && sClosed) sRunning = false   // re-arm a drained worker (stuck sRunning) so this new turn can start
-        synchronized(sLock) { sAccum.setLength(0); sQueue.clear(); sClosed = false; sFinal = false }
+        synchronized(sLock) { sAccum.setLength(0); sQueue.clear(); sQueued = 0; sClosed = false; sFinal = false }
         streamed = true
         sDone = java.util.concurrent.CountDownLatch(1)
         try { (tts as? SherpaTts)?.startStreaming() } catch (_: Throwable) {}
@@ -3211,6 +3211,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 // tail plays out must not move the number this worker is about to report.
                 val speechEndForRender = turnSpeechEndAt
                 var chunkIdx = 0   // #D1: # chunks already handed to the engine
+                var wroteCount = 0 // path 5: # chunks that actually wrote audio (RetireWitness)
                 var retiring = false
                 try {
                     while (true) {
@@ -3294,6 +3295,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                                 result = chunkOnce()
                             }
                             val wrote = result == ChunkResult.WROTE
+                            if (wrote) wroteCount++
                             val failure = StreamSynthResult.failureCode(result, genCancelled, sClosed)
                             if (failure != null) {
                                 // A streaming synth that returned no audio is an engine failure,
@@ -3341,7 +3343,9 @@ class VoiceController(private val context: Context, private val session: HermesS
                 }
                 sDone.countDown()
                 if (retiring) {
-                    VoxLog.d("event=tts-retire gen=$turnGen chunks=$chunkIdx ms=${android.os.SystemClock.uptimeMillis() - start}")
+                    val queued = synchronized(sLock) { sQueued }
+                    VoxLog.d("event=tts-retire gen=$turnGen chunks=$chunkIdx ms=${android.os.SystemClock.uptimeMillis() - start} " +
+                        RetireWitness.fields(chunkIdx, queued, wroteCount))
                     val rg = streamReplyGen
                     endReply(rg, ReplyLedger.End.DONE)
                     // Re-check sClosed AFTER finishStreaming so a late barge that landed
@@ -3375,7 +3379,7 @@ class VoiceController(private val context: Context, private val session: HermesS
             // Cut on a clause seam or at the 30-char cap (StreamTextChunker). The rule
             // reads the accumulated text only — never the clock, never where this delta
             // ended — so the same reply chunks identically however the network packs it.
-            StreamTextChunker.drain(sAccum) { sQueue.add(Chunk(gen, it)) }
+            StreamTextChunker.drain(sAccum) { sQueue.add(Chunk(gen, it)); sQueued++ }
             sLock.notifyAll()
         }
     }
@@ -3393,14 +3397,14 @@ class VoiceController(private val context: Context, private val session: HermesS
         synchronized(sLock) {
             // The end-of-turn flush: a genuine trailing full stop (held back because a
             // buffer-end dot is not a sentence end) and the short tail are spoken here.
-            for (tail in StreamTextChunker.flush(sAccum)) sQueue.add(Chunk(gen, tail))
+            for (tail in StreamTextChunker.flush(sAccum)) { sQueue.add(Chunk(gen, tail)); sQueued++ }
             sFinal = true
             sLock.notifyAll()
         }
     }
     private fun stopStreaming() {
         streamed = false
-        synchronized(sLock) { sQueue.clear(); sClosed = true; sFinal = false; sAccum.setLength(0); sLock.notifyAll() }
+        synchronized(sLock) { sQueue.clear(); sQueued = 0; sClosed = true; sFinal = false; sAccum.setLength(0); sLock.notifyAll() }
     }
 
     // ---- 0.5.0-previewA: speech-locked transcript (display only) ----
@@ -3582,6 +3586,10 @@ class VoiceController(private val context: Context, private val session: HermesS
     /** #240: a queued sentence, stamped with the reply it belongs to. */
     private class Chunk(val gen: Long, val text: String)
     private val sQueue = java.util.ArrayDeque<Chunk>()
+    /** Regression path 5 ([RetireWitness]): chunks queued for this stream since it began. Under sLock,
+     *  and reset **wherever `sQueue` is cleared** — the start of a stream and the close path both do,
+     *  and a counter that survives one of them reports a cut reply as a lost phrase. */
+    private var sQueued = 0
     private val sLock = Object()
     @Volatile private var sClosed = false
     // R1 single-owner retirement: done=true with ok text marks the queue FINAL (no
