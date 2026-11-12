@@ -40,6 +40,11 @@ start() {
   sleep 1
   adb shell am start -W -n "$PKG/.MainActivity" 2>/dev/null \
     | grep -E "TotalTime|WaitTime|Status" | sed 's/^/   /'
+  # The app's own row for the same start (path 2), read before the log is cleared below.
+  sleep 1
+  local cold
+  cold=$(adb logcat -d 2>/dev/null | grep -o "event=lat label=cold metric=first-frame.*" | tail -1)
+  echo "   ${cold:-no event=lat label=cold row (a build before ColdFrame existed?)}"
   echo
 
   adb logcat -c >/dev/null 2>&1
