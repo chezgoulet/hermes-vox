@@ -24,6 +24,29 @@ build.
 | [`docs/INDEX.md`](INDEX.md) | This map. |
 | [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) | How the app is put together: the pieces, what talks to what, and the phone/host boundary. |
 
+### Picking up work — read these four, in this order
+
+| Document | What it answers |
+|---|---|
+| [`ROADMAP.md`](../ROADMAP.md) | **The plan of record**: the 0.9.x series, what each release is for, and where the UI and copy freeze. |
+| [`SPRINT-PLAN.md`](../SPRINT-PLAN.md) | **How the next work is sequenced**: Sprint 0 (the record and the tracker) through the releases, each sprint with its goal, issues, the bar written before the work, its evidence and its exit criteria. Ends with the roadmap changes awaiting the owner's sign-off. (Not `docs/SPRINT-PLAN.md`, which is a historical record.) |
+| [`TRACKER-STATE.md`](../TRACKER-STATE.md) | What the 2026-11-11/12 tracker pass closed, merged, rewrote and retagged; the open pull requests and what each proves; the walkthrough cards queued; and what still needs the owner. |
+| [`docs/REVIEW-0.9.x.md`](REVIEW-0.9.x.md) | The adversarial review the plan was tested against, with its errata: what the code supports, what it does not, and why the sequence changed. |
+
+**How to pick up work.**
+
+1. Find the current sprint in `SPRINT-PLAN.md`: the first one whose exit criteria are not met.
+2. Its issues carry the sprint's release label (`milestone/0.9.x`). Each issue's `## Recommended fix`
+   names the smallest change, the files it touches, and the proof (a log line, a test, or a
+   walkthrough card).
+3. Branch from `testing` (`docs/GIT-FLOW.md`), make the change with its catcher (`docs/REGRESSION.md`,
+   "the rule that matters most"), and run `bash scripts/gate.sh`. A pull request quotes the gate's
+   last line, and a gate you did not run is not green.
+4. Anything only a phone can prove is a walkthrough card. Under D47 it is marked *pending* in the
+   release document and never holds the release.
+5. Labels: `awaiting-device` (built; the owner's device verdict is pending), `needs-device` (cannot be
+   proved without a phone), `good first issue` (bounded, and nobody is on it).
+
 ### Using the app
 
 | Document | What it answers |
@@ -62,11 +85,11 @@ build.
 | [`SECURITY.md`](../SECURITY.md) | What the app protects, what is out of scope, and how to report a vulnerability. |
 | [`skills/hermes-vox-app/SKILL.md`](../skills/hermes-vox-app/SKILL.md) | The app's self-description for the agent, with every factual claim anchored to a file and a token. |
 
-### Governance — proposed, not in force
+### Governance — adopted in part (D41–D47)
 
 | Document | What it answers |
 |---|---|
-| [`docs/GOVERNANCE.md`](GOVERNANCE.md) | Release governance, adopted in part 2026-11-11 (D41–D46): readiness instead of a calendar, the human run that defaults to the owner until a volunteer takes it, the seven gates, the veto with its criterion and its lapse, and how consensus on a major is expressed. |
+| [`docs/GOVERNANCE.md`](GOVERNANCE.md) | Release governance, adopted in part 2026-11-11 (D41–D47): readiness instead of a calendar, no release waiting on a person (D47: the walkthrough and the functional suite verify; what cannot be verified ships marked pending), the human run that defaults to the owner until a volunteer takes it, the seven gates, the veto with its criterion and its lapse, and how consensus on a major is expressed. |
 | [`docs/COMMUNITY.md`](COMMUNITY.md) | The real-time space beyond GitHub, on Discord (D46): the channels, moderation, the code of conduct, the first month's mode, and the cost the platform choice carries. |
 | [`docs/templates/RELEASE-CUT.md`](templates/RELEASE-CUT.md) | The per-cut checklist a tracker issue is made from, including the scope question and the evidence lines. |
 | [`docs/templates/VETO-NOTICE.md`](templates/VETO-NOTICE.md) | The form a veto is recorded on — and the reason an unrecorded veto lapses. |
@@ -77,7 +100,7 @@ build.
 |---|---|
 | [`ROADMAP.md`](../ROADMAP.md) | **The plan of record.** The 0.9.x series in order: what each release is for, what it contains, what it closes off, and where the UI and copy freeze for localisation. |
 | [`docs/MILESTONES.md`](MILESTONES.md) | What a version number means, what the alpha gate holds and what each set still needs, and what the labels mean. |
-| [`docs/0.9.1-SCOPE.md`](0.9.1-SCOPE.md) | Every item in the current release, by real status. |
+| [`docs/WATCH.md`](WATCH.md) | Prior art followed but not scheduled (voice models, a protocol), each with the trigger that would turn it into an issue. |
 | [`docs/RELEASE-0.9.1.4.md`](RELEASE-0.9.1.4.md) | The current release's contents: the call speaks through the speaker again, with its evidence. |
 | [`docs/RELEASE-NOTES-0.9.1.md`](RELEASE-NOTES-0.9.1.md) | the published note for 0.9.1, as written by the owner: what changed, grouped by what the reader is trying to do, with contributors named |
 | [`docs/BUDGETS-0.9.1.md`](BUDGETS-0.9.1.md) | The CPU, GPU, battery and memory budget for the continuous listening lane. |
@@ -99,7 +122,9 @@ build.
 [`docs/DECISIONS.md`](DECISIONS.md) — the numbered decision log, with dated amendments where a
 later decision changed an earlier one · [`docs/REVIEW-0.9.1.md`](REVIEW-0.9.1.md) — the review of
 the 0.9.1 release: the timeline, the five failures with their evidence, and what now prevents each
-one · [`docs/BASELINE.md`](BASELINE.md) — the per-release
+one (its field-log recount corrected 2026-11-11) · [`docs/REVIEW-0.9.x.md`](REVIEW-0.9.x.md) — the
+adversarial review of the 0.9.x plan, as delivered, with errata · [`docs/0.9.1-SCOPE.md`](0.9.1-SCOPE.md)
+— everything 0.9.1 set out to build, by status at the time; 0.9.1 has shipped · [`docs/BASELINE.md`](BASELINE.md) — the per-release
 performance baseline instrument and the numbers recorded for each cut ·
 [`TODO.md`](../TODO.md) — the old open-work list ·
 [`WIRING.md`](../WIRING.md) — the branch note for the notification-dismiss and apps lane.
@@ -135,7 +160,7 @@ record per cut, saying what that version contained.
 `BUILD-DIRECTIVE-fix053.md` · `BUILD-DIRECTIVE-video-routing.md` ·
 `BUILD-DIRECTIVE-video-statewire.md` · `docs/CLAUDE-BRIEF-0403.md` · `CLAUDE-BRIEF-0404.md` ·
 `CLAUDE-BRIEF-0502-anim.md` · `CLAUDE-BRIEF-routing.md` · `docs/SPRINT-MAP.md` ·
-`SPRINT-2026-10-30-device-free.md` · `SPRINT-PLAN.md` · `SPRINT-PLAN-040-gates.md` ·
+`SPRINT-2026-10-30-device-free.md` · `docs/SPRINT-PLAN.md` (an earlier sprint plan; the current one is the root `SPRINT-PLAN.md`) · `SPRINT-PLAN-040-gates.md` ·
 `SPRINT-PLAN-040-gates-impl.md` · `SPRINT-PLAN-DIRECTIVE.md` · `SPRINT-PLAN-foundation.md` ·
 `SPRINT-PLAN-polish.md` · `SPRINT-PLAN-polish-impl.md` · `SPRINT-PLAN-realtime.md` ·
 `SPRINT-PLAN-release-security.md` · `SPRINT-PLAN-release-security-impl.md` — what was being
