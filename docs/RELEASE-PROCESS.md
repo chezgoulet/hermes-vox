@@ -1,7 +1,9 @@
 # Cutting a release
 
 A **release** is a signed Android APK — the installable Android package — attached to a GitHub
-release at the tag `v<versionName>`: `v0.9.1` for version name `0.9.1`. **Obtainium** is an
+release at the tag `v<versionName>`: `v0.9.1` for version name `0.9.1`. **Testing** is the rolling
+pre-release channel: every push to the `testing` branch publishes one, it is always a prerelease,
+and it is never "Latest". **Obtainium** is an
 Android app that installs and updates APKs from a repository like this one; it follows that
 release. **F-Droid** is the free-software catalogue that builds apps from source; its recipe
 names this release's APK (`docs/FDROID.md`). A release is cut from `main` by tagging a commit
@@ -85,11 +87,11 @@ git pull --ff-only
 Edit the two lines in `android/app/build.gradle` — `versionCode` and `versionName` — and commit
 them with the rest of the release.
 
-**Why on `testing` and not on `main`:** every merge into `testing` publishes a **nightly** — a
-prerelease APK built from that commit, not a release — carrying the same `versionCode` as the
-release it follows. A bump that lands only on `main` leaves
-`testing` a code behind, and every nightly after it is a *downgrade* that a phone on the release
-refuses to install without an uninstall first — 0.8.0 is the recorded case.
+**Why on `testing` and not on `main`:** every merge into `testing` publishes a **testing release** —
+a rolling pre-release APK built from that commit, not a release — carrying the same `versionCode` as
+the release it follows. A bump that lands only on `main` leaves `testing` a code behind, and every
+testing release after it is a *downgrade* that a phone on the release refuses to install without an
+uninstall first — 0.8.0 is the recorded case.
 `scripts/check-version-code.sh` fails in that state, but the branch is the thing that has to be
 right.
 
@@ -145,6 +147,25 @@ gate to finish. Two gates on one machine share `~/.gradle`, and the loser's test
 directory corrupts in a way that reads as a failing test while being contention; the lock is
 there so a red gate means a red tree.
 
+## The confirmed human run — between step 5 and step 6
+
+**Adopted 2026-11-11 (D41).** A release is not a build that passed; it is a build that was used. The
+gate is a person, not a duration.
+
+- The candidate is the **testing release** built from the commit you are about to merge — the same
+  code with a different label, already signed with the release key, and it installs over the
+  previous release.
+- **One human installs it and uses it in ordinary course**: a real session, on a real device, with
+  the twelve paths in `docs/REGRESSION.md` among what they do. Ten minutes on a phone is the device
+  smoke (step 3 of the per-cut procedure), not this.
+- **It defaults to the owner, and a volunteer takes it when one exists.** The release document names
+  who did it and says what they did. Until a volunteer exists, the reviewer and the cutter are the
+  same person and the document records that plainly: it is a weaker check than a second pair of
+  eyes, and the day a volunteer runs a candidate, the author's own run stops counting.
+
+There is no soak duration and there is no calendar. A release ships when this gate and the others
+are green, and not before.
+
 ## 6. Merge `testing` into `main`
 
 ```sh
@@ -155,8 +176,8 @@ git push origin main
 ```
 
 The bump arrives on `main` with the merge; do not edit the version here. `main` is the branch
-releases are cut from, and cutting from it means the tagged commit is the one that had a nightly
-and a green gate.
+releases are cut from, and cutting from it means the tagged commit is the one that had a testing
+release and a green gate.
 
 The push runs CI (`.github/workflows/ci.yml`): the version-code check, the presence-report and
 app-skill self-tests, the debug build and every unit test. A red CI on `main` stops the cut here.
@@ -196,7 +217,7 @@ The workflow `.github/workflows/release.yml` runs three jobs:
 - **rebuild (B)** — the same build again from a clean checkout, with no tests, and hashes it.
 - **compare** — prints both hashes and a verdict.
 
-The version name is asserted against the `version` input, and a nightly-stamped name
+The version name is asserted against the `version` input, and a testing-stamped name
 (`…-nightly-…`) is refused. Nothing else about the version is asserted, and the workflow does not
 run the gate or the version-code check: those are steps 5 and 7.
 
@@ -262,7 +283,7 @@ gh release create "v$VERSION" \
 
 - **`--target "$SHA"`** makes the tag point at the commit that was built. Without it `gh` tags
   the default branch's current head, which may have moved: a tag whose name says one commit and
-  whose artifact came from another. The nightly workflow guards the same failure with
+  whose artifact came from another. The testing-release workflow guards the same failure with
   `target_commitish`.
 - **`--notes-file docs/RELEASE-<version>.md`** makes the release page the record of the cut, and
   fails the command if that file is absent. `CONTRIBUTING.md` requires one per release; write it
@@ -294,14 +315,20 @@ Install over the previous build without uninstalling (the signing key is the sam
 gateway, and make one live call. A release that installs but cannot hold a call is not done;
 this is the only check that the artifact, not just the build, works.
 
-## Nightlies are not releases
+## The testing release is not a release
 
-Every push to `testing` runs `.github/workflows/nightly.yml`, which publishes a **prerelease**
-tagged `nightly-YYYYMMDD-HHMMSS-<sha>` with the same release signature and the same
-`versionCode` as the release it follows, and a `versionName` stamped `…-nightly-<sha>`. The
-label changes and nothing else, so a phone can name the build it is running while installability
-is unchanged. A nightly never becomes "Latest", and nothing about it is a cut. Only the steps
-above make a release.
+Every push to `testing` publishes a **testing release** — a rolling pre-release of active
+development — with the same release signature and the same `versionCode` as the release it
+follows, and a `versionName` stamped with the commit. The label changes and nothing else, so a
+phone can name the build it is running while installability is unchanged. A testing release never
+becomes "Latest", and nothing about it is a cut. Only the steps above make a release.
+
+**Vocabulary, and the one place the old name survives.** The channel was called a *nightly* until
+2026-11-11 and is called **testing** from then on: it is the branch's rolling release, and the name
+now says so. Records written before that date — baselines, budgets, release notes — still say
+"nightly" and are correct to: they describe the channel under its old name. The workflow still
+tags `nightly-YYYYMMDD-HHMMSS-<sha>` and stamps `…-nightly-<sha>`; renaming the tag prefix is a CI
+change, it is not made here, and nothing in the process depends on the prefix.
 
 `scripts/check-version-code.sh` encodes the one rule that keeps both tracks installable:
 

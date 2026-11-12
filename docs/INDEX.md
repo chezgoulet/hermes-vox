@@ -62,11 +62,21 @@ build.
 | [`SECURITY.md`](../SECURITY.md) | What the app protects, what is out of scope, and how to report a vulnerability. |
 | [`skills/hermes-vox-app/SKILL.md`](../skills/hermes-vox-app/SKILL.md) | The app's self-description for the agent, with every factual claim anchored to a file and a token. |
 
+### Governance — proposed, not in force
+
+| Document | What it answers |
+|---|---|
+| [`docs/GOVERNANCE.md`](GOVERNANCE.md) | Release governance, adopted in part 2026-11-11 (D41–D46): readiness instead of a calendar, the human run that defaults to the owner until a volunteer takes it, the seven gates, the veto with its criterion and its lapse, and how consensus on a major is expressed. |
+| [`docs/COMMUNITY.md`](COMMUNITY.md) | The real-time space beyond GitHub, on Discord (D46): the channels, moderation, the code of conduct, the first month's mode, and the cost the platform choice carries. |
+| [`docs/templates/RELEASE-CUT.md`](templates/RELEASE-CUT.md) | The per-cut checklist a tracker issue is made from, including the scope question and the evidence lines. |
+| [`docs/templates/VETO-NOTICE.md`](templates/VETO-NOTICE.md) | The form a veto is recorded on — and the reason an unrecorded veto lapses. |
+
 ### Current release and milestones
 
 | Document | What it answers |
 |---|---|
-| [`docs/MILESTONES.md`](MILESTONES.md) | The milestone map: what the current beta means, what the alpha gate (the switch for unfinished features) holds, and what is open. |
+| [`ROADMAP.md`](../ROADMAP.md) | **The plan of record.** The 0.9.x series in order: what each release is for, what it contains, what it closes off, and where the UI and copy freeze for localisation. |
+| [`docs/MILESTONES.md`](MILESTONES.md) | What a version number means, what the alpha gate holds and what each set still needs, and what the labels mean. |
 | [`docs/0.9.1-SCOPE.md`](0.9.1-SCOPE.md) | Every item in the current release, by real status. |
 | [`docs/RELEASE-0.9.1.3.md`](RELEASE-0.9.1.3.md) | The current release's contents: the short-reply drain, the readiness gate, and the cleanup, with its evidence. |
 | [`docs/RELEASE-NOTES-0.9.1.md`](RELEASE-NOTES-0.9.1.md) | the published note for 0.9.1, as written by the owner: what changed, grouped by what the reader is trying to do, with contributors named |
@@ -87,9 +97,11 @@ build.
 ### Decisions and project records
 
 [`docs/DECISIONS.md`](DECISIONS.md) — the numbered decision log, with dated amendments where a
-later decision changed an earlier one · [`docs/BASELINE.md`](BASELINE.md) — the per-release
-performance baseline instrument and the numbers recorded for each cut · [`ROADMAP.md`](../ROADMAP.md)
-— the project roadmap as it stood · [`TODO.md`](../TODO.md) — the old open-work list ·
+later decision changed an earlier one · [`docs/REVIEW-0.9.1.md`](REVIEW-0.9.1.md) — the review of
+the 0.9.1 release: the timeline, the five failures with their evidence, and what now prevents each
+one · [`docs/BASELINE.md`](BASELINE.md) — the per-release
+performance baseline instrument and the numbers recorded for each cut ·
+[`TODO.md`](../TODO.md) — the old open-work list ·
 [`WIRING.md`](../WIRING.md) — the branch note for the notification-dismiss and apps lane.
 
 ### Release notes

@@ -1,170 +1,84 @@
-# Milestones — the current map
+# Milestones — what a version means, and what the alpha gate holds
 
-Set 2026-11-03 by the owner, after the pre-release architecture review found the documents
-describing a release that no longer existed. Revised the same day: **the Presence product work
-is in 0.9.1 behind the gate, not deferred.** Authoritative over `ROADMAP.md`,
-`docs/PLAN-0.9.1.md` and any decision text it supersedes (D28).
+**Rewritten 2026-11-11.** This document used to hold a sequence. The sequence is
+[`../ROADMAP.md`](../ROADMAP.md) now, and only there: two documents holding one plan is how they came to
+disagree, and the last disagreement was found by a reviewer rather than by us.
+
+What stays here is the meaning of a number, the alpha gate and its contents, and the labels.
 
 ## How versions mean things
 
-`0.9.x` is **beta**. `1.0` is **general availability**, and it arrives when the owner says so —
-not on a schedule. Between now and then the scheme is:
+`0.9.x` is **beta**. `1.0` is **general availability**, and it arrives when the owner says so — not on a
+schedule.
 
 ```
 (GA major).(features, upgrades, major releases).(point releases, refinements, finesses).(fixes)
 ```
 
-`0.9.1` is the current beta milestone and **stays open, absorbing work, until the owner signs it
-off**. There is no feature bucket called "1.0" — GA is a state the product reaches.
+A feature release raises the minor component (`0.9.2`), a fix to an already-published version appends a
+component (`0.9.1.3`), and `versionCode` rises by exactly one per cut. The tree currently reads
+`0.9.1.3`, which is the version just shipped; it changes with the next cut, not before.
 
-## The Alpha gate
+There is **no release calendar** (D42). A release ships when its gates are green: the build gate, the
+twelve regression paths, the human run, the evidence rule, and a closed tracker
+(`docs/GOVERNANCE.md`, `docs/REGRESSION.md`).
 
-There is **one gate for everything unfinished**: **Enable Alpha Features**. It is **off on a
-fresh install**, the row immediately above the alpha block at the end of Settings. Its panel
-lists six sets, each selected on its own: **Presence**, **Continuous listening**, **Turn-taking**,
-**Phone tools**, **Wake word** and **Digital assistant**.
-Continuous listening requires Presence; Phone tools is independent of it. When it is
-off, the settings those sets cover are **dimmed and unreachable**: not hidden, and not silently
-running. Quiet calls (#325) is not a set; it is its own switch, off by default.
-**Sessions** and **Switching profiles** left the gate on 2026-11-06 (D39), so `/sessions`
-and the profile switcher are on for every install.
+**Polish is continuous and belongs to no milestone.** A rough edge found in use — a wording, a colour,
+a timing — is fixed when it is found and ships in the next point release. A defect is fixed when it is
+known, not scheduled. What a milestone records is the work that needed deciding, not the work that
+simply needed doing (D31).
 
-`Presence` remains the feature's public name in copy and release notes. "Alpha Features" is the
-gate, not the name. "Enhanced Realtime" is retired as vocabulary.
+## The alpha gate
 
-`0.9.1.1` is the patch cut on 0.9.1: the profile list a gateway returns is read in the shapes an
-agent actually writes, and a profile's local label can be corrected after its address changes.
-`0.9.1.2` corrects that patch's default rule: only the built-in `default` answers at the host
-root, so a name the gateway does not serve is reported rather than saved.
-`0.9.1.3` is the cleanup cut: the short-reply drain that held calls for two minutes, the readiness
-gate that says what a call is waiting for, Piper as the recommended voice, and the profile and
-Settings repairs.
+There is **one gate for everything unfinished**: **Enable Alpha Features**. It is **off on a fresh
+install**, and it sits immediately above the alpha block at the end of Settings. Its panel lists six sets — **Presence**, **Continuous listening**, **Turn-taking**, **Phone tools**, **Wake word** and
+**Digital assistant** — each selected on its own, so a tester can take one without taking all.
 
-## 0.9.1 — the release in acceptance
+When the master is off, the settings those sets cover are **dimmed and unreachable**: not hidden, and
+not silently running. Continuous listening requires Presence, because it is how the being hears; Phone
+tools is independent of it (D38). Quiet calls (#325) is not a set; it is its own switch, off by default.
 
-Everything in flight, plus everything discovered until the owner is satisfied.
+**Sessions** and **Switching profiles** left the gate on 2026-11-06 (D39), so `/sessions` and the
+profile switcher are on for every install.
 
-**The loop and its surfaces.** The state audit, operations, discovery, the commands screen, the
-settings split, light mode, the being's look controls, the entity named by the host.
+`Presence` remains the feature's public name in copy and release notes. "Alpha Features" is the gate,
+not the name. "Enhanced Realtime" is retired as vocabulary.
 
-**Approvals, natively.** The turn stream moves onto the route that carries `approval.request`
-(PLAN §10). A debug arm is test tooling, never the shipped mechanism.
+The panel **shrinks as each set graduates**: six today, three after 0.9.3 (Phone tools and Digital
+assistant promoted, Wake word removed), two after 0.9.4, one after 0.9.5, none after 0.9.6. When it is
+empty the gate goes, because there is nothing left behind it. A promotion changes no behaviour of the
+set it promotes — otherwise the promotion is unproven by construction.
 
-**Profiles from the host**, with switching flawless.
+### What each set is, and what it still needs
 
-**Share with agent** — the clipboard and files offered to the agent rather than uploaded, plus Vox
-as a share target.
+The panel must match reality. A set that turns on nothing is worse than an absent one, and a set that
+is finished belongs in the app rather than behind a switch.
 
-**The transcript scrolls back** to what the agent said.
+- **Presence** — the being speaks its own short lines while the agent works; it may read what the
+  phone is doing and may not act on it. *Needs:* a model decision (`#562` — 2,588 MB and 5.6 s to
+  produce eleven to thirty-one character lines) and a conversation that behaves (`#217`, `#559`).
+- **Continuous listening** — the mic stays open and the recogniser is read continuously. *Needs:* a
+  recogniser that keeps up (`#569`), the lane itself (`#228`, `#229`), and re-measured budgets
+  (`#405`).
+- **Turn-taking** — acknowledgement while you speak, yielding when you interrupt, resuming after.
+  *Needs:* continuous listening, and `#242` (classify the overlap, do not measure its level).
+- **Phone tools** — the mind acting on the phone through one MCP tool. *Needs:* one device pass that
+  sets a timer by voice and shows one refusal. It is the closest set to finished.
+- **Wake word** — enrolment only: the app records your takes and **no detector is installed**, so
+  nothing listens (`docs/WAKE-WORD.md`). *Needs:* a detector, which needs training the House does not
+  have (`#45`). **It comes out of the panel at 0.9.3**, because a set that turns on nothing is worse
+  than an absent one.
+- **Digital assistant** — asks Android for the role so the assistant gesture opens Vox. *Needs:* one
+  phone where the gesture works; the row grants nothing by itself.
 
-**Presence — the layer.** Ships behind the gate: the soul per profile, the handoff receipt, the
-cost controls (dormant), the first-run hardware check that advises.
+## Labels, and what they mean
 
-**Presence — the behaviours, also here, also behind the gate.** Asides and backchannels
-(#245, #243), resume after an interruption (#243), overlap classification (#242), the tuning bar
-(#217), a Presence transcript that is not empty (#223), the invention measurement (#256), and a
-fresh pass on the presence directive and its rails.
+- **`milestone/0.9.x`** — in that release's scope, assigned from `ROADMAP.md` and never by drift.
+- **`milestone/future`** — recorded, not scheduled, and the issue says why it is not scheduled.
+- **`good first issue`** — bounded, reviewable, and nobody is already on it.
+- **`awaiting-reporter`** — blocked on a person rather than on us. The issue names the person.
+- **`sev/critical|high|medium|low`** — consequence if it ships, not effort.
+- **`needs-device`** — cannot be closed without a phone, so it cannot close in a pull request.
 
-**Presence — its tool use (D38, which supersedes D32–D34's two-lane shape).** The layer is not
-finished at "the phone talks and the mind acts". It includes: the mind's **ongoing context** of what
-the phone is doing (actions running, what the soul last said, device state) carried on every voice
-turn in the ephemeral instructions; the phone's capabilities — timer, alarm, reminder, DND, volume,
-share — reached by the mind through MCP, with a result for every call; and the mind's **veto**,
-pre-execution for consequential acts and post-hoc undo for reversible ones. Presence may read that
-context and may not act on the phone. #421 carries the design.
-
-**VOX.md per profile**, presence-gated: fetched on the first call for a profile when Presence is
-on, and the correct soul loaded into the local model when the profile switches.
-
-**The turn budget** pauses for an approval and abandons route-aware.
-
-**First run (#230)** and **the retirement of the mode vocabulary (#222)** — a default now has to
-be decided at first run.
-
-**The hardware check advises, never enables.** A cheap RAM/free-memory gate at first run, then a
-real load attempt on the first call that can demote the choice. If the phone cannot carry
-Presence it stays off, with one line saying why and where to turn it on.
-
-**Carried, without a number**: #191 (presence crash), #202 (truncation), #208 (second handset),
-#179 (co-residency), #165 (store rail), #249 (render budget). Done in 0.9.1 if achievable;
-otherwise they close in whatever release closes them.
-
-## 0.9.1.3 — the cleanup cut
-
-Set 2026-11-10 by the owner: **0.9.1.3 is a cleanup release.** It carries the repairs and the
-polish owed to 0.9.1 and does not wait for a feature. `versionCode` 150.
-
-**In the cut.**
-
-- *The voice leg.* #549 (an unbuilt track read as a dead engine), the re-warmed engine adopted
-  by the open reply, the stuck-turn wedge retired, and `event=run-admit` so the next field log
-  can say whether a turn reached the gateway (#553).
-- *A connection named once.* The title is the connection — **Hermes-Agent** for the built-in
-  default, the profile's own label otherwise — and the pill never repeats it (#552).
-- *A saved profile can be removed.* Long-press a row; the host keeps its profile, the phone
-  forgets the address, key, model and VOX.md (#554).
-- *#533 — the profile ask stops travelling on a route with no approval notifier.*
-- *#202 — truncation after a barge-in.*
-- *#413's remaining findings*, each fixed or declined with a reason.
-- *The measurements that need no room full of speech*: #249's render budget and #209's baseline.
-
-**Moved out of the cut, deliberately.**
-
-- **#228 and #229, continuous listening.** A feature, not a cleanup. It gets its own release, and
-  Presence on by default waits for it.
-- **#404, #376 and #282, the approvals route.** A transport change with a device proof of its
-  own; it is a release, not a patch.
-- **#405's talk-heavy soak.** It needs speech in the room, and the numbers it produces belong to
-  the feature above.
-
-**After the cut: the governance review.** Set 2026-11-11. When 0.9.1.3 is published the owner
-turns to governance and process — the release rhythm, what quality gates are adopted rather than
-proposed, the commercial position, and the community space — and the outcome is published to the
-community rather than decided in private. Nothing in that review blocks this release.
-
-**Gate for the cut.** The standing checklist, plus: the voice witnesses on a real Supertonic
-call; a removed row gone from a real sheet; an approval-free profile ask that still names what
-the host serves; and every number quoted in the release note measured on this build.
-
-## 0.9.2 — the gate opens, and whatever we have learned by then
-
-**Not open.** 0.9.1.3 ships first; this milestone opens when 0.9.1 is signed off.
-
-A living milestone, not a promise. What it holds today:
-
-- **Presence on by default.** The Alpha gate opens for Presence: it stops being opt-in.
-- **Per-profile settings** — *landed early, in 0.9.1*: a profile carries its own voice, model and
-  look (`docs/PRESENCE.md`). This line stays as the record that it was carried here first.
-
-What else lands there is decided by what the 0.9.1 acceptance run and real use turn up. Expect new
-features to be wanted, expect some of them to be the ones we have not thought of yet, and expect
-this list to grow between now and the cut. That is the normal shape of a beta milestone; a frozen
-list would mean we stopped listening.
-
-## Polish is continuous, and belongs to no milestone
-
-Refinements are not saved up. A rough edge found in use — a wording, a colour, a timing, a screen
-that needs explaining — is fixed when it is found and ships in the next point release. The
-Perpetual task does not get a milestone number, and it does not wait for 0.9.2 to be planned.
-
-**Refinement belongs to the milestone that commits the feature (D31).** A feature is not finished
-when its first working version lands. Deciding what it actually *is* — its design, its edges, the
-shape a careful review would give it — is that milestone's work, not the next number's. Deferring
-it is how a feature ships as a sketch and stays one. What does not get a number is polish of things
-already shipped: the rough edge found in use, fixed when found.
-
-The same applies to defects: a real one is fixed when it is known, not scheduled. What a milestone
-records is the work that needed deciding, not the work that simply needed doing.
-
-## 1.0 — GA
-
-When the owner deems the product ready to leave beta. No feature list, no date.
-
-## What this map changes in the older documents
-
-- **D24's** sentence *"Presence remains 0.9.2"* is **superseded** by D28.
-- **PLAN-0.9.1's** old "Not in 0.9.1" list is **superseded**: the Presence behaviours are in
-  0.9.1 behind the gate, and per-profile settings landed there too.
-- **ROADMAP's** 0.9.2 section keeps its content links but not its claim that Presence arrives
-  there; 0.9.2 is where the gate opens.
-- **Multi-profile** no longer sits under 1.0.
+**No issue carries `milestone/1.0`** (D22, `PLAN-1.0.md`): 1.0 is a state the product reaches, and the
+candidate work is unnumbered in `milestone/future`, decided by the community (`#268`).

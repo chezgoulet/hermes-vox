@@ -1234,3 +1234,127 @@ follows.
 
 **Why.** The owner's: the release does not wait on someone else's review queue. D29's substance is
 unchanged — F-Droid is the intended third rail, and the recipe stays reproducible.
+
+## D41 — The release gate is a confirmed human run, not a soak duration
+
+Set 2026-11-11, at the governance review after 0.9.1.3.
+
+**The decision.** Before a tag, at least one person other than the one cutting the release installs
+the candidate over the previous release, uses it in ordinary course, and confirms it. Their name and
+what they did are recorded in `docs/RELEASE-<version>.md`. **There is no soak duration.** The gate
+is the run, not the clock, and `docs/REGRESSION.md` layer 4 no longer says PROPOSED.
+
+**Why.** The owner's, in his own words: *at least one confirmed human run before a release.* The
+question a duration answers is how long a build has sat; the question that matters is whether anyone
+but its author has used it. In 0.9.1 nobody had, and the two defects that shipped were both things a
+fifteen-minute real conversation would have found. (The original wording here said that with no
+second person the gate is not met; the owner amended that the same day — see below.)
+
+**Against the alternative.** Torc proposed 48 hours for a minor and 24 for a point, with a waiver for
+security fixes. The owner chose the run instead of the duration, and a run is both cheaper to satisfy
+and harder to fake.
+
+**Amended the same day, 2026-11-11 — who runs it.** The gate **defaults to the owner** and passes to a
+volunteer when one exists: anyone who installs a testing release and reports what they saw can be
+asked, and the first volunteer who reviews a release takes the role from the author permanently —
+from then on the author's own run does not count. Until that volunteer exists, the reviewer and the
+cutter are the same person.
+
+**What that costs, stated.** A run by the author is a real run and not an independent one. It tests
+that the candidate works; it cannot test that it works for someone who did not build it, which is the
+thing that failed in 0.9.1. The release document records whose run it was, so a tick never implies
+the stronger check. The condition that closes the gap is a volunteer, and recruiting one is the
+action this amendment leaves open.
+
+## D42 — There is no release calendar; a release ships when its gates are green
+
+Set 2026-11-11, against Torc's proposal of an 18th/25th/29th–30th/1st month.
+
+**The decision.** No monthly release date, internally or in public copy. A release begins when its
+scope is published as the cut tracker and ends when every gate is green and the tracker is closed.
+Point releases ship as needed; a security fix or a gate-blocking regression is answered within 72
+hours, with the human run of D41 still applying.
+
+**Why.** The owner's choice from three options. 0.9.1's failure was not that a calendar existed — it
+was that the only thing setting the date was enthusiasm. A date cannot be un-excited; a gate can be
+made to hold, and D41 is that gate.
+
+**What it costs, stated.** Users cannot know when the next release comes, only what it will have had
+to pass. That predictability was the thing a cadence would have bought, and it is given up knowingly
+rather than denied. The dissent is recorded here so that a later reader does not re-propose a
+calendar as if it had never been considered.
+
+## D43 — The veto has four published grounds, a 24-hour clock and a lapse
+
+Set 2026-11-11.
+
+**The decision.** The owner's quality veto may be exercised on one of four grounds: a gate red or
+unexplained; a claim in the release note not measured on that build; an unresolved defect on the
+candidate with a reproduction; or the owner used the candidate and it is not ready. The ground is
+recorded in the cut tracker, published within 24 hours, and a new date is set within 7 days. **A veto
+with no ground recorded in 24 hours lapses and the cut proceeds.** The schedule moves; no gate is
+lowered, and no veto can ship what a gate refused.
+
+**Why.** A veto without a criterion is weather, and nobody can work to weather. The fourth ground
+exists because every serious defect in this project was found by a person using the thing, and a
+criterion that excludes the only instrument that has ever worked would be expensive tidiness.
+
+**Against the alternative.** Torc offered 48 hours for the clock and the owner took 24; the shorter
+clock is what makes the lapse credible. A version with grounds 1–3 only was rejected for the reason
+above.
+
+## D44 — The evidence rule and the closed tracker block a tag
+
+Set 2026-11-11.
+
+**The decision.** No claim ships in a release note that was not measured on that build or confirmed
+by the person who reported the issue; a quoted number names the file it came from, the rule that
+counted it and the script that reproduces it, **and a number that cannot be reproduced blocks the
+tag** rather than being corrected in an erratum afterwards. The cut's tracker is closed before the
+tag, and the release page links it. An issue the release fixes is closed by the release, with the
+evidence line, or it stays open.
+
+**Why.** These are the two that would have stopped 0.9.1. The note written to end that class of
+failure then quoted a count that does not reproduce from the only surviving log — 12 of 78 short
+replies, against the note's 22 of 40 and the code comment's 28 of 29 — and the tracker's own gate
+list was open at the tag with four items unticked. A rule that catches prose and misses arithmetic is
+half a rule.
+
+## D45 — Consensus on a major: 14 days' note, 7 days' call, dissent recorded
+
+Set 2026-11-11.
+
+**The decision.** A major — a version that changes a default people rely on, removes a capability,
+changes the licence or the CLA, or opens the Alpha gate by default — requires a design note published
+at least 14 days before the release candidate is cut, a consensus call open at least 7 days in the
+community space, no sustained objection that names a defect or a broken promise, and the outcome
+recorded here with the dissent and why it did not prevail. Silence after an announced window is
+consent. The maintainer decides, having published the argument. **Money never buys a vote:** a
+membership, sponsorship or bounty carries no franchise.
+
+**Why.** Consensus is the absence of an unanswered technical objection, not unanimity and not a
+poll; the alternative is that one person who never answers holds a release indefinitely. Recording
+the dissent is what makes the maintainer's decision answerable rather than merely final.
+
+## D46 — The community starts on Discord
+
+Set 2026-11-11, against Torc's recommendation of a Matrix server on House infrastructure.
+
+**The decision.** The real-time community lives on Discord: seven channels, two moderators, a written
+code of conduct, invite-only for the first month, open at day 30 if the room has answered a question
+without the owner and has no unresolved moderation incident. `docs/COMMUNITY.md` is the document.
+
+**Amended the same day, 2026-11-11 — no bridge, no Matrix.** As first written this decision recorded
+a bridge to Matrix as an intention. The owner struck it, in his words: *no Matrix, I don't like
+Matrix. Just Discord until and unless someone has a compelling other.* The intention was a plan
+wearing the word "intention", pointed at a platform he does not want, and the title above is amended
+to match. The platform question reopens only if someone brings a compelling alternative — a case made
+to him, not a standing option in a document — and until then the answer is Discord.
+
+**Why.** Reach. Discord wins on discovery, moderation tooling and ops cost, and for one maintainer
+the ops cost is the argument that decides it.
+
+**What it costs, stated.** The project does not own the room, a member cannot leave with their
+history, and the record is split between GitHub and a platform the project does not control. The
+answer is discipline rather than infrastructure: every field report that turns into work is mirrored
+to a GitHub issue by whoever triages it, so the durable record stays where the project controls it.

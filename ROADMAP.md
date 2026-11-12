@@ -1,400 +1,255 @@
-# Hermes Vox — Roadmap
-
-> Historical record. This describes the state and reasoning at the time it was written; it is not
-> maintained and may describe behaviour that has since changed.
-
-Hermes Vox is an open-source **voice client for the Hermes agent**: a GPU-drawn being
-you talk to on your phone, with on-device speech processing and a hands-free,
-barge-in conversation line. It is a work in progress: installable and useful today,
-with the items below still open.
-
-**Status keys:** `[x]` shipped · `[ ]` in progress / planned · `[?]` open question · `[-]` deferred.
-
-## Milestones
-
-**The map lives in [`docs/MILESTONES.md`](docs/MILESTONES.md) and decision D28 (2026-11-03).**
-In short: `0.9.x` is beta, `0.9.1` stays open until the owner signs it, `0.9.2`/`0.9.3` are the
-next beta milestones, and `1.0` is GA when the owner says so. 0.9.1 ships the **Presence layer**
-behind the Alpha gate; 0.9.2 makes it the **product**. Sections below are kept as the working
-record for each release's content and are subordinate to that map.
-
-## Direction (set 2026-10-19; release shape amended 2026-10-21)
-
-- **Android only.** Desktop and iOS are out of scope; the Go core that a desktop
-  client would have reused was removed in #126.
-- **No Google Play.** Distribution is GitHub Releases, Obtainium and F-Droid.
-  F-Droid is the store, and we always ship our own signature — so reproducible
-  builds are a release requirement, not polish.
-- **Three releases, then a declaration (D21).** `0.9.1` makes the mechanics excellent, judged with
-  Presence off as readily as with it; `0.9.2` makes Presence the product — one mode, with the
-  two-mode distinction retired; `1.0` is the horizon, carrying nothing of its own, and it is cut
-  when the features are complete and stable in the community's hands, not when a calendar says so
-  (D22).
-- **Presence is the product, not a mode (D16).** Realtime is what the app does; Presence is the
-  layer that makes it a being. It is on by default, it is named Presence, and by the end of `0.9.2`
-  no selector asks a user to choose between two names for the same call.
-- **What Presence is, where it came from, and what it is for:** [`docs/PRESENCE.md`](docs/PRESENCE.md).
-- **The unnumbered work is community-led.** Continuity, the household, entity calls, remote control
-  of the interface, the wake word and the watch items are recorded, not scheduled. What moves out of
-  that list moves because the community asked for it (#268) — and new proposals join it by the same
-  door.
-- The full records are in [`docs/DECISIONS.md`](docs/DECISIONS.md).
-
----
-
-## Shipped (`[x]`)
-
-**0.3 → 0.5.6.x — the MVP + hardening line.**
-
-- **M1 — Core completeness.** A working end-to-end voice loop: STT/VAD/TTS on-device,
-  streaming to the Hermes gateway, barge-in, and the particle-being rendered on OLED black.
-- **M2 — Modern sci-fi UI overhaul.** A designed interface on true OLED black, the
-  particle-being as the central "presence."
-- **M3 — SSE + streaming.** The entity's stream consumed as a live SSE push, and the reply
-  rendered in real time.
-- **M4 — Voice pipeline (sherpa-onnx).** The sherpa-onnx runtime bundled (pinned k2-fsa AAR);
-  Silero VAD, Whisper STT, Piper TTS.
-- **M5 — In-app model downloader.** Blessed models download inside the app; only the Gemma
-  expression model needs a separate license acknowledgement.
-- **M6 — Realtime + Enhanced Realtime (alpha).** Two hands-free modes; ER adds the on-device
-  Gemma expression layer.
-- **0.5.x hardening.** Crash-guard, wall-clock streaming deadline, barge-in leak fixes,
-  `/compress` chain unify, Kotlin 2.2.21, seven new visual archetypes, settings-UX pass.
-- **0.6.x — the being.** Identity/glyph work, the archetype vocabulary, interface aliveness.
-- **0.7.x — the aura arc.** `0.7.2` shipped the halo bake — the emitter's near-black rim baked
-  to true transparent at ~0.66 radius; the hardware-layer theory was falsified in field and the
-  layer removed. Field-verified on both Natural and Adaptive colour profiles.
-- **0.8.0 — the accelerator release** (released 2026-09-30, `docs/RELEASE-0.8.0.md`). Gemma on
-  the GPU; Enhanced Realtime complete (the warm soul, the beat, `<<SKIP>>`); Supertonic TTS by
-  bake-off; the soul hears the caller's tone; whole-utterance STT with a transcript validator,
-  the "heard" line and optional Parakeet; the mic stays open after a reply; background,
-  resumable model downloads; int8 Whisper; the being rebuilt on OpenGL ES 3 with 27 shapes;
-  keep-screen-on during calls; an icon rendered from the being's own shaders. The series log
-  is below.
-
-- **0.8.1 — the headset release** (released 2026-10-19, `docs/RELEASE-0.8.1.md`). An attached
-  Bluetooth, wired or USB headset becomes the call's route (#149); the README, roadmap, device
-  guide and policies that had only reached `testing` land on `main`; and the nightlies are
-  tagged at the commit they were built from and carry a version code that installs over the
-  release.
-
----
-
-## `0.8` — the accelerator series (released as 0.8.0; field verification open)
-
-Shipped as **one 0.8.0** on 2026-09-30. Every increment landed on `testing` as a nightly first.
-The one fix release cut inside the series was **0.7.3** (vc115), the first-run block from #130
-(`docs/RELEASE-0.7.3.md`). The `[ ]` items below are the field work still open after the release.
-
-**The hallmark: acceleration, provable and perceptible.**
-
-- `[x]` **Gemma on the GPU** (was labelled `0.7.3`; that number became the first-run fix).
-  `Backend.CPU()` was an untouched default; the manifest had
-  zero `<uses-native-library>` grants. GPU-first with CPU fallback, plus the `VoxThreads` policy.
-- `[x]` **M1 — ER instrumentation.** The counters, `gemma-render` percentiles, `should_emit`.
-  Before this, "no perceptible difference" was only an impression.
-- `[x]` **M2 — the presence ladder un-collapsed.** `SILENCE_FIRST_MS == LAG_AFTER_MS == 4000`
-  made the middle rung unreachable. One nonverbal cue at 900 ms; the dead sentence inventory
-  and the literal-`false` `warm` parameter deleted.
-- `[x]` **M2.1 / M2.2 — the double-load fixes.** `dialGateway()` was constructing a throwaway
-  full pipeline; `EngineConfig.cacheDir` took cold load 24.3 s → 1.29 s; one-render-in-flight.
-- `[x]` **M3a — the express knobs.** `maxNumTokens=8192`, `maxOutputToken=256`, speculative
-  decoding on the `ExperimentalFlags` singleton (correctly, for the pinned 0.16.1), character
-  guard 600 → 1000, mode-aware init gate.
-- `[x]` **M3 — the lists stop routing.** `ErIntent` is a safety classifier and nothing else.
-  The pattern lists are gone from the decision path entirely.
-- `[x]` **M3 — the soul decides.** One render per turn carries the caller's line; its *output*
-  is the decision — a line to speak, or `<<ESCALATE>>`. The mind runs in parallel on every turn.
-- `[x]` **M3c — the prompt remade for a decider,** not a renderer. The prelude was describing
-  a renderer while the router was asking for a decision; the persona was fighting the directive.
-- `[x]` **M3c — the soul opens the call.** In ER the entity greets you first, in its own voice,
-  rendered against its own VOX.md — so turn one is the soul's by construction.
-- `[x]` **M3c — the router's numbers.** `soul(answer=N escalate=N nothing=N)` in the per-call
-  line, so the router's invisible failure mode is visible.
-- `[x]` **The beat, built (vc133).** The soul keeps ONE warm LiteRT-LM conversation (persona
-  prefilled once, rotated by `SoulBudget`), so a render only prefills its directive. On the
-  mind's turns the same render returns a generated two-to-six-word opener (`Outcome.Beat`), the
-  soul decides *before* the mind's submit (`SoulGate`, bounded + adaptive), and the mind is told
-  what the voice did — including that it already answered, when it may reply `<<SKIP>>`
-  (`MindSkip`) and stay silent. The beat→reply audio handoff is explicit. See
-  `docs/DESIGN-enhanced-realtime-voice.md` §DECISION (the warm soul).
-- `[x]` **The voice + the soul's ears (vc134).** Supertonic by measured bake-off
-  (`docs/VOICE-BAKEOFF.md`); Gemma 4 E2B audio input so the soul hears the caller's tone
-  (`VoiceMood` → delivery + the vibe Hermes is told).
-- `[ ]` **Field session on the beat** — the `express-probe … warm=` line and
-  `soul(beat= … mind-skip=)` are the numbers that prove it on a real device.
-- `[ ]` **Community PRs #128 / #129** — merged, gated, field-tested alongside our own changes.
-- `[ ]` **Field session on the router** — the open question the numbers exist to answer.
-- `[ ]` **G2 — render latency** — warm render ~2.2 s against a ≲500 ms target. Reframed rather
-  than abandoned: the soul must beat the *mind*, and on the turns that matter it already does by
-  an order of magnitude. The structural fix is the beat (below), not a faster render.
-
-**Close-out for the series:** the ER state doc and the field checklist are in
-`.hermes/reviews/vox-er-*.md`; the plan and its statuses live in `docs/PLAN-0.8-accelerator.md`.
-
----
-
-## The ER direction — the beat (decision, 2026-09-10)
-
-**The finding that set the direction.** ER was functional but inaudible on a healthy gateway:
-the mind's first token lands in ~1.8 s, the soul's render takes ~2.5 s, and the delivery guard
-correctly drops the soul line once the reply has begun flowing. So on a *good* connection ER
-looked inert — for a brand-new reason.
-
-**What the field does about it** (primary sources, in `.hermes/reviews/vox-er-turn-taking-field-research-2026-09-10.md`):
-
-- **Sesame** — one model over interleaved text and audio, and in their own words CSM "can only
-  model the text and speech content in a conversation—not the structure of the conversation
-  itself… turn taking, pauses, pacing." The best voice in the business explicitly excludes
-  turn-taking from what its model does.
-- **OpenAI** — turn detection is a *classifier*: "scores the input audio based on the probability
-  that the user is done speaking", plus an `eagerness` preset. Not a silence threshold.
-- **ElevenLabs** — the most deployed conversational stack is **cascaded**, not end-to-end, with a
-  dedicated turn-taking model and inline expressive tags (`[laughs]`, `[sighs]`).
-- **Full-Duplex-Bench** — measures *stop latency* and *response latency*; re-entry delay should
-  depend on intent; **a single static policy is the wrong shape.**
-
-**Nobody settles who owns a turn by routing it to one of two generators. The floor is taken in
-beats.**
-
-`[x]` **The beat (A′)** — built in 0.8.0 (vc133) as a *generated* beat from the warm soul. The soul takes the *opening beat of every turn*, instantly; the mind
-preempts exactly as it does now; escalation decides only whether the soul *continues*. This kills
-the race without discarding anyone's work, and it makes ER audible on every turn rather than only
-the turns the router hands over.
-
-`[ ]` **Pre-rendered personality stems.** The beat must be instant, so it cannot be a live render.
-The VOX.md pipeline emits the entity's own **stem vocabulary** — its actual backchannel register,
-authored by the soul, not a generic clip library — synthesised once at init, in the same voice as
-everything else. This is a change to the VOX.md pipeline's contract, and it is the piece that makes
-the beat free.
-
----
-
-## The remaining ER findings (`[ ]`)
-
-Ranked by what will actually bite. Detail in `.hermes/reviews/vox-er-remaining-plans-2026-09-10.md`.
-
-- `[x]` **F3a — the vanish bug.** Mic light on while interrupted words disappear. Fixed in 0.8.0
-  (`BargeCarry`, #12): the interrupting words are kept from their onset and become the next
-  turn. Field witness: `event=barge-carry`.
-- `[ ]` **F3b — real-world turn-taking.** The in-cabin endpointer A/B (open since 0.6.8) and the
-  **adaptive barge floor** — near-misses cluster at 0.10–0.13 on a 0.10 floor in a noisy room;
-  sample ambient at call start rather than using an absolute threshold.
-- `[ ]` **F5 — memory and thermal.** Release the express engine on call teardown (the init gate
-  makes this safe), then a thirty-minute soak watching RSS.
-- `[ ]` **F6a — narration into the presence loop.** The directive already takes the tool context;
-  route the tool event through the loop so the line is topical and density-governed.
-- `[ ]` **F4 — GPU contention.** Per-frame timing idle versus during a render. The maintainer's
-  inclination, to be confirmed by measurement: sacrifice frame rate, not the soul.
-- `[ ]` **F8 — a verdict mechanism.** A fixed ten-utterance script run per candidate build, so
-  "this build is better" stops being an impression. Adopt the benchmark's scenario taxonomy:
-  user interruption, backchannel, side conversation, ambient speech.
-- `[ ]` **Truncation after a barge** — check whether session history keeps the whole reply or only
-  what was heard. The reference implementation truncates, so the model doesn't believe it said
-  things the caller never heard.
-- `[ ]` **Semantic endpointing** — probability plus timeout, with an `eagerness` preset instead of
-  hand-tuned constants. **Blocked** until the listening half is streaming (see 0.9).
-
----
-
-## `0.9.1` — mechanics
-
-**The complete, status-bearing list is [`docs/0.9.1-SCOPE.md`](docs/0.9.1-SCOPE.md); this section is
-the narrative.** Since D28/D29 this release carries more than mechanics: it ships the Presence layer
-and its behaviours behind one Alpha gate, the approvals route flip, profiles from the host, share
-with agent, and the F-Droid rail. It stays open until the owner signs it.
-
-Items added on 2026-11-03 and **not yet built**, each with its own issue:
-
-- `[ ]` **The Alpha gate (#402)** — a master toggle at the top of Settings, off by default; enabling it
-  slides out the feature sets we have marked alpha, Presence first; with it off, everything alpha is
-  dimmed and unreachable.
-- `[ ]` **The first-run hardware check (#403)** — 8 GB and a free-memory floor, then a real load
-  attempt that can demote; advises, never enables.
-- `[ ]` **The route flip (#404)** — \`/v1/runs\` as the default, with the device pass. **The cut waits.**
-- `[ ]` **Budgets re-measured with continuous capture on (#405)** — the cut holds to those numbers.
-- `[ ]` **The no-new-numbers rule is dropped (#406)** — the false-action-claim guard stays.
-- `[~]` **Presence behaviours** — asides and backchannels (#245), resume (#243), overlap
-  classification (#242), the tuning bar (#217), the Presence transcript (#223), the invention
-  measurement (#256), and a fresh pass on the directive and rails (#257). Moved from 0.9.2 to 0.9.1.
-- `[ ]` **The store rail (#165)** — now in scope, and **the release waits until the app is listed in
-  F-Droid** (D29). External review, so no date.
-
-
-**The claim:** the loop closes. A stranger gives a real command by voice, sees what the agent is
-doing, gets a clean result, and discovers the next thing without being taught. The app is also fast,
-correct and navigable with Presence **off** — a property this release must have, not its purpose.
-
-**The gate (#279):** one person who has never used the app completes the calendar run by voice, with
-no tutorial — read the day, decline a meeting, draft the email, edit a part by voice, send it, clear
-the time, then check trail conditions. A demo can be scripted; this cannot.
-
-Plan: [`docs/PLAN-0.9.1.md`](docs/PLAN-0.9.1.md). Milestone label: `milestone/0.9.1`.
-
-**Already in hand, not to be rebuilt.** The streaming arm is in the app (#207, closed 2026-10-20):
-`StreamingStt.kt` and `OnlineNemotronStt`, a catalogue entry at the 160 ms chunk, and a Settings
-chooser that falls back to the Apache-2.0 Zipformer while the streaming model is absent,
-downloading, or will not load. The A/B that chose it — Nemotron 0.6B at 11.9 % WER on accented
-speech against 38.8 %, at 3.1× the CPU and memory — is `docs/STT-AB.md`, D5. The live gateway suite
-(#167) runs in CI and fails the build if any of its six cases skip.
-
-**The work, in dependency order:**
-
-Status is stated, not implied: `[ ]` not built · `[~]` built and merged on `testing`, awaiting
-field verification on a device · `[x]` verified on a device and closed. A merged pull request is
-not a tick; the owner's session is.
-- `[~]` **States and surfaces (#280, #281).** Audit what each state is — listening, thinking, a tool
-  running, waiting, failed, done — and decide whether the being or explicit UI carries it. Then show
-  what is running and on what, and what failed and why. No log viewer; one line of plain language and
-  a state. **Built** — the state audit is committed as `docs/STATE-AUDIT.md` and the operations line ships (#281).
-- `[~]` **Approvals on the phone (#282).** When Hermes stops for a sign-off, surface what is being
-  approved, why, and what yes and no do — answerable by voice or touch, timing out to *no*. The
-  loop is not closed if the barricade is invisible. **Built** — `approval.request` is surfaced, answered by voice or touch, timing out to *no*.
-- `[~]` **Discovery (#284, #285).** Three mechanisms as one system — the being suggests in context,
-  the interface reveals what is relevant, a searchable surface teaches by use — plus the app skill
-  bundled and enabled, so the agent itself can answer "where is that setting". **Built** — `Discovery.kt` with the stuck hint and catalog suggestions, and the app skill is offered at first run.
-- `[ ]` **Co-residency (#179) — the gate.** One live call with VAD + the streaming arm + TTS +
-  presence resident: RTF, peak RSS, worst `MemAvailable`, presence first token, stutter, thermal.
-  Then the default arm is decided and written into `DECISIONS.md` with the numbers.
-- `[~]` **The listening half, continuous (#228, #235, #229).** The mic stays open for the call, the
-  partial worker stops re-decoding from scratch, and endpointing becomes a probability with a
-  timeout and an `eagerness` preset rather than a silence constant. This is the substrate 0.9.2's
-  behaviours need; building it is 0.9.1's work because a call is better with it either way. **Built, default off** — `ContinuousCapture`, `SemanticEndpoint` and the partial worker are wired behind prefs.
-- `[~]` **The reply lifecycle under interruption (#240, #202).** One end event per request, audio
-  already in flight attributable to its reply, and the truncation channel either producing a named
-  cause or closed with the evidence that narrowed it. **Half built** — #240 shipped (one end event per reply id); #202 is fixed but unconfirmed until a human ear says so.
-- `[~]` **Profiles (#174).** A registry of saved connections and a switcher — endpoint, key, agent
-  name, session scope. Client-side only: `GET /v1/models` returns one entity name, so discovery is a
-  gateway contract. Switching ends the live call; one line at a time is an invariant. **Built** — `Profiles.kt`, `ProfileDialogs.kt` and the header switcher; #174 stays open until the switch is verified on a device, including that switching ends a live call.
-- `[~]` **The commands surface (#226, #227, #252).** A themed sub-UI instead of the stock list, a
-  six-verb animation grammar instead of per-command art, and the open question in #252 settled: does
-  the app keep full command parity in-app, or lean into the phone-call identity and make hanging up
-  and calling back the normal way to start a new session? **Built** — the commands screen (#226) and the six-verb motion grammar (#227); the #252 design question is still open.
-- `[~]` **The settings and the look (#224, #225, #275).** Split Visuals by what the user is changing —
-  Being, Hearing, Voice, Presence — and give the look real controls with a preview that runs in the
-  screen where the change is made. Light mode gets its own set of being animations; a black box on a
-  white screen is not a theme. The Presence section carries today's controls until #222 trims it. **Built** — four sections, look controls with an in-screen preview, and an authored light ground with measured contrast floors.
-- `[ ]` **The regression that stops the product (#191).** Presence hangs on initialising after the
-  Gemma download and the process dies. The load path is supposed to degrade gracefully, so the cause
-  is below it — most likely memory. It cannot wait a release, and the co-residency run is where the
-  memory picture becomes legible.
-- `[ ]` **Ambient cues (#251).** A thinking ping and an idle-timeout cue — the ambient channel while
-  Presence is off, and explicitly not layered on top of asides when it is on.
-- `[~]` **The instruments (#209, #208, F4, F5, F8).** The performance baseline and behaviour matrix
-  recorded per release; GPU contention and the thirty-minute thermal soak measured; a fixed
-  ten-utterance verdict script so "this build is better" stops being an impression. **Partly** — #209 has a one-device baseline on the 0.9.1 build (median 161 ms cold start, 640 MB in call) and F8 ships as `scripts/verdict-f8.sh` with the budgets in `docs/BUDGETS-0.9.1.md`; #208, F4 and F5 are measured on one handset only.
-- `[ ]` **The store rail (#165).** F-Droid path B: sherpa-onnx and onnxruntime built from source,
-  `Binaries:` + `AllowedAPKSigningKeys`, submission against the released tag. It runs alongside this
-  release and **does not gate its cut** — if the recipe is not ready, 0.9.1 still ships.
-
-**The bar for the cut:** the acceptance run passes on a device, by voice, with no tutorial (#279);
-no regression and no screen that needs explaining; a stranger installs, connects a gateway, places a
-call and switches profile without help; speech-end to first audio holds D17's budget on the release APK;
-the streaming arm is co-resident or the default is the fallback, with the numbers that decided it;
-no truncation report without a named cause; matrix and baseline recorded on both devices.
-
----
-
-## `0.9.2` — Presence as the product
-
-**The claim:** the layer shipped in 0.9.1 behind the Alpha gate; this release makes it the
-product — on by default, the selector gone, the behaviours designed. One selector retired, one name, on by default —
-and the conversation behaves: it acknowledges while you speak, it yields when you interrupt, it
-resumes where it was, and it does not say a thing nobody asked for.
-
-Plan: [`docs/PLAN-0.9.2.md`](docs/PLAN-0.9.2.md). Milestone label: `milestone/0.9.2`.
-
-- `[ ]` **The selector goes (#222 — D16 completes here).** `presence_enabled`, default on;
-  `voice_mode` migrated rather than dropped, so no existing install has its choice reversed. No mode
-  label, no degraded-mode pill; the Settings row reports the absence, and only when it is absent.
-- `[ ]` **The transcript (#223).** A Presence transcript that is not empty — the option exists for
-  people who cannot read a fading crawl.
-- `[ ]` **First run (#230).** The onboarding path written against the names the app keeps.
-- `[ ]` **The aside: a minimal directive and a guard that repairs (#257, #256).** Content is what
-  the code polices; format is what it repairs (D20). Every remaining bound cites a documented
-  failure, and the measured ones retire.
-- `[ ]` **The render budget (#249).** ~2.5 s against a 900 ms gate is a lost race, not an ordering
-  bug. Move the gate, shrink the render, or let the beat carry the turn — decided by field numbers.
-- `[ ]` **The conversation behaviours (#245, #243, #242).** Backchannels while listening; resume the
-  step after an interruption instead of repeating it; classify an overlap — interruption,
-  backchannel, third party, background — rather than measuring its level.
-- `[ ]` **The instrument and the bar (#217).** A per-session summary from the log: slots offered,
-  lines spoken, skips by reason, repeats, render p50/p95, anything that landed after the reply. The
-  bar: at Conversational, over a long run, two thirds of offered slots speak, nothing repeats,
-  nothing lands after the first text, p95 under three seconds.
-- `[ ]` **What the conversation still owes.** F3b's adaptive barge floor and real-room turn-taking;
-  F6a's narration into the loop; truncation after a barge in session history.
-
----
-
-## Future — community-led and unnumbered
-
-Recorded, not scheduled, and decided by want rather than by sequence. Every item here is a real idea;
-none is promised. What moves out of this list moves because the community asked for it (#268), and
-new features or workflows proposed by people using the app join the same list.
-
-- `[ ]` **The household (#234, #46).** Per-person identity and relationships. Speaker ID stops being
-  `sev/low` and becomes a security property, because any detected voice currently triggers the agent.
-- `[ ]` **Entity calls (#232).** Per-event-class routing and a bring-your-own push endpoint, with a
-  ceiling and a visible stop. The entity may only initiate on an arm the user set.
-- `[ ]` **Remote control of the interface (#233).** An MCP surface and a closed scene vocabulary, with
-  per-tool grants, a visible control state, an audit log and a dead-man switch.
-- `[ ]` **Wake word (#45).** D6 step one needs training compute the House does not have, and the
-  always-on question is not settled either.
-- `[ ]` **Watch items (#237, #238, #292, #293).** Prior art worth reading, not dependencies: Ming's
-tag vocabulary, the VoiceManager protocol, KittenTTS's ONNX voices, and gradium's streaming Phonon.
-
-Detail and constraints: [`docs/PLAN-FUTURE.md`](docs/PLAN-FUTURE.md).
-
----
-
-## `1.0` — the horizon
-
-1.0 is the last thing in the sequence and carries nothing of its own. It is cut when the feature set
-is complete and stable in the community's hands (D22), not when a bucket empties — so no issue carries
-this label. F-Droid is not a 1.0 gate: the store rail runs alongside whichever release's recipe is
-ready (#165), because distribution is not a statement about completeness.
-
-Plan: [`docs/PLAN-1.0.md`](docs/PLAN-1.0.md). The candidate work lives in
-[`docs/PLAN-FUTURE.md`](docs/PLAN-FUTURE.md) and is decided in #268.
-
-## Distribution
-
-- `[x]` **GitHub releases + Obtainium.** Signed APKs on every release; nightly pre-releases from
-  `testing`. Obtainium tracks the repo directly.
-- `[x]` **Project site** — [hermesvox.org](https://hermesvox.org).
-- `[ ]` **F-Droid** — the store rail. sherpa-onnx and onnxruntime built from
-  source in the recipe (path B in `docs/DECISIONS.md`), with `Binaries:` +
-  `AllowedAPKSigningKeys` so users get our signature. Google Play is dropped.
-
----
-
-## Open questions (`[?]`)
-
-- **Desktop / cross-platform — answered, out of scope (2026-10-19).** The Go core
-  was removed in #126, and a desktop renderer would be a new product rather than a
-  port. Android only.
-- **In-app model downloads vs bundling** for the 0.9 model set — the APK-size tradeoff returns
-  when Kokoro and a streaming ASR join Whisper and Piper in the catalog.
-
----
-
-## Deferred (`[-]`)
-
-- **Bundling the voice models** — kept in-app downloadable (Play-friendly; Gemma stays a separate
-  license download). A future "offline out of the box" could bundle the required set, but it's a
-  deliberate APK-size tradeoff.
-- **Walkie Talkie / PTT** — removed in C2 (0.4.0). Every mode is hands-free; there is no
-  push-to-talk button. (Stripped deliberately — see docs/PLAN-c2-walkie-strip.md.)
-- **Cloud voice processing + full-duplex realtime** — the app is local / self-hosted (you vs. your
-  own Hermes gateway); cloud is not a mode today. Note that the *arrangement* work in 0.9 moves us
-  toward full-duplex behaviour without a cloud dependency.
-
----
-
-## The being
-
-The identity the whole thing is built around: the particle-being — a luminous swarm that
-*is* the agent, present and alive. The shapes it can be are one of its defining features
-(the 20-archetype vocabulary from the visual passes). Design north star: "the AI agent exists
-within the forms and likes to play with them."
+# Roadmap — the 0.9.x series
+
+**Set 2026-11-11.** This replaces the previous roadmap entirely. That document,
+`PLAN-0.9.1.md`, `PLAN-0.9.2.md`, `PLAN-0.9.x-to-1.0.md` and `PLAN-1.0.md` are records of how the
+plan got here. This is the plan. `docs/MILESTONES.md` holds what a version number means, what the alpha
+gate contains, and what a label means; it does not hold a sequence, because two documents holding one
+sequence is how they came to disagree.
+
+## The foundation, identified first
+
+The series is built outward from what is already stable, so it is worth saying exactly what that is.
+
+**The stable thing is the single-turn call.** One press, one question, one answer, in one voice. Every
+user path exercises it, both of its defects are closed with witnesses in 0.9.1.3, the readiness gate
+refuses to open a call until the mind, the ears and the voice report ready, and the twelve regression
+paths in `docs/REGRESSION.md` all run through it. Beside it, **profiles and sessions** are stable: they
+left the alpha gate on a device pass (D39) and have not regressed since.
+
+**What is not stable:** the hearing timing (a recogniser slower than real time on the field device),
+Presence's cost (2,588 MB, 5.6 s to load, lines of eleven to thirty-one characters), and anything that
+assumes continuous audio. Everything unfinished is either on top of the call or beside it. Nothing
+unfinished *is* the call.
+
+So one ordering rule sits above the rest:
+
+> **With the alpha gate off, every release is strictly better than the one before it and no less
+> stable.**
+
+That is testable — the twelve paths plus the instruments below — and it is what front-loading
+stability means in practice. A release that improves an alpha set while making the default path worse
+has failed, whatever else it did.
+
+## The three stability moves, in order
+
+1. **Measure before changing anything.** `#208` (behaviour matrix), `#209` (performance baseline),
+   `#279` (a stranger's real task), F4 (GPU contention), F5 (the thermal soak) and F8 (the ten-utterance
+   verdict) are what tell *stable* from *working*. Three of them are parked in a feature milestone and
+   not running; they move into the cut checklist in the first release, so every release after it can be
+   compared rather than remembered.
+2. **Stabilise the substrate before the behaviour.** Continuous listening is what every conversation
+   feature stands on. It is built behind switches and has never been measured on a long call.
+3. **Promote in order of readiness, not ambition.** The two cheapest sets leave the gate first, because
+   a promotion ritual that works is worth more to a community than a set that ships half-alive — and
+   proving the ritual before the risky sets need it is itself a stability move.
+
+## How a set leaves the gate
+
+A set is **stabilised** by being measured with the instruments and judged against its own bar, and
+**promoted** by a device pass: the set is removed from `AlphaGate.FeatureSet`, its settings stop being
+dimmed, the app skill and the docs lose their "behind the gate" language, and the pass is recorded in
+the release document. A release never promotes and rebuilds the same set: unless the promotion changes
+no behaviour, it is unproven by construction.
+
+The panel shrinks as the series goes — **six sets today, three after 0.9.3, two after 0.9.4, one after
+0.9.5, none after 0.9.6** — and when it is empty there is no gate, because there is nothing behind it.
+
+## The rules every release obeys
+
+From `docs/GOVERNANCE.md`, not negotiable per release:
+
+- **No date.** A release ships when its gates are green. The series is an order, not a calendar.
+- **One theme.** A release is named for what it does, and work that does not serve the theme waits.
+  This is the rule that would have stopped 0.9.1 carrying a media change inside a profile fix.
+- **One human run** of the candidate before the tag, by someone other than the cutter wherever a
+  volunteer exists, with whose run it was recorded in the release document.
+- **Twelve regression paths**, the closed tracker, and the evidence rule: no claim in a release note
+  that was not measured on that build, and no number without the file and the count behind it.
+- **No release waits more than seven days on a person.** A report or a retest with no reply in a week
+  closes with its limitation recorded and a link to the issue. A release whose scope depends on
+  strangers is a release that cannot start.
+- **Every release is small enough to finish.** A second theme becomes the next release.
+
+## The series
+
+Each release either **graduates a set** or **closes a gap in the floor**, and says what it closes off.
+A release is finished when it removes a question, not when it adds a feature.
+
+### 0.9.2 — The floor, measured
+
+**No set graduates.** This release exists to make "stable" a number.
+
+**In:** the instruments into the cut checklist with their first rows — `#208`, `#209`, `#279`, F4, F5,
+F8; `#569` the recogniser's real-time factor on the field device; `#179`'s last two numbers (RTF and
+stutter under a live turn); the retest batch `#538`, `#496`, `#373`, `#374`, each closed with its
+evidence line or with its limitation under the seven-day rule; `#562`'s bench — a smaller presence
+model, or most lines produced without one — because it decides the headroom every later release
+assumes; and `#528`'s contract agreed, so string extraction can start in every release after this.
+
+**Closes off:** "we cannot tell stable from working", and "we do not know whether this phone can carry
+what we have built".
+
+**Why first:** almost nothing here changes behaviour, so the release's risk is near zero while its
+value is the rest of the series. `#569`'s cause may turn out to be `#562` — contention between a
+2.6 GB resident model and the recogniser — and the bench answers that in days rather than weeks.
+
+### 0.9.3 — The small sets graduate
+
+**Sets out:** Phone tools, Digital assistant. **Also:** Wake word leaves the panel.
+
+**In:** the device passes that promote Phone tools (a timer set by voice through the agent, and one
+refusal) and Digital assistant (the assistant gesture opening Vox on a phone we have); the promotion
+itself — gate rows removed, settings un-dimmed, skill and docs updated; and Wake word removed until a
+detector exists, because today it records enrolment and listens to nothing (`#45`).
+
+**Closes off:** "alpha" meaning "we have not decided". After this the panel lists **three** sets — the
+three that are genuinely unfinished — and a newcomer can read the project's state off one screen.
+
+**Why here:** both sets are independent of Presence and of the hearing leg, so nothing blocks them, and
+promoting them exercises the promotion ritual before the sets that need it most. Days of work for the
+project's credibility.
+
+### 0.9.4 — Hearing graduates
+
+**Sets out:** Continuous listening.
+
+**In:** `#228` continuous capture, `#229` semantic endpointing with the eagerness preset, `#405` the
+memory, thermal and battery budgets re-measured with the lane live, `#242` overlap classification, and
+F3b's adaptive barge floor. Then the promotion, with its pass: a long call, partials arriving, a turn
+ending on a judgement rather than a silence, and the budget numbers recorded.
+
+**Closes off:** "can the mic stay open and the recogniser keep up, on a phone, for a long call". The cut
+after this holds to the re-measured budgets, not to `BUDGETS-0.9.1.md`.
+
+**Why here:** it is the substrate. Every conversation feature below assumes it, so it must be measured
+and shipped before turn-taking or the being can be judged at all.
+
+**One decision it needs first.** The gate says continuous listening requires Presence, because
+continuous listening is how the being hears (D29). If that coupling stays, this set cannot leave the
+gate until Presence does — the least stable work in the project holding the substrate hostage. Two ways
+through:
+
+- **Decouple (recommended, for stability).** Continuous listening graduates alone. The dependency is a
+  gate-time convenience, not a runtime fact: the lane, the partials and the endpointing work with
+  Presence off, and it is those that matter here.
+- **Graduate as a pair.** Presence and continuous listening leave together at 0.9.5, honouring D29
+  without amending it. The cost is that the substrate waits on the most uncertain piece of work, and
+  the series gains a release.
+
+### 0.9.5 — Turn-taking graduates
+
+**Sets out:** Turn-taking.
+
+**In:** the acknowledgement while you speak, the yielding when you interrupt, the resume after — each
+judged against `#217`'s bar on a long run: two thirds of offered slots speak, nothing repeats, nothing
+lands after the first text, p95 under three seconds. Then the promotion, with its pass.
+
+**Closes off:** "does the being keep up mid-conversation". Panel after this: **one set**.
+
+**Why here:** the cheapest conversation set once the substrate exists, and the one whose quality a user
+hears immediately.
+
+### 0.9.6 — The being graduates
+
+**Sets out:** Presence. **Panel after this: empty.**
+
+**In:** the model decision from `#562` built in; the aside's minimal directive and repairing guard
+tuned on a long run; backchannels; and `#217`'s bar as its acceptance. Carried here without an issue
+number, each needing one opened: **pre-rendered personality stems** (so the opening beat is free rather
+than a live render), **F6a** narration into the presence loop, and **truncation after a barge** in
+session history.
+
+**Closes off:** "does the being hold a conversation worth having". After this release there is no alpha
+gate.
+
+**Why here:** last of the sets, because it is the largest and the most uncertain — and because it is the
+one set whose work adds no screens, so if it slips it can slip past the freeze without touching it (see
+below).
+
+### 0.9.7 — The loop closes
+
+**No set graduates.** This is the release that makes the product usable by someone who was not taught.
+
+**In:** `#404` the turn route on `/v1/runs`, `#282` approvals on the phone, `#376` the evidence that an
+approval reached a phone and was answered, `#281` operations — which tool is running, in plain
+language, and what it is acting on — and `#279`'s stranger's real task, run here as acceptance rather
+than as an instrument.
+
+**Closes off:** the last **new interaction surface** built from scratch, and the last of the two things
+a person needs before letting an agent act: seeing what it does, and being asked first.
+
+**Why here:** it needs the conversation settled (an approval arrives mid-turn) and it creates screens,
+so it must follow the sets and precede the freeze.
+
+### 0.9.8 — First run, and the last words
+
+**In:** `#230` first run — gateway, microphone, models, Presence, a first call, honest when a step
+cannot be completed; the **copy pass**, which by now is the last strings only, because every release
+since 0.9.2 extracted its own as it went; `#388` the speech-rate slider; `#326` audio environment modes
+decided in or out; `#514` per-profile mTLS.
+
+**Closes off:** UI and copy construction. Onboarding is the last surface that did not exist; the copy
+pass is the last time a sentence may be rewritten freely.
+
+**Why here:** the freeze starts at this tag, so this is the last release where changing the app's shape
+or its voice is normal work.
+
+## 0.10 — Localisation
+
+**In:** language packs beyond French; plural and gender handling where a language needs it; a
+right-to-left pass; the voice-language mismatch warning PierreCsn asked for (a warning, never a block);
+speech recognition following the UI locale by default with an explicit override; per-locale coverage in
+the gate; and whatever the first translators find wrong with the contract, which is the point of
+shipping it to them.
+
+**Not in it:** any new screen, any rewritten sentence, any new setting. If it needs one, it waits.
+
+## The freeze, stated precisely
+
+From the `v0.9.8` tag, until a decision lifts it:
+
+- **Frozen:** screen layout and navigation; the settings structure; the wording and placement of every
+  user-visible string.
+- **Not frozen:** colours and themes that add no strings; bug fixes that change no sentence;
+  translations; anything behind a string resource; and **behaviour tuning that adds no screen** — which
+  is why Presence's conversation work can run beside the freeze rather than in front of it if it is
+  still not ready at 0.9.6.
+- **The rule:** a change that adds or rewrites a user-visible sentence is a resource change or it is
+  refused. One late sentence is one sentence every translator revisits, and it is how a localisation
+  effort stalls.
+
+## After 0.10 — unnumbered on purpose
+
+`PLAN-1.0.md`'s rule stands: **no issue carries `milestone/1.0`**, and the community decides the
+destination (`#268`). The candidate work sits in `milestone/future` and is not scheduled here: the phone
+as a surface (`#445`) with generated UI (`#444`), screen access (`#446`), local vision (`#448`), the MCP
+scene vocabulary (`#233`), the household and speaker ID (`#234`, `#46`), routing and push (`#232`),
+Android TV (`#442`), the Jean-Luc theme (`#443`), comprehensive phone control (`#429`), the wake-word
+detector (`#45`), and `#421` — the mind directing the phone with a veto — the largest single design item
+in the repository, which must not be smuggled into a release that is trying to freeze.
+
+## Standing instruments — not release content
+
+`#208`, `#209`, `#279`, F4, F5 and F8 run on every release and belong in the cut checklist, not in a
+milestone. A milestone label on an instrument hides the fact that it is not running, which is exactly
+what happened to the last three.
+
+## How a contributor plugs in
+
+- **Every open issue is in a release or in `future`, and `future` says why.** An issue with neither is a
+  bug in the tracker, not a backlog.
+- **A release's issues are its scope.** Work outside the current theme belongs on the next one; say so
+  on the issue rather than opening a pull request, and the answer is often "next".
+- **Lanes:** hearing (recogniser, capture), conversation (Presence, turn-taking, the aside), surfaces
+  (approvals, operations, first run), translation. A lane has no owner; it has a reviewer, and that is
+  whoever last landed a change in it.
+- **Definition of done, for any issue:** the change, the catcher that would have caught its defect, and
+  the evidence line that shows it worked on a device if it touches one.
+- **`good first issue` means a real one.** `#388` is the current example: a preference, a slider and a
+  settings row, bounded and reviewable.
+
+## What this roadmap does not carry
+
+The previous roadmap's shipped history and its long ER research sections are records, not plans. They
+are kept in `docs/PLAN-0.8-accelerator.md`, `docs/DESIGN-enhanced-realtime-voice.md` and
+`docs/DECISIONS.md`, and this document does not repeat them.
