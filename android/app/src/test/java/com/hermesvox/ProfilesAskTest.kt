@@ -462,15 +462,95 @@ class ProfilesAskTest {
         assertEquals(listOf("lab"), applied.unreachable)
         assertEquals(listOf("home", "work"), applied.merge.list.map { it.name })
         assertNull(Profiles.find(applied.merge.list, "lab"))   // a failed probe never adds
-        assertEquals("2 profiles added · 1 not reachable", applied.line)
+        // #579: the line names the profile, not just how many. "1 not reachable" sent the
+        // owner looking; "lab not reachable" sends him to the profile.
+        assertEquals("2 profiles added · lab not reachable", applied.line)
+        assertEquals("2 profiles added · lab not reachable",
+            ProfilesAsk.line(result, added = 2, unreachable = 1, unreachableNames = listOf("lab")))
+        // With only a count to hand, the count is what it says — never an invented name.
         assertEquals("2 profiles added · 1 not reachable",
             ProfilesAsk.line(result, added = 2, unreachable = 1))
 
         // Every name refused: nothing added, and still one honest line, never an empty list.
-        val none = ProfilesAsk.settle(emptyList(), base, "enc:aaa", result, "",
+        val none = ProfilesAsk.settle(emptyList(), base, "enc:aaa", result, "", 
             mapOf("home" to false, "work" to false, "lab" to false))
         assertEquals(emptyList<String>(), none.merge.added)
-        assertEquals("0 profiles added · 3 not reachable", none.line)
+        assertEquals("0 profiles added · home, work and lab not reachable", none.line)
+    }
+
+    @Test fun aLongUnreachableListStaysOneReadableLine() {
+        val names = listOf("home", "work", "lab", "attic", "cellar")
+        assertEquals("1 profile added · lab not reachable",
+            ProfilesAsk.line(served(listOf("lab")), 1, 1, listOf("lab")))
+        assertEquals("0 profiles added · lab and attic not reachable",
+            ProfilesAsk.line(served(listOf("lab", "attic")), 0, 2, listOf("lab", "attic")))
+        assertEquals("0 profiles added · home, work, lab and 2 more not reachable",
+            ProfilesAsk.line(served(names), 0, 5, names))
+    }
+
+    private fun served(names: List<String>) = Result.Named(
+        names.map { HostProfiles.Served(it) }, "", ProfilesAsk.Source.CONVERSATION)
+
+    // ---- #579: the probe verdict, and the route that produced it ----
+
+    /**
+     * The owner's failure, reproduced in the pure layer: his gateway serves `GET /v1/models`
+     * and no `/p/<name>/…` route, so a named profile's probe answered a generic 404 and the
+     * app called a listed profile unreachable. A 404 that carries no missing-profile marker
+     * is a fact about the route, and the root is asked before the profile is written off.
+     */
+    @Test fun aGeneric404AsksTheRootBeforeCallingTheProfileUnreachable() {
+        val rootMissing = "{\"detail\":\"Not Found\"}"
+        assertTrue(ProfilesAsk.rootProbeNeeded(404, rootMissing))
+        val v = ProfilesAsk.probeVerdict("work", "gw.example", 404, rootMissing, rootStatus = 200)
+        assertTrue(v.reachable)
+        assertEquals("root-fallback", v.reason)
+        assertEquals(200, v.status)
+
+        // The route exists and the profile does not: no rescue, and the reason says which.
+        val missingProfile = "{\"error\": \"Unknown or unconfigured profile\"}"
+        assertFalse(ProfilesAsk.rootProbeNeeded(404, missingProfile))
+        val gone = ProfilesAsk.probeVerdict("work", "gw.example", 404, missingProfile)
+        assertFalse(gone.reachable)
+        assertEquals("unknown-profile", gone.reason)
+    }
+
+    @Test fun everyOtherFailureIsTakenAsAnAnswerAboutTheProfile() {
+        // Only a 404 is a question about the route. A 401, a 500 or a timeout is the
+        // profile's answer and is never re-asked at the root — the root answers 200 for any
+        // working gateway, which would turn a refused profile into a working one.
+        for (code in listOf(401, 403, 500, 502, -1)) {
+            assertFalse("$code", ProfilesAsk.rootProbeNeeded(code, ""))
+        }
+        assertEquals("status", ProfilesAsk.probeVerdict("w", "h", 500, "").reason)
+        assertEquals("timeout", ProfilesAsk.probeVerdict("w", "h", -1, "").reason)
+        assertFalse(ProfilesAsk.probeVerdict("w", "h", -1, "").reachable)
+        // Root asked, root itself failed: the root's answer is the verdict, not a rescue.
+        assertEquals("root-status",
+            ProfilesAsk.probeVerdict("w", "h", 404, "", rootStatus = 401).reason)
+        assertFalse(ProfilesAsk.probeVerdict("w", "h", 404, "", rootStatus = 401).reachable)
+    }
+
+    @Test fun aProbeLineCarriesTheHostAndTheVerdictAndNoKey() {
+        val p = ProfilesAsk.probeVerdict("work", ProfilesAsk.hostOf("${base}/p/work/v1/models"),
+            404, "", rootStatus = 200)
+        val line = ProfilesAsk.probeLine(p, 1_240)
+        assertEquals(
+            "event=profiles-probe name=work host=gw.example status=200 reason=root-fallback " +
+                "reachable=true ms=1240", line)
+        assertFalse(line.contains("enc:"))
+        assertFalse(line.contains("/p/work"))
+        assertEquals("gw.example:8443", ProfilesAsk.hostOf("https://gw.example:8443/p/w/v1/models"))
+        assertEquals("10.0.0.5", ProfilesAsk.hostOf("http://10.0.0.5"))
+    }
+
+    @Test fun theAskLineSaysWhatTheAppMadeOfTheAnswer() {
+        val whole = served(listOf("home"))
+        assertEquals("whole", ProfilesAsk.reasonOf(whole))
+        assertEquals("partial", ProfilesAsk.reasonOf(whole, unreachable = 1))
+        assertEquals("no-block", ProfilesAsk.reasonOf(Result.Failed(Failure.NO_BLOCK, 200)))
+        assertEquals("timeout", ProfilesAsk.reasonOf(Result.Failed(Failure.TIMEOUT, -1)))
+        assertEquals("unusable", ProfilesAsk.reasonOf(Result.Failed(Failure.UNUSABLE, 200, dropped = 2)))
     }
 
     @Test fun aFailedProbeMarksASavedProfileUnavailableButNeverDeletesIt() {
