@@ -1,8 +1,8 @@
 # Sprint plan — how the 0.9.x series is worked
 
 `ROADMAP.md` is the plan of record: what each release is for, and in what order. This document is how
-the next work is sequenced to get there. Where the two disagree, `ROADMAP.md` wins until the owner signs
-off the changes listed at the end of this document. The changes come from the 0.9.x review
+the next work is sequenced to get there. `ROADMAP.md` and this document now agree: the fourteen changes below were signed off on
+2026-11-12 and are written into the roadmap, so the sequence is the plan rather than a proposal. The changes come from the 0.9.x review
 (`docs/REVIEW-0.9.x.md`) and the first walkthrough (2026-11-12).
 
 **No dates.** A sprint ends when its exit criteria are met, not when time runs out (D42).
@@ -256,9 +256,11 @@ Each release's bar is the sprint output it depends on, plus the standing cut che
 
 ---
 
-## Changes to the roadmap, for sign-off
+## Adopted 2026-11-12
 
-The issues are already tagged this way. `ROADMAP.md` is unchanged until the owner decides each item.
+Signed off by the owner on 2026-11-12 and **written into `ROADMAP.md`**, so these are decisions rather
+than proposals. They came from the 0.9.x review (`docs/REVIEW-0.9.x.md`), the first walkthrough
+(2026-11-12) and the evidence in each item.
 
 1. **0.9.4 graduates continuous capture only.** Semantic endpointing (#229) stays default-off and moves
    to 0.10: its word list is English, and its own bench shows at most 100 ms of gain
