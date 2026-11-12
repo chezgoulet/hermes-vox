@@ -218,6 +218,9 @@ model and how to report a vulnerability.
 
 ## Where the rest of the documentation is
 
+What is being built next, and how to pick it up: [ROADMAP.md](ROADMAP.md) is the plan of record, and
+[SPRINT-PLAN.md](SPRINT-PLAN.md) is the sequence the next work follows.
+
 [docs/INDEX.md](docs/INDEX.md) is the map: every living document with what it answers, and the
 historical records kept separately. Start with [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for
 how the pieces fit together and where the phone/host boundary is. Feature documents:

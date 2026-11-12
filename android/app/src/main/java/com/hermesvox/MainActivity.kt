@@ -538,6 +538,21 @@ open class MainActivity : AppCompatActivity() {
         0
     }
 
+    /** Regression path 2's witness ([ColdFrame]): the first frame after process start, logged once. */
+    private fun noteColdFrame() {
+        val createdAt = android.os.SystemClock.uptimeMillis()
+        val decor = window.decorView
+        decor.viewTreeObserver.addOnDrawListener(object : android.view.ViewTreeObserver.OnDrawListener {
+            override fun onDraw() {
+                // A draw listener cannot remove itself while the tree is dispatching it.
+                decor.post { decor.viewTreeObserver.removeOnDrawListener(this) }
+                if (!ColdFrame.take()) return
+                val now = android.os.SystemClock.uptimeMillis()
+                VoxLog.d(ColdFrame.line(now - android.os.Process.getStartUptimeMillis(), now - createdAt))
+            }
+        })
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         applyTheme(prefs.getString("theme", "system")!!)
         super.onCreate(savedInstanceState)
@@ -547,6 +562,7 @@ open class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         VoxLog.init(applicationContext)
         CrashLog.init(applicationContext)
+        noteColdFrame()
         // The phone's handoff actions (message/dial/launch) need the window that owns the call:
         // the being to speak the dial line, the one hang-up teardown, and the PiP host. They are
         // attached for exactly as long as this screen exists; the application context alone

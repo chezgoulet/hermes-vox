@@ -31,11 +31,13 @@ Worked examples:
    Cheap, and they name the defect in the failure message.
 3. **Device smoke, per cut** — `scripts/regression-smoke.sh` for the automatable half, then the
    manual set below. Ten minutes with a phone.
-4. **Release-candidate soak — PROPOSED, not adopted.** The suggestion is an RC used for a day or
-   two by the owner and a field reporter before the tag, because a release is not a build that
-   passed; it is a build that was used. The owner has not set a duration and this document must not
-   imply he has: it goes to the governance and process review after 0.9.1.3, and until then a cut
-   is not blocked on it.
+4. **The human run — adopted 2026-11-11 (D41).** A release is not a build that passed; it is a
+   build that was used. Before a tag, one person installs the candidate **over the previous
+   release**, uses it in ordinary course — a real session, with these twelve paths among what they
+   do — and says what they saw. The release document records whose run it was and what they did.
+   **There is no soak duration: the gate is the run, not the clock.** It defaults to the owner;
+   a volunteer who reviews a release takes it permanently, and from then on the author's own run
+   does not count.
 
 ## The per-cut procedure
 
@@ -46,8 +48,8 @@ Worked examples:
 3. Walk the manual set; record the evidence (a log line, a screenshot) in the release document.
 4. Any red is fixed, or deferred in writing with a reason and a linked issue. **No tag with an
    unexplained red.**
-5. Ordinary use with no new severe before the tag — the duration is the owner's to set, and is
-   under review (see the layer above). Then tag, then announce.
+5. The human run (layer 4): someone installs the candidate and uses it, and the document records
+   who and what they saw. Then tag, then announce.
 
 ## The regression set — twelve paths, every cut
 
@@ -55,8 +57,11 @@ Each names the thing that proves it. "Device" means a human, because the bench c
 
 1. **Install over the previous release** — data, profiles, keys and settings intact. Proves:
    `versionName` shows the new build and the switcher still lists what it did.
-2. **Cold start** — time to first frame within the recorded baseline (#209). Proves:
-   `am start -W` and the `event=lat` cold row.
+2. **Cold start** — time to first frame. Proves: `am start -W` TotalTime and the app's own
+   `event=lat label=cold metric=first-frame ms=…` row (`ColdFrame`), both printed by
+   `regression-smoke.sh start`. Judged against the #209 baseline's gate-off row once it exists;
+   until then the number is recorded in the release document and the judgement is marked
+   pending (D47).
 3. **A call reaches green** — gateway, hearing and voice all ready; the readiness overlay clears.
    Proves: the gate's own states and `event=tts-ready`.
 4. **A short reply speaks and ends promptly** — the #538 class. Proves:
