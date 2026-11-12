@@ -92,8 +92,9 @@ exits non-zero, not a sentence.
 #209 and #208 close when they are checklist lines.
 
 **State.** The comparator is in the gate and has run on two real rows — 0.9.1.4 and `testing`
-`983f68b`, both gate-off on the bench handset — passing on the eight rows the build owns and
-refusing a verdict on the conversational ones. The record, including what the rows exposed and
+`983f68b` on the bench handset — passing on the eight rows the build owns and refusing a verdict
+on the conversational ones. Both rows turned out to be taken with the alpha master **on** (Phone
+Tools only) rather than gate-off; the record says so, and the gate-off row is still owed. The record, including what the rows exposed and
 what is still pending, is `docs/SPRINT-2026-11-12-the-floor.md`. Paths 4, 5, 8 and 9 are cards on
 the owner's handset: each needs a spoken turn or his own device.
 
