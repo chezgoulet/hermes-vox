@@ -6,7 +6,7 @@ calendar, the veto with its clock and lapse, the evidence rule and the closed
 tracker as blocking gates, consensus on a major, the community space, and (D47) no
 release waiting on a person — the walkthrough and the functional suite verify, and
 what cannot be verified before a cut ships marked pending. The clauses that were not
-among the six are still marked, because a document that overstates what was
+among those seven are still marked, because a document that overstates what was
 decided is the same failure it was written to prevent.
 
 Every clause carries one of these markers:

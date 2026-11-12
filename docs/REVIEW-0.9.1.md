@@ -277,6 +277,10 @@ as D41–D46 in `docs/DECISIONS.md`:
 6. **The community starts on Discord**, bridged to Matrix later as an intention
    (D46) — reach over ownership, with the cost written down.
 
+*(D47 later removed the day counts from 3 and 5: the owner replaced every fixed waiting window with the
+test walkthrough and the functional suite, and what cannot be verified before a cut ships marked
+pending. The grounds, the 24-hour lapse and the dissent requirement are unchanged.)*
+
 **Still open:** the scope question (G0) — *what does this touch that a phone can
 see?* — which was not among the six and remains the one gate aimed squarely at the
 first failure above; and the community's code of conduct, moderator and name

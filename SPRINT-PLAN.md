@@ -266,7 +266,7 @@ The issues are already tagged this way. `ROADMAP.md` is unchanged until the owne
 2. **#242 stays future, as the owner ruled on 2026-11-06.** PLACEMENT had moved it to 0.9.4. Its
    acceptance needs two devices and speaker enrolment (#46), which do not exist.
 3. **Continuous listening is decoupled from Presence**, which amends **D38** (`DECISIONS.md:1190-1192`),
-   not D29 as ROADMAP says. The coupling exists only in the gate (`AlphaGate.kt:101-104`); Presence
+   not D29. The coupling exists only in the gate (`AlphaGate.kt:101-104`); Presence
    hears per-turn audio (`VoiceController.kt:2460`).
 4. **0.9.6 is scoped after #562 decides.** Option 3 (a catalogue) would rebuild the set in the release
    that promotes it, which ROADMAP's own rule forbids.

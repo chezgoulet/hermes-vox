@@ -126,14 +126,14 @@ after this holds to the re-measured budgets, not to `BUDGETS-0.9.1.md`.
 and shipped before turn-taking or the being can be judged at all.
 
 **One decision it needs first.** The gate says continuous listening requires Presence, because
-continuous listening is how the being hears (D29). If that coupling stays, this set cannot leave the
+continuous listening is how the being hears (D38). If that coupling stays, this set cannot leave the
 gate until Presence does — the least stable work in the project holding the substrate hostage. Two ways
 through:
 
 - **Decouple (recommended, for stability).** Continuous listening graduates alone. The dependency is a
   gate-time convenience, not a runtime fact: the lane, the partials and the endpointing work with
   Presence off, and it is those that matter here.
-- **Graduate as a pair.** Presence and continuous listening leave together at 0.9.5, honouring D29
+- **Graduate as a pair.** Presence and continuous listening leave together at 0.9.5, honouring D38
   without amending it. The cost is that the substrate waits on the most uncertain piece of work, and
   the series gains a release.
 
