@@ -1,0 +1,1261 @@
+{
+  "engine": "supertonic",
+  "rows": [
+    {
+      "expected": 11,
+      "heard": 11,
+      "missing": [],
+      "extra": [],
+      "kept": 11,
+      "sentence": "The timer is set, and it will ring in ten minutes.",
+      "way": "1piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 3.58,
+      "heard_text": "The timer is set and it will ring in 10 minutes.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 11,
+      "heard": 11,
+      "missing": [],
+      "extra": [],
+      "kept": 11,
+      "sentence": "The timer is set, and it will ring in ten minutes.",
+      "way": "1piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 2.29,
+      "heard_text": "The timer is set and it will ring in 10 minutes."
+    },
+    {
+      "expected": 11,
+      "heard": 11,
+      "missing": [],
+      "extra": [],
+      "kept": 11,
+      "sentence": "The timer is set, and it will ring in ten minutes.",
+      "way": "2piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 4.14,
+      "heard_text": "The timer is set and it will ring in 10 minutes.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 11,
+      "heard": 11,
+      "missing": [
+        "the",
+        "timer",
+        "is"
+      ],
+      "extra": [
+        "i",
+        "am",
+        "always"
+      ],
+      "kept": 8,
+      "sentence": "The timer is set, and it will ring in ten minutes.",
+      "way": "2piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 2.26,
+      "heard_text": "I am always set and it will ring in 10 minutes."
+    },
+    {
+      "expected": 11,
+      "heard": 11,
+      "missing": [],
+      "extra": [],
+      "kept": 11,
+      "sentence": "The timer is set, and it will ring in ten minutes.",
+      "way": "3piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 4.93,
+      "heard_text": "The timer is set. And it will. Ring in 10 minutes.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 11,
+      "heard": 9,
+      "missing": [
+        "the",
+        "timer",
+        "is",
+        "set"
+      ],
+      "extra": [
+        "i'm",
+        "reset"
+      ],
+      "kept": 7,
+      "sentence": "The timer is set, and it will ring in ten minutes.",
+      "way": "3piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 2.48,
+      "heard_text": "I'm reset and it will ring in 10 minutes."
+    },
+    {
+      "expected": 11,
+      "heard": 10,
+      "missing": [
+        "the"
+      ],
+      "extra": [],
+      "kept": 10,
+      "sentence": "The timer is set, and it will ring in ten minutes.",
+      "way": "4piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 5.88,
+      "heard_text": "Timer is set and it will ring in 10 minutes.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 11,
+      "heard": 11,
+      "missing": [
+        "and"
+      ],
+      "extra": [
+        "in"
+      ],
+      "kept": 10,
+      "sentence": "The timer is set, and it will ring in ten minutes.",
+      "way": "4piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 3.18,
+      "heard_text": "The timer is set in it will ring in 10 minutes."
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "I looked it up, and the answer is simpler than you think.",
+      "way": "1piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 4.18,
+      "heard_text": "I looked it up, and the answer is simpler than you think.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "I looked it up, and the answer is simpler than you think.",
+      "way": "1piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 2.17,
+      "heard_text": "I looked it up and the answer is simpler than you think."
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "I looked it up, and the answer is simpler than you think.",
+      "way": "2piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 4.55,
+      "heard_text": "I looked it up, and the answer is simpler than you think.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "I looked it up, and the answer is simpler than you think.",
+      "way": "2piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 2.62,
+      "heard_text": "I looked it up and the answer is simpler than you think."
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "I looked it up, and the answer is simpler than you think.",
+      "way": "3piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 5.22,
+      "heard_text": "I looked it up. And the answer is simpler than you think.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "I looked it up, and the answer is simpler than you think.",
+      "way": "3piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 2.82,
+      "heard_text": "I looked it up and the answer is simpler than you think."
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [
+        "than"
+      ],
+      "extra": [
+        "then"
+      ],
+      "kept": 11,
+      "sentence": "I looked it up, and the answer is simpler than you think.",
+      "way": "4piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 6.16,
+      "heard_text": "I looked it. Up and the answer is simpler. Then you think.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "I looked it up, and the answer is simpler than you think.",
+      "way": "4piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 3.33,
+      "heard_text": "I looked it up and the answer is simpler than you think."
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [
+        "to"
+      ],
+      "extra": [
+        "two"
+      ],
+      "kept": 11,
+      "sentence": "Your first meeting starts at nine, so leave by a quarter to.",
+      "way": "1piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 4.23,
+      "heard_text": "Your first meeting starts at 9, so leave by a quarter two.",
+      "shared_with_control": [
+        "to"
+      ]
+    },
+    {
+      "expected": 12,
+      "heard": 11,
+      "missing": [
+        "a",
+        "to"
+      ],
+      "extra": [
+        "two"
+      ],
+      "kept": 10,
+      "sentence": "Your first meeting starts at nine, so leave by a quarter to.",
+      "way": "1piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 3.32,
+      "heard_text": "Your first meeting starts at 9, so leave by quarter two."
+    },
+    {
+      "expected": 12,
+      "heard": 13,
+      "missing": [
+        "to"
+      ],
+      "extra": [
+        "or",
+        "two"
+      ],
+      "kept": 11,
+      "sentence": "Your first meeting starts at nine, so leave by a quarter to.",
+      "way": "2piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 4.78,
+      "heard_text": "Your first meeting starts at 9. So leave by a quarter or two.",
+      "shared_with_control": [
+        "to"
+      ]
+    },
+    {
+      "expected": 12,
+      "heard": 13,
+      "missing": [
+        "to"
+      ],
+      "extra": [
+        "or",
+        "two"
+      ],
+      "kept": 11,
+      "sentence": "Your first meeting starts at nine, so leave by a quarter to.",
+      "way": "2piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 3.0,
+      "heard_text": "Your first meeting starts at 9, so leave by a quarter or two."
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [
+        "to"
+      ],
+      "extra": [
+        "two"
+      ],
+      "kept": 11,
+      "sentence": "Your first meeting starts at nine, so leave by a quarter to.",
+      "way": "3piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 5.43,
+      "heard_text": "Your first meeting starts at 9 so leave by a quarter two.",
+      "shared_with_control": [
+        "to"
+      ]
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [
+        "to"
+      ],
+      "extra": [
+        "two"
+      ],
+      "kept": 11,
+      "sentence": "Your first meeting starts at nine, so leave by a quarter to.",
+      "way": "3piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 3.54,
+      "heard_text": "Your first meeting starts at 9 so leave by a quarter two."
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "Your first meeting starts at nine, so leave by a quarter to.",
+      "way": "4piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 6.32,
+      "heard_text": "Your first meeting starts at 9. So leave by a quarter to",
+      "shared_with_control": []
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [
+        "to"
+      ],
+      "extra": [
+        "two"
+      ],
+      "kept": 11,
+      "sentence": "Your first meeting starts at nine, so leave by a quarter to.",
+      "way": "4piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 3.63,
+      "heard_text": "Your first meeting starts at 9, so leave by a quarter two."
+    },
+    {
+      "expected": 11,
+      "heard": 11,
+      "missing": [
+        "projects"
+      ],
+      "extra": [
+        "project's"
+      ],
+      "kept": 10,
+      "sentence": "That file is on the shared drive, under the projects folder.",
+      "way": "1piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 4.35,
+      "heard_text": "That file is on the shared drive under the project's folder.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 11,
+      "heard": 11,
+      "missing": [
+        "on"
+      ],
+      "extra": [
+        "in"
+      ],
+      "kept": 10,
+      "sentence": "That file is on the shared drive, under the projects folder.",
+      "way": "1piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 3.12,
+      "heard_text": "that file is in the shared drive under the projects folder."
+    },
+    {
+      "expected": 11,
+      "heard": 11,
+      "missing": [],
+      "extra": [],
+      "kept": 11,
+      "sentence": "That file is on the shared drive, under the projects folder.",
+      "way": "2piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 4.73,
+      "heard_text": "That file is on the shared. Drive under the projects folder.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 11,
+      "heard": 11,
+      "missing": [],
+      "extra": [],
+      "kept": 11,
+      "sentence": "That file is on the shared drive, under the projects folder.",
+      "way": "2piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 3.19,
+      "heard_text": "That file is on the shared drive under the projects folder."
+    },
+    {
+      "expected": 11,
+      "heard": 11,
+      "missing": [],
+      "extra": [],
+      "kept": 11,
+      "sentence": "That file is on the shared drive, under the projects folder.",
+      "way": "3piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 5.39,
+      "heard_text": "That file is on. The shared drive. Under the projects folder.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 11,
+      "heard": 11,
+      "missing": [
+        "projects"
+      ],
+      "extra": [
+        "project's"
+      ],
+      "kept": 10,
+      "sentence": "That file is on the shared drive, under the projects folder.",
+      "way": "3piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 3.42,
+      "heard_text": "that file is on, the shared drive, under the project's folder."
+    },
+    {
+      "expected": 11,
+      "heard": 10,
+      "missing": [
+        "drive",
+        "under",
+        "projects"
+      ],
+      "extra": [
+        "drinder",
+        "project's"
+      ],
+      "kept": 8,
+      "sentence": "That file is on the shared drive, under the projects folder.",
+      "way": "4piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 6.28,
+      "heard_text": "That file is... on the shared. Drinder... the project's folder.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 11,
+      "heard": 10,
+      "missing": [
+        "the"
+      ],
+      "extra": [],
+      "kept": 10,
+      "sentence": "That file is on the shared drive, under the projects folder.",
+      "way": "4piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 3.95,
+      "heard_text": "that file is on the shared drive under projects folder."
+    },
+    {
+      "expected": 10,
+      "heard": 10,
+      "missing": [],
+      "extra": [],
+      "kept": 10,
+      "sentence": "I can hear you clearly, and the line sounds steady.",
+      "way": "1piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 3.83,
+      "heard_text": "I can hear you clearly and the line sounds steady.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 10,
+      "heard": 10,
+      "missing": [],
+      "extra": [],
+      "kept": 10,
+      "sentence": "I can hear you clearly, and the line sounds steady.",
+      "way": "1piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 2.31,
+      "heard_text": "I can hear you clearly and the line sounds steady."
+    },
+    {
+      "expected": 10,
+      "heard": 10,
+      "missing": [],
+      "extra": [],
+      "kept": 10,
+      "sentence": "I can hear you clearly, and the line sounds steady.",
+      "way": "2piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 4.2,
+      "heard_text": "I can hear you clearly and the line sounds steady.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 10,
+      "heard": 10,
+      "missing": [],
+      "extra": [],
+      "kept": 10,
+      "sentence": "I can hear you clearly, and the line sounds steady.",
+      "way": "2piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 2.41,
+      "heard_text": "I can hear you clearly and the line sounds steady."
+    },
+    {
+      "expected": 10,
+      "heard": 11,
+      "missing": [],
+      "extra": [
+        "then"
+      ],
+      "kept": 10,
+      "sentence": "I can hear you clearly, and the line sounds steady.",
+      "way": "3piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 5.21,
+      "heard_text": "I can hear you clearly and then the line sounds steady.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 10,
+      "heard": 10,
+      "missing": [
+        "and",
+        "line",
+        "sounds"
+      ],
+      "extra": [
+        "in",
+        "lying",
+        "sound"
+      ],
+      "kept": 7,
+      "sentence": "I can hear you clearly, and the line sounds steady.",
+      "way": "3piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 2.82,
+      "heard_text": "I can hear you clearly in the lying sound steady."
+    },
+    {
+      "expected": 10,
+      "heard": 10,
+      "missing": [],
+      "extra": [],
+      "kept": 10,
+      "sentence": "I can hear you clearly, and the line sounds steady.",
+      "way": "4piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 6.03,
+      "heard_text": "I can hear you clearly. And the line. Sounds steady.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 10,
+      "heard": 10,
+      "missing": [],
+      "extra": [],
+      "kept": 10,
+      "sentence": "I can hear you clearly, and the line sounds steady.",
+      "way": "4piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 3.31,
+      "heard_text": "I can hear you clearly and the line sounds steady."
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "The weather tomorrow is cold, with a chance of snow by evening.",
+      "way": "1piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 4.46,
+      "heard_text": "The weather tomorrow is cold with a chance of snow by evening.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "The weather tomorrow is cold, with a chance of snow by evening.",
+      "way": "1piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 2.91,
+      "heard_text": "The weather tomorrow is cold with a chance of snow by evening."
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "The weather tomorrow is cold, with a chance of snow by evening.",
+      "way": "2piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 4.9,
+      "heard_text": "The weather tomorrow is cold with a chance of snow by evening",
+      "shared_with_control": []
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "The weather tomorrow is cold, with a chance of snow by evening.",
+      "way": "2piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 3.08,
+      "heard_text": "The weather tomorrow is cold with a chance of snow by evening."
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "The weather tomorrow is cold, with a chance of snow by evening.",
+      "way": "3piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 5.7,
+      "heard_text": "The weather tomorrow is cold with a chance of snow by evening.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [
+        "cold"
+      ],
+      "extra": [
+        "hold"
+      ],
+      "kept": 11,
+      "sentence": "The weather tomorrow is cold, with a chance of snow by evening.",
+      "way": "3piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 3.6,
+      "heard_text": "The weather tomorrow is, hold with a chance of snow by evening."
+    },
+    {
+      "expected": 12,
+      "heard": 11,
+      "missing": [
+        "with"
+      ],
+      "extra": [],
+      "kept": 11,
+      "sentence": "The weather tomorrow is cold, with a chance of snow by evening.",
+      "way": "4piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 6.41,
+      "heard_text": "The weather tomorrow is cold. A chance of... Snow by evening...",
+      "shared_with_control": []
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "The weather tomorrow is cold, with a chance of snow by evening.",
+      "way": "4piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 3.59,
+      "heard_text": "The weather tomorrow is cold with a chance of snow by evening."
+    },
+    {
+      "expected": 13,
+      "heard": 13,
+      "missing": [],
+      "extra": [],
+      "kept": 13,
+      "sentence": "I have added it to your list, and I will remind you tonight.",
+      "way": "1piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 4.31,
+      "heard_text": "I have added it to your list, and I will remind you tonight.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 13,
+      "heard": 13,
+      "missing": [],
+      "extra": [],
+      "kept": 13,
+      "sentence": "I have added it to your list, and I will remind you tonight.",
+      "way": "1piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 3.04,
+      "heard_text": "I have added it to your list and I will remind you tonight."
+    },
+    {
+      "expected": 13,
+      "heard": 13,
+      "missing": [],
+      "extra": [],
+      "kept": 13,
+      "sentence": "I have added it to your list, and I will remind you tonight.",
+      "way": "2piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 4.77,
+      "heard_text": "I have added it to your list and I will remind you tonight.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 13,
+      "heard": 13,
+      "missing": [],
+      "extra": [],
+      "kept": 13,
+      "sentence": "I have added it to your list, and I will remind you tonight.",
+      "way": "2piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 2.8,
+      "heard_text": "I have added it to your list and I will remind you tonight."
+    },
+    {
+      "expected": 13,
+      "heard": 13,
+      "missing": [],
+      "extra": [],
+      "kept": 13,
+      "sentence": "I have added it to your list, and I will remind you tonight.",
+      "way": "3piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 5.42,
+      "heard_text": "I have added it to your list and I will remind you tonight.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 13,
+      "heard": 13,
+      "missing": [],
+      "extra": [],
+      "kept": 13,
+      "sentence": "I have added it to your list, and I will remind you tonight.",
+      "way": "3piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 3.13,
+      "heard_text": "I have added it to your list and I will remind you tonight."
+    },
+    {
+      "expected": 13,
+      "heard": 13,
+      "missing": [],
+      "extra": [],
+      "kept": 13,
+      "sentence": "I have added it to your list, and I will remind you tonight.",
+      "way": "4piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 6.28,
+      "heard_text": "I have added it to your list and I will remind you tonight.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 13,
+      "heard": 13,
+      "missing": [],
+      "extra": [],
+      "kept": 13,
+      "sentence": "I have added it to your list, and I will remind you tonight.",
+      "way": "4piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 3.74,
+      "heard_text": "I have added it to your list and I will remind you tonight."
+    },
+    {
+      "expected": 13,
+      "heard": 13,
+      "missing": [],
+      "extra": [],
+      "kept": 13,
+      "sentence": "No, I did not send that message, and I will not without asking.",
+      "way": "1piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 4.65,
+      "heard_text": "No, I did not send that message and I will not without asking.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 13,
+      "heard": 13,
+      "missing": [],
+      "extra": [],
+      "kept": 13,
+      "sentence": "No, I did not send that message, and I will not without asking.",
+      "way": "1piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 2.81,
+      "heard_text": "No, I did not send that message and I will not without asking."
+    },
+    {
+      "expected": 13,
+      "heard": 13,
+      "missing": [],
+      "extra": [],
+      "kept": 13,
+      "sentence": "No, I did not send that message, and I will not without asking.",
+      "way": "2piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 5.09,
+      "heard_text": "No, I did not send that. Message and I will not without asking.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 13,
+      "heard": 13,
+      "missing": [],
+      "extra": [],
+      "kept": 13,
+      "sentence": "No, I did not send that message, and I will not without asking.",
+      "way": "2piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 3.25,
+      "heard_text": "No, I did not send that message and I will not without asking."
+    },
+    {
+      "expected": 13,
+      "heard": 13,
+      "missing": [],
+      "extra": [],
+      "kept": 13,
+      "sentence": "No, I did not send that message, and I will not without asking.",
+      "way": "3piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 5.71,
+      "heard_text": "No, I did not. Send that message and I will not without asking.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 13,
+      "heard": 13,
+      "missing": [
+        "will"
+      ],
+      "extra": [
+        "we'll"
+      ],
+      "kept": 12,
+      "sentence": "No, I did not send that message, and I will not without asking.",
+      "way": "3piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 3.54,
+      "heard_text": "No, I did not. Send that message and I. We'll not without asking."
+    },
+    {
+      "expected": 13,
+      "heard": 13,
+      "missing": [],
+      "extra": [],
+      "kept": 13,
+      "sentence": "No, I did not send that message, and I will not without asking.",
+      "way": "4piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 6.56,
+      "heard_text": "No, I did not send that message and I will not without asking",
+      "shared_with_control": []
+    },
+    {
+      "expected": 13,
+      "heard": 13,
+      "missing": [],
+      "extra": [],
+      "kept": 13,
+      "sentence": "No, I did not send that message, and I will not without asking.",
+      "way": "4piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 3.94,
+      "heard_text": "No I did not send that message and I will not without asking."
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "The kitchen light is still on, and the back door is unlocked.",
+      "way": "1piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 4.47,
+      "heard_text": "The kitchen light is still on, and the back door is unlocked.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "The kitchen light is still on, and the back door is unlocked.",
+      "way": "1piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 2.62,
+      "heard_text": "The kitchen light is still on and the back door is unlocked."
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "The kitchen light is still on, and the back door is unlocked.",
+      "way": "2piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 4.79,
+      "heard_text": "The kitchen light is still on, and the back door is unlocked.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "The kitchen light is still on, and the back door is unlocked.",
+      "way": "2piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 2.77,
+      "heard_text": "The kitchen light is still on, and the back door is unlocked."
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "The kitchen light is still on, and the back door is unlocked.",
+      "way": "3piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 5.64,
+      "heard_text": "The kitchen light is still on and the back door is unlocked.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "The kitchen light is still on, and the back door is unlocked.",
+      "way": "3piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 3.55,
+      "heard_text": "The kitchen light is still on and the back door is unlocked."
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "The kitchen light is still on, and the back door is unlocked.",
+      "way": "4piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 6.34,
+      "heard_text": "The kitchen light is still on and the back door is unlocked.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "The kitchen light is still on, and the back door is unlocked.",
+      "way": "4piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 3.42,
+      "heard_text": "The kitchen light is still on and the back door is unlocked."
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "Two of the three files opened, and the last one is empty.",
+      "way": "1piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 4.13,
+      "heard_text": "Two of the three files opened and the last one is empty.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [
+        "opened"
+      ],
+      "extra": [
+        "open"
+      ],
+      "kept": 11,
+      "sentence": "Two of the three files opened, and the last one is empty.",
+      "way": "1piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 3.24,
+      "heard_text": "Two of the three files open and the last one is empty."
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "Two of the three files opened, and the last one is empty.",
+      "way": "2piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 4.45,
+      "heard_text": "Two of the three files opened and the last one is empty",
+      "shared_with_control": []
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [
+        "opened"
+      ],
+      "extra": [
+        "open"
+      ],
+      "kept": 11,
+      "sentence": "Two of the three files opened, and the last one is empty.",
+      "way": "2piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 2.96,
+      "heard_text": "Two of the three files open and the last one is empty."
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "Two of the three files opened, and the last one is empty.",
+      "way": "3piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 5.32,
+      "heard_text": "2 of the 3. Files opened, and the last one is empty.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [
+        "files",
+        "opened"
+      ],
+      "extra": [
+        "vials",
+        "open"
+      ],
+      "kept": 10,
+      "sentence": "Two of the three files opened, and the last one is empty.",
+      "way": "3piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 3.04,
+      "heard_text": "two of the three vials open and the last one is empty."
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "Two of the three files opened, and the last one is empty.",
+      "way": "4piece",
+      "voice": "supertonic",
+      "gap_ms": 0,
+      "seconds": 6.13,
+      "heard_text": "Two of the three files opened and the last one is empty.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "Two of the three files opened, and the last one is empty.",
+      "way": "4piece",
+      "voice": "control-vits",
+      "gap_ms": 0,
+      "seconds": 3.37,
+      "heard_text": "Two of the three files opened and the last one is empty."
+    }
+  ],
+  "totals": [
+    {
+      "way": "1piece",
+      "voice": "supertonic",
+      "expected": 118,
+      "missing": 2,
+      "rows": 10
+    },
+    {
+      "way": "1piece",
+      "voice": "control-vits",
+      "expected": 118,
+      "missing": 4,
+      "rows": 10
+    },
+    {
+      "way": "2piece",
+      "voice": "supertonic",
+      "expected": 118,
+      "missing": 1,
+      "rows": 10
+    },
+    {
+      "way": "2piece",
+      "voice": "control-vits",
+      "expected": 118,
+      "missing": 5,
+      "rows": 10
+    },
+    {
+      "way": "3piece",
+      "voice": "supertonic",
+      "expected": 118,
+      "missing": 1,
+      "rows": 10
+    },
+    {
+      "way": "3piece",
+      "voice": "control-vits",
+      "expected": 118,
+      "missing": 13,
+      "rows": 10
+    },
+    {
+      "way": "4piece",
+      "voice": "supertonic",
+      "expected": 118,
+      "missing": 6,
+      "rows": 10
+    },
+    {
+      "way": "4piece",
+      "voice": "control-vits",
+      "expected": 118,
+      "missing": 3,
+      "rows": 10
+    }
+  ]
+}

@@ -1,0 +1,1018 @@
+{
+  "engine": "supertonic",
+  "rows": [
+    {
+      "expected": 11,
+      "heard": 11,
+      "missing": [],
+      "extra": [],
+      "kept": 11,
+      "sentence": "The timer is set, and it will ring in ten minutes.",
+      "way": "whole",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 3.48,
+      "heard_text": "The timer is set and it will ring in 10 minutes.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 11,
+      "heard": 9,
+      "missing": [
+        "the",
+        "timer",
+        "is",
+        "set"
+      ],
+      "extra": [
+        "i'm",
+        "ursette"
+      ],
+      "kept": 7,
+      "sentence": "The timer is set, and it will ring in ten minutes.",
+      "way": "whole",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 2.65,
+      "heard_text": "I'm Ursette and it will ring in 10 minutes."
+    },
+    {
+      "expected": 11,
+      "heard": 11,
+      "missing": [],
+      "extra": [],
+      "kept": 11,
+      "sentence": "The timer is set, and it will ring in ten minutes.",
+      "way": "comma",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 4.37,
+      "heard_text": "the timer is set and it will ring in 10 minutes.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 11,
+      "heard": 9,
+      "missing": [
+        "the",
+        "timer",
+        "is"
+      ],
+      "extra": [
+        "emery"
+      ],
+      "kept": 8,
+      "sentence": "The timer is set, and it will ring in ten minutes.",
+      "way": "comma",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 2.54,
+      "heard_text": "emery set and it will ring in 10 minutes."
+    },
+    {
+      "expected": 11,
+      "heard": 11,
+      "missing": [],
+      "extra": [],
+      "kept": 11,
+      "sentence": "The timer is set, and it will ring in ten minutes.",
+      "way": "mid",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 4.45,
+      "heard_text": "The timer is set and it will ring in 10 minutes.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 11,
+      "heard": 11,
+      "missing": [],
+      "extra": [],
+      "kept": 11,
+      "sentence": "The timer is set, and it will ring in ten minutes.",
+      "way": "mid",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 3.13,
+      "heard_text": "The timer is set and it will ring in 10 minutes."
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "I looked it up, and the answer is simpler than you think.",
+      "way": "whole",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 3.61,
+      "heard_text": "I looked it up, and the answer is simpler than you think.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "I looked it up, and the answer is simpler than you think.",
+      "way": "whole",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 2.26,
+      "heard_text": "I looked it up and the answer is simpler than you think."
+    },
+    {
+      "expected": 12,
+      "heard": 11,
+      "missing": [
+        "is"
+      ],
+      "extra": [],
+      "kept": 11,
+      "sentence": "I looked it up, and the answer is simpler than you think.",
+      "way": "comma",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 4.58,
+      "heard_text": "I looked it up and the answer simpler than you think.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [
+        "simpler",
+        "than",
+        "you",
+        "think"
+      ],
+      "extra": [
+        "simply",
+        "the",
+        "new",
+        "thing"
+      ],
+      "kept": 8,
+      "sentence": "I looked it up, and the answer is simpler than you think.",
+      "way": "comma",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 2.76,
+      "heard_text": "I looked it up and the answer is simply the new thing."
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [
+        "is",
+        "simpler",
+        "than"
+      ],
+      "extra": [
+        "then",
+        "audio",
+        "out"
+      ],
+      "kept": 9,
+      "sentence": "I looked it up, and the answer is simpler than you think.",
+      "way": "mid",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 4.59,
+      "heard_text": "I looked it up and the answer, then you think. [AUDIO OUT]",
+      "shared_with_control": [
+        "simpler",
+        "than"
+      ]
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [
+        "simpler",
+        "than",
+        "you",
+        "think"
+      ],
+      "extra": [
+        "simply",
+        "the",
+        "new",
+        "thing"
+      ],
+      "kept": 8,
+      "sentence": "I looked it up, and the answer is simpler than you think.",
+      "way": "mid",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 2.63,
+      "heard_text": "I looked it up and the answer is simply the new thing."
+    },
+    {
+      "expected": 12,
+      "heard": 13,
+      "missing": [
+        "to"
+      ],
+      "extra": [
+        "two",
+        "buzzer"
+      ],
+      "kept": 11,
+      "sentence": "Your first meeting starts at nine, so leave by a quarter to.",
+      "way": "whole",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 4.34,
+      "heard_text": "Your first meeting starts at 9, so leave by a quarter two. [buzzer]",
+      "shared_with_control": [
+        "to"
+      ]
+    },
+    {
+      "expected": 12,
+      "heard": 13,
+      "missing": [
+        "to"
+      ],
+      "extra": [
+        "or",
+        "two"
+      ],
+      "kept": 11,
+      "sentence": "Your first meeting starts at nine, so leave by a quarter to.",
+      "way": "whole",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 2.89,
+      "heard_text": "Your first meeting starts at 9, so leave by a quarter or two."
+    },
+    {
+      "expected": 12,
+      "heard": 11,
+      "missing": [
+        "so",
+        "to"
+      ],
+      "extra": [
+        "two"
+      ],
+      "kept": 10,
+      "sentence": "Your first meeting starts at nine, so leave by a quarter to.",
+      "way": "comma",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 5.01,
+      "heard_text": "Your first meeting starts at 9. Leave by a quarter two.",
+      "shared_with_control": [
+        "to"
+      ]
+    },
+    {
+      "expected": 12,
+      "heard": 13,
+      "missing": [
+        "to"
+      ],
+      "extra": [
+        "or",
+        "two"
+      ],
+      "kept": 11,
+      "sentence": "Your first meeting starts at nine, so leave by a quarter to.",
+      "way": "comma",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 3.21,
+      "heard_text": "Your first meeting starts at 9, so leave by a quarter or two."
+    },
+    {
+      "expected": 12,
+      "heard": 11,
+      "missing": [
+        "first",
+        "meeting"
+      ],
+      "extra": [
+        "meant"
+      ],
+      "kept": 10,
+      "sentence": "Your first meeting starts at nine, so leave by a quarter to.",
+      "way": "mid",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 5.2,
+      "heard_text": "Your \"meant\" starts at 9. So leave by a quarter to...",
+      "shared_with_control": []
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "Your first meeting starts at nine, so leave by a quarter to.",
+      "way": "mid",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 3.42,
+      "heard_text": "Your first meeting starts at 9 so leave by a quarter to."
+    },
+    {
+      "expected": 11,
+      "heard": 11,
+      "missing": [
+        "projects"
+      ],
+      "extra": [
+        "project's"
+      ],
+      "kept": 10,
+      "sentence": "That file is on the shared drive, under the projects folder.",
+      "way": "whole",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 4.24,
+      "heard_text": "That file is on the shared drive, under the project's folder.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 11,
+      "heard": 11,
+      "missing": [],
+      "extra": [],
+      "kept": 11,
+      "sentence": "That file is on the shared drive, under the projects folder.",
+      "way": "whole",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 2.84,
+      "heard_text": "that file is on the shared drive under the projects folder."
+    },
+    {
+      "expected": 11,
+      "heard": 9,
+      "missing": [
+        "is",
+        "on",
+        "projects"
+      ],
+      "extra": [
+        "project's"
+      ],
+      "kept": 8,
+      "sentence": "That file is on the shared drive, under the projects folder.",
+      "way": "comma",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 4.91,
+      "heard_text": "That file, the shared drive, under the project's folder.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 11,
+      "heard": 11,
+      "missing": [],
+      "extra": [],
+      "kept": 11,
+      "sentence": "That file is on the shared drive, under the projects folder.",
+      "way": "comma",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 3.02,
+      "heard_text": "That file is on the shared drive under the projects folder."
+    },
+    {
+      "expected": 11,
+      "heard": 9,
+      "missing": [
+        "file",
+        "is",
+        "projects"
+      ],
+      "extra": [
+        "project's"
+      ],
+      "kept": 8,
+      "sentence": "That file is on the shared drive, under the projects folder.",
+      "way": "mid",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 4.91,
+      "heard_text": "That on the shared drive under the project's folder.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 11,
+      "heard": 11,
+      "missing": [],
+      "extra": [],
+      "kept": 11,
+      "sentence": "That file is on the shared drive, under the projects folder.",
+      "way": "mid",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 3.15,
+      "heard_text": "that file is on the shared drive, under the projects folder."
+    },
+    {
+      "expected": 10,
+      "heard": 10,
+      "missing": [],
+      "extra": [],
+      "kept": 10,
+      "sentence": "I can hear you clearly, and the line sounds steady.",
+      "way": "whole",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 3.59,
+      "heard_text": "I can hear you clearly, and the line sounds steady.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 10,
+      "heard": 10,
+      "missing": [],
+      "extra": [],
+      "kept": 10,
+      "sentence": "I can hear you clearly, and the line sounds steady.",
+      "way": "whole",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 2.47,
+      "heard_text": "I can hear you clearly and the line sounds steady."
+    },
+    {
+      "expected": 10,
+      "heard": 7,
+      "missing": [
+        "hear",
+        "the",
+        "line",
+        "sounds"
+      ],
+      "extra": [
+        "sound"
+      ],
+      "kept": 6,
+      "sentence": "I can hear you clearly, and the line sounds steady.",
+      "way": "comma",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 4.45,
+      "heard_text": "I can, you clearly, and, sound steady.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 10,
+      "heard": 10,
+      "missing": [],
+      "extra": [],
+      "kept": 10,
+      "sentence": "I can hear you clearly, and the line sounds steady.",
+      "way": "comma",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 2.6,
+      "heard_text": "I can hear you clearly and the line sounds steady."
+    },
+    {
+      "expected": 10,
+      "heard": 8,
+      "missing": [
+        "hear",
+        "line"
+      ],
+      "extra": [],
+      "kept": 8,
+      "sentence": "I can hear you clearly, and the line sounds steady.",
+      "way": "mid",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 4.45,
+      "heard_text": "I can, you clearly, and the sounds steady.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 10,
+      "heard": 10,
+      "missing": [],
+      "extra": [],
+      "kept": 10,
+      "sentence": "I can hear you clearly, and the line sounds steady.",
+      "way": "mid",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 3.11,
+      "heard_text": "I can hear you clearly and the line sounds steady."
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "The weather tomorrow is cold, with a chance of snow by evening.",
+      "way": "whole",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 4.37,
+      "heard_text": "The weather tomorrow is cold, with a chance of snow by evening.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "The weather tomorrow is cold, with a chance of snow by evening.",
+      "way": "whole",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 2.94,
+      "heard_text": "the weather tomorrow is cold with a chance of snow by evening."
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "The weather tomorrow is cold, with a chance of snow by evening.",
+      "way": "comma",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 5.1,
+      "heard_text": "The weather tomorrow is cold with a chance of snow by evening.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 12,
+      "heard": 11,
+      "missing": [
+        "the"
+      ],
+      "extra": [],
+      "kept": 11,
+      "sentence": "The weather tomorrow is cold, with a chance of snow by evening.",
+      "way": "comma",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 3.22,
+      "heard_text": "weather tomorrow is cold with a chance of snow by evening."
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "The weather tomorrow is cold, with a chance of snow by evening.",
+      "way": "mid",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 5.1,
+      "heard_text": "The weather tomorrow is cold with a chance of snow by evening.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "The weather tomorrow is cold, with a chance of snow by evening.",
+      "way": "mid",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 3.15,
+      "heard_text": "the weather tomorrow is cold with a chance of snow by evening."
+    },
+    {
+      "expected": 13,
+      "heard": 10,
+      "missing": [
+        "to",
+        "your",
+        "list"
+      ],
+      "extra": [],
+      "kept": 10,
+      "sentence": "I have added it to your list, and I will remind you tonight.",
+      "way": "whole",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 4.05,
+      "heard_text": "I have added it, and I will remind you tonight.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 13,
+      "heard": 13,
+      "missing": [],
+      "extra": [],
+      "kept": 13,
+      "sentence": "I have added it to your list, and I will remind you tonight.",
+      "way": "whole",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 3.03,
+      "heard_text": "I have added it to your list and I will remind you tonight."
+    },
+    {
+      "expected": 13,
+      "heard": 12,
+      "missing": [
+        "to",
+        "remind"
+      ],
+      "extra": [
+        "through"
+      ],
+      "kept": 11,
+      "sentence": "I have added it to your list, and I will remind you tonight.",
+      "way": "comma",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 4.86,
+      "heard_text": "I have added it through your list and I will you tonight.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 13,
+      "heard": 13,
+      "missing": [],
+      "extra": [],
+      "kept": 13,
+      "sentence": "I have added it to your list, and I will remind you tonight.",
+      "way": "comma",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 2.86,
+      "heard_text": "I have added it to your list and I will remind you tonight."
+    },
+    {
+      "expected": 13,
+      "heard": 14,
+      "missing": [],
+      "extra": [
+        "to"
+      ],
+      "kept": 13,
+      "sentence": "I have added it to your list, and I will remind you tonight.",
+      "way": "mid",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 4.86,
+      "heard_text": "I have added it to your list and I will remind you to tonight.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 13,
+      "heard": 13,
+      "missing": [],
+      "extra": [],
+      "kept": 13,
+      "sentence": "I have added it to your list, and I will remind you tonight.",
+      "way": "mid",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 2.91,
+      "heard_text": "I have added it to your list and I will remind you tonight."
+    },
+    {
+      "expected": 13,
+      "heard": 13,
+      "missing": [],
+      "extra": [],
+      "kept": 13,
+      "sentence": "No, I did not send that message, and I will not without asking.",
+      "way": "whole",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 4.26,
+      "heard_text": "No, I did not send that message, and I will not without asking.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 13,
+      "heard": 13,
+      "missing": [
+        "i"
+      ],
+      "extra": [
+        "but"
+      ],
+      "kept": 12,
+      "sentence": "No, I did not send that message, and I will not without asking.",
+      "way": "whole",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 3.17,
+      "heard_text": "No, but did not send that message and I will not without asking."
+    },
+    {
+      "expected": 13,
+      "heard": 13,
+      "missing": [],
+      "extra": [],
+      "kept": 13,
+      "sentence": "No, I did not send that message, and I will not without asking.",
+      "way": "comma",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 5.34,
+      "heard_text": "No, I did not send that message and I will not without asking",
+      "shared_with_control": []
+    },
+    {
+      "expected": 13,
+      "heard": 13,
+      "missing": [
+        "that"
+      ],
+      "extra": [
+        "a"
+      ],
+      "kept": 12,
+      "sentence": "No, I did not send that message, and I will not without asking.",
+      "way": "comma",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 3.44,
+      "heard_text": "No, I did not send a message and I will not without asking."
+    },
+    {
+      "expected": 13,
+      "heard": 13,
+      "missing": [],
+      "extra": [],
+      "kept": 13,
+      "sentence": "No, I did not send that message, and I will not without asking.",
+      "way": "mid",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 5.05,
+      "heard_text": "No, I did not send that message. And I will not without asking.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 13,
+      "heard": 13,
+      "missing": [],
+      "extra": [],
+      "kept": 13,
+      "sentence": "No, I did not send that message, and I will not without asking.",
+      "way": "mid",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 3.21,
+      "heard_text": "No, I did not send that message and I will not without asking."
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "The kitchen light is still on, and the back door is unlocked.",
+      "way": "whole",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 4.07,
+      "heard_text": "The kitchen light is still on and the back door is unlocked.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [
+        "the",
+        "light"
+      ],
+      "extra": [
+        "a",
+        "leg"
+      ],
+      "kept": 10,
+      "sentence": "The kitchen light is still on, and the back door is unlocked.",
+      "way": "whole",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 2.65,
+      "heard_text": "A kitchen leg is still on and the back door is unlocked."
+    },
+    {
+      "expected": 12,
+      "heard": 9,
+      "missing": [
+        "kitchen",
+        "light",
+        "is",
+        "unlocked"
+      ],
+      "extra": [
+        "kit"
+      ],
+      "kept": 8,
+      "sentence": "The kitchen light is still on, and the back door is unlocked.",
+      "way": "comma",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 4.95,
+      "heard_text": "The kit is still on and the back door.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "The kitchen light is still on, and the back door is unlocked.",
+      "way": "comma",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 3.14,
+      "heard_text": "The kitchen light is still on and the back door is unlocked."
+    },
+    {
+      "expected": 12,
+      "heard": 11,
+      "missing": [
+        "light"
+      ],
+      "extra": [],
+      "kept": 11,
+      "sentence": "The kitchen light is still on, and the back door is unlocked.",
+      "way": "mid",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 4.95,
+      "heard_text": "The kitchen is still on and the back door is unlocked.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "The kitchen light is still on, and the back door is unlocked.",
+      "way": "mid",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 3.09,
+      "heard_text": "The kitchen light is still on and the back door is unlocked."
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [],
+      "extra": [],
+      "kept": 12,
+      "sentence": "Two of the three files opened, and the last one is empty.",
+      "way": "whole",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 4.01,
+      "heard_text": "two of the three files opened and the last one is empty.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [
+        "opened"
+      ],
+      "extra": [
+        "open"
+      ],
+      "kept": 11,
+      "sentence": "Two of the three files opened, and the last one is empty.",
+      "way": "whole",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 2.73,
+      "heard_text": "Two of the three files open and the last one is empty."
+    },
+    {
+      "expected": 12,
+      "heard": 11,
+      "missing": [
+        "the"
+      ],
+      "extra": [],
+      "kept": 11,
+      "sentence": "Two of the three files opened, and the last one is empty.",
+      "way": "comma",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 4.78,
+      "heard_text": "Two of the three files opened, and last one is empty.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [
+        "opened"
+      ],
+      "extra": [
+        "open"
+      ],
+      "kept": 11,
+      "sentence": "Two of the three files opened, and the last one is empty.",
+      "way": "comma",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 3.09,
+      "heard_text": "two of the three files open and the last one is empty."
+    },
+    {
+      "expected": 12,
+      "heard": 12,
+      "missing": [
+        "files"
+      ],
+      "extra": [
+        "is"
+      ],
+      "kept": 11,
+      "sentence": "Two of the three files opened, and the last one is empty.",
+      "way": "mid",
+      "voice": "supertonic",
+      "gap_ms": 250,
+      "seconds": 4.78,
+      "heard_text": "Two of the three is opened and the last one is empty.",
+      "shared_with_control": []
+    },
+    {
+      "expected": 12,
+      "heard": 11,
+      "missing": [
+        "two",
+        "of",
+        "opened"
+      ],
+      "extra": [
+        "to",
+        "open"
+      ],
+      "kept": 9,
+      "sentence": "Two of the three files opened, and the last one is empty.",
+      "way": "mid",
+      "voice": "control-vits",
+      "gap_ms": 250,
+      "seconds": 3.16,
+      "heard_text": "to the three files open and the last one is empty."
+    }
+  ],
+  "totals": [
+    {
+      "way": "whole",
+      "voice": "supertonic",
+      "expected": 118,
+      "missing": 5,
+      "rows": 10
+    },
+    {
+      "way": "whole",
+      "voice": "control-vits",
+      "expected": 118,
+      "missing": 9,
+      "rows": 10
+    },
+    {
+      "way": "comma",
+      "voice": "supertonic",
+      "expected": 118,
+      "missing": 17,
+      "rows": 10
+    },
+    {
+      "way": "comma",
+      "voice": "control-vits",
+      "expected": 118,
+      "missing": 11,
+      "rows": 10
+    },
+    {
+      "way": "mid",
+      "voice": "supertonic",
+      "expected": 118,
+      "missing": 12,
+      "rows": 10
+    },
+    {
+      "way": "mid",
+      "voice": "control-vits",
+      "expected": 118,
+      "missing": 7,
+      "rows": 10
+    }
+  ]
+}
