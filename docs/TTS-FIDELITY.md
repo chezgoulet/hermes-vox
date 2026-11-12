@@ -58,23 +58,33 @@ Two-sided Fisher exact:
 
 ## What it says
 
-**Hypothesis 1, the chunk boundary, is the one the evidence supports.** Handed a whole sentence,
-Supertonic loses *fewer* words than the control voice (4 against 9) — there is nothing inherently
-lossy about one synthesis. Handed the same sentence as two chunks split at a comma, it loses four
-times as many, and the control voice does not (it goes from 9 to 5). Four of the ten sentences lost
-nothing in any rendering; the losses that matter appear only when the text is chunked, and they
-cluster in the middle of sentences — `hear, the, line`, `chance, of`, `kitchen, light`, `leave,
-by, to`.
+**The evidence changed the conclusion twice, and the second answer is the one that holds.**
 
-**Hypothesis 2 is not supported at one chunk**, which is the arm that isolates the model from the
-chunker. One word — `projects`, from *"under the projects folder"* — was lost in all three
-renderings, and the control lost it too at the whole rendering. That is the recogniser, not
-Supertonic.
+*First run.* Handed a whole sentence, Supertonic loses fewer words than the control (4 against 9);
+handed the same sentence as two chunks split at a comma, it loses fifteen. That pointed at the
+comma boundary.
 
-**The mid-phrase split is hard for both voices** (11.0 % vs 9.3 %): cutting between words without
-punctuation costs everyone some prosody, and the recogniser punishes it. So the actionable signal
-is the **comma** split, where the two voices diverge and the split is one the app's chunker would
-actually choose.
+*The gap experiment refuted the join.* Re-running with **250 ms of silence inserted between the
+two chunks** — the test that would distinguish "the two pieces are joined badly" from "each piece
+is bad" — changed nothing: Supertonic lost 17 words instead of 15, and the control got worse
+(11 against 5, which is the extra silence fragmenting the prosody). If truncation or overlap at
+the seam were the mechanism, silence would have recovered the words. It did not.
+
+*The fragment sweep found it.* Same sentences, same words, split into **1, 2, 3 and 4 equal pieces**
+at word boundaries — no punctuation involved, so only the number of synthesis calls varies:
+
+| Pieces | Supertonic | Piper (control) |
+|---|---|---|
+| 1 | 4 / 118 (3.4 %) | 5 / 118 (4.2 %) |
+| 2 | 13 / 118 (11.0 %) | 7 / 118 (5.9 %) |
+| 3 | **27 / 118 (22.9 %)** | 7 / 118 (5.9 %) |
+| 4 | 18 / 118 (15.3 %) | 9 / 118 (7.6 %) |
+
+Supertonic's loss rises with the number of pieces — roughly seven times its one-piece rate at
+three pieces — while Piper stays flat. The words are identical in every arm; only how many times
+the engine is asked to speak changes. **So the loss is per synthesis, not per join**: it is
+Supertonic's behaviour on short fragments, and the app's 30-character chunk cap — right for Piper,
+which does not care — hands it about the worst input it can get.
 
 ## What it does not say
 
@@ -96,9 +106,11 @@ having. This bench does not change that — it changes what the label can honest
 next piece of work is:
 
 - the catalogue and Settings copy may say *"experimental: drops words when the reply is spoken in
-  chunks; under investigation"* rather than the vaguer "may drop words";
-- the next investigation is a **chunker probe**, not a model swap: what happens to a large chunk at
-  a boundary, and why the drain reports `played` while a word is missing;
+  short pieces"* rather than the vaguer "may drop words";
+- the concrete candidate fix is a **per-engine chunk cap**: the app feeds every voice 30 characters
+  (`StreamTextChunker.CHUNK_CAP_CHARS`), which is tuned for Piper and is the worst size for
+  Supertonic. A larger cap for Supertonic (60, then 90, measured the same way) is the next test,
+  and it is a settings change rather than a model change;
 - **not a 0.9.2 blocker.** Nothing here moves the release; it removes the excuse for guessing.
 
 The owner has already put voice quality where it belongs for this series — the recommendation is

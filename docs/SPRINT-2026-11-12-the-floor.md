@@ -12,7 +12,7 @@ exits non-zero, not a sentence.
 | Bar | State | Evidence |
 |---|---|---|
 | 1. `baseline-diff.py` exits non-zero when a stated tolerance is crossed; a self-test feeds it a synthetic regression and requires a failure | **met** | `scripts/test_baseline_diff.py`, in the gate: a 3× slower first audio at n=8 fails on exit 1, a 2-turn run leaves those rows unjudged, a lost row exits 3, and two identical rows exit 0 |
-| 2. The gate-off row is taken on a fresh install and fills every row of #209 or says "not in log" | **not met — two rows taken, wrong label, now corrected** | Two rows on the bench Pixel 7, and neither is gate-off: **the alpha master was ON with Phone Tools selected** (`event=alpha-gate state=on presence=false continuous_listening=false turn_taking=false phone_tools=true`). The label was inferred from the absence of Presence lines and the default voice, and the inference was wrong. The fresh-install half is also unproven — the handset's saved key is not available to an agent. The gate-off row is still owed |
+| 2. The gate-off row is taken on a fresh install and fills every row of #209 or says "not in log" | **met, except the fresh-install half** | Two rows on the bench Pixel 7, and neither is gate-off: **the alpha master was ON with Phone Tools selected** (`event=alpha-gate state=on presence=false continuous_listening=false turn_taking=false phone_tools=true`). The label was inferred from the absence of Presence lines and the default voice, and the inference was wrong. The gate-off rows were then taken properly (below): the alpha master switched off, `v0.9.1.4` and `162075d` swapped with `install -r` (same versionCode, data kept), and the label **read** rather than inferred — off Settings on 0.9.1.4, and from `event=alpha-gate state=off` on the candidate. The **fresh-install** half stays unproven: the handset's saved key is not available to an agent, so the install was reused |
 | 3. Path 2 and 5 walked | **path 5 pending, path 2 partial** | Path 5 (`full=true` on a long reply) needs a spoken turn — a reply of the length that gets cut into chunks cannot be produced headlessly. Path 2's cold row is recorded on the candidate (`ms=108`) and has no baseline: `ColdFrame` postdates `v0.9.1.4` |
 | 4. #579 has its `event=profiles-ask` line, and paths 8 and 9 pass or the unreachable profile is named | **app half met, device half pending** | The probe line, `unreachable=` on the ask line, and the named switcher line are in, with 52 unit tests green on the build host. Paths 8 and 9 need the owner's handset — a card is queued |
 | 5. `docs/templates/RELEASE-CUT.md` gains #209 run+diff, the #208 template, F5, F8 | **met** | The cut checklist now carries all four, and §2a is the single-device behaviour matrix |
@@ -108,6 +108,34 @@ BASELINE-DIFF PASS (8 rows compared, 4 rows printed as context and not judged)
 context, because the run had two and three turns and no speech. So the honest sentence is: *on
 everything a silent ten-minute call can measure, `testing` is no worse than 0.9.1.4* — and the
 spoken half of the floor is unmeasured until a human speaks into the phone.
+
+## The gate-off rows
+
+Taken after the correction above, same handset, same procedure, alpha master **off** on both sides.
+
+| | 0.9.1.4 | testing `162075d` |
+|---|---|---|
+| the label, as read | Settings: *"Alpha features — Off · unfinished features stay out of the way"* | `event=alpha-gate state=off presence=false …` |
+| `am start -W` | cold | cold |
+| app cold row | not in log | `ms=128` |
+| warm TTS / STT | 307 / 431 ms | 165 / 301 ms |
+| peak RSS | 705 MB | 702 MB |
+| lowest MemAvailable | 1482 MB | 1542 MB |
+| thermal | none → none, 66 samples / 643 s | none → none, 66 samples / 644 s |
+| turns | 0 (a quiet room, nothing triggered) | 0 |
+
+```
+BASELINE-DIFF PASS (8 rows compared)
+```
+
+The eight rows the build owns pass again, with the gate off: memory is level to slightly better
+(702 against 705 MB, 1542 against 1482 MB available), the two warm legs are faster (165 against 307,
+301 against 431 ms), thermal is flat, and nothing failed or dropped. The conversational rows are
+`n/a` on both sides — no speech, so no turns — which is the honest state of a row a human has not
+yet spoken into.
+
+The cold row has a first measurement on the candidate (`128 ms`) and no baseline, because
+`ColdFrame` postdates `v0.9.1.4`; the cut after this one is the first that can judge it.
 
 ## What the rows exposed
 
