@@ -566,3 +566,9 @@
   doc: docs/REGRESSION.md
   file: android/app/src/main/java/com/hermesvox/VoiceController.kt
   match: 'event=alpha-gate state='
+
+- id: tts-fidelity-bench-exists
+  says: "scripts/tts-fidelity.py"
+  doc: docs/TTS-FIDELITY.md
+  file: scripts/tts-fidelity.py
+  match: 'def split_ways'
