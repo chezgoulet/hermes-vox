@@ -78,7 +78,7 @@ build.
 | [`ROADMAP.md`](../ROADMAP.md) | **The plan of record.** The 0.9.x series in order: what each release is for, what it contains, what it closes off, and where the UI and copy freeze for localisation. |
 | [`docs/MILESTONES.md`](MILESTONES.md) | What a version number means, what the alpha gate holds and what each set still needs, and what the labels mean. |
 | [`docs/0.9.1-SCOPE.md`](0.9.1-SCOPE.md) | Every item in the current release, by real status. |
-| [`docs/RELEASE-0.9.1.3.md`](RELEASE-0.9.1.3.md) | The current release's contents: the short-reply drain, the readiness gate, and the cleanup, with its evidence. |
+| [`docs/RELEASE-0.9.1.4.md`](RELEASE-0.9.1.4.md) | The current release's contents: the call speaks through the speaker again, with its evidence. |
 | [`docs/RELEASE-NOTES-0.9.1.md`](RELEASE-NOTES-0.9.1.md) | the published note for 0.9.1, as written by the owner: what changed, grouped by what the reader is trying to do, with contributors named |
 | [`docs/BUDGETS-0.9.1.md`](BUDGETS-0.9.1.md) | The CPU, GPU, battery and memory budget for the continuous listening lane. |
 
@@ -118,8 +118,8 @@ performance baseline instrument and the numbers recorded for each cut ·
 `RELEASE-0.6.3.md` · `RELEASE-0.6.4.md` · `RELEASE-0.6.5.md` · `RELEASE-0.6.6.md` ·
 `RELEASE-0.7.0.md` · `RELEASE-0.7.2.md` · `RELEASE-0.7.3.md` · `RELEASE-0.8.0.md` ·
 `RELEASE-0.8.1.md` · `RELEASE-0.9.0.md` · `RELEASE-0.9.0.1.md` · `RELEASE-0.9.0.2.md` ·
-`RELEASE-0.9.0.3.md` · `RELEASE-0.9.1.md` · `RELEASE-0.9.1.1.md` · `RELEASE-0.9.1.2.md` — one record
-per cut, saying what that version contained.
+`RELEASE-0.9.0.3.md` · `RELEASE-0.9.1.md` · `RELEASE-0.9.1.1.md` · `RELEASE-0.9.1.2.md` · `RELEASE-0.9.1.3.md` — one
+record per cut, saying what that version contained.
 
 ### Plans, briefs, directives and sprints
 

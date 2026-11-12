@@ -17,7 +17,10 @@ schedule.
 
 A feature release raises the minor component (`0.9.2`), a fix to an already-published version appends a
 component (`0.9.1.3`), and `versionCode` rises by exactly one per cut. The tree currently reads
-`0.9.1.3`, which is the version just shipped; it changes with the next cut, not before.
+`0.9.1.4` (`versionCode` 151), which is the version just shipped; it changes with the next cut, not
+before. The 0.9.1 line shipped as point releases — `0.9.1.1` and `0.9.1.2` (the profile list read as
+agents write it), `0.9.1.3` (the cleanup cut), `0.9.1.4` (the call back on the speaker) — each with its
+`docs/RELEASE-<version>.md`.
 
 There is **no release calendar** (D42). A release ships when its gates are green: the build gate, the
 twelve regression paths, the human run, the evidence rule, and a closed tracker
@@ -76,7 +79,9 @@ is finished belongs in the app rather than behind a switch.
 - **`milestone/0.9.x`** — in that release's scope, assigned from `ROADMAP.md` and never by drift.
 - **`milestone/future`** — recorded, not scheduled, and the issue says why it is not scheduled.
 - **`good first issue`** — bounded, reviewable, and nobody is already on it.
-- **`awaiting-reporter`** — blocked on a person rather than on us. The issue names the person.
+- **`awaiting-reporter`** — a reporter's confirmation is wanted. It never holds a release (D47): the
+  release ships with the verification marked pending and a walkthrough card queued.
+- **`awaiting-device`** — built; the owner's device verdict is pending, as a walkthrough card (D47).
 - **`sev/critical|high|medium|low`** — consequence if it ships, not effort.
 - **`needs-device`** — cannot be closed without a phone, so it cannot close in a pull request.
 

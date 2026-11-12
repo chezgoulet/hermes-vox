@@ -23,6 +23,28 @@ class CommRouteTest {
         assertEquals(4, CommRoutePolicy.bestIndex(attached))   // the SCO entry
     }
 
+    /** #572: with no headset, a hands-free call uses the speaker — the platform default for the
+     *  communication strategy is the earpiece, which played the voice quietly at the phone. */
+    @Test fun with_no_headset_the_speaker_is_the_route() {
+        val phoneOnly = intArrayOf(
+            AudioDeviceInfo.TYPE_BUILTIN_EARPIECE,
+            AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
+        )
+        assertEquals(1, CommRoutePolicy.routeIndex(phoneOnly))
+    }
+
+    @Test fun a_headset_still_wins_over_the_speaker() {
+        val withHeadset = intArrayOf(
+            AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
+            AudioDeviceInfo.TYPE_WIRED_HEADSET,
+        )
+        assertEquals(1, CommRoutePolicy.routeIndex(withHeadset))
+    }
+
+    @Test fun nothing_worth_routing_to_is_still_minus_one() {
+        assertEquals(-1, CommRoutePolicy.routeIndex(intArrayOf(AudioDeviceInfo.TYPE_BUILTIN_MIC)))
+    }
+
     @Test fun order_is_sco_then_le_audio_then_hearing_aid_then_usb_then_wired() {
         assertEquals(0, CommRoutePolicy.rank(AudioDeviceInfo.TYPE_BLUETOOTH_SCO))
         assertEquals(1, CommRoutePolicy.rank(AudioDeviceInfo.TYPE_BLE_HEADSET))
