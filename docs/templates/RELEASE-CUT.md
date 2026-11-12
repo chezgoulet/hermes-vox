@@ -53,7 +53,8 @@ instrument. A second device adds a column; it does not add a second table.
 
 `<device> · Android <version> · build <version> (versionCode <n>)`
 
-Every cell is the log line that proves it, or `not run — <why>`.
+Every cell is the log line that proves it, or `not run — <why>`. Filled rows live in
+`docs/BEHAVIOUR-MATRIX.md`; the first (2026-11-12, Pixel 7, `testing` `7d59e35`) is the pattern.
 
 **Connect** — mode × endpoint state:
 
