@@ -108,9 +108,13 @@ next piece of work is:
 - the catalogue and Settings copy may say *"experimental: drops words when the reply is spoken in
   short pieces"* rather than the vaguer "may drop words";
 - the concrete candidate fix is a **per-engine chunk cap**: the app feeds every voice 30 characters
-  (`StreamTextChunker.CHUNK_CAP_CHARS`), which is tuned for Piper and is the worst size for
-  Supertonic. A larger cap for Supertonic (60, then 90, measured the same way) is the next test,
-  and it is a settings change rather than a model change;
+  (`StreamTextChunker.CHUNK_CAP_CHARS`), which is tuned for Piper and is near the worst size for
+  Supertonic. One chunker with a cap per voice — not a second delivery path;
+- **45 characters is the ceiling today, and the reason is arithmetic.** Supertonic speaks at
+  14.5 chars/s against Piper's 20.5, so 30 characters is 2.1 s of its audio and 45 is 3.1 s. The
+  playback track is 4 s; 60 characters would be 4.1 s and would bring back the #515 defect where
+  the next chunk waits for the last one to finish playing. Measure 45 first; larger caps need a
+  larger track in the same change, and the gaps measured as well as the words;
 - **not a 0.9.2 blocker.** Nothing here moves the release; it removes the excuse for guessing.
 
 The owner has already put voice quality where it belongs for this series — the recommendation is
