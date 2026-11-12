@@ -1393,3 +1393,26 @@ never a claim.
 **What it does not change.** D41 (the human run before a tag), D42 (no calendar), D43's grounds and
 24-hour lapse, D44 (the evidence rule and the closed tracker block a tag).
 
+
+## D48 — Supertonic stays experimental, and the word loss is a chunking defect
+
+Set 2026-11-12, after the host bench in `docs/TTS-FIDELITY.md` (#559).
+
+**The decision.** Supertonic remains an **experimental option**, available for its ten voices and
+not under pressure to be faultless. The owner's ruling: it stays for the foreseeable future and is
+not something to perfect overnight. The recommended voice remains Piper.
+
+**What the bench changed.** It separated the two hypotheses the field report could not. Supertonic
+handed a whole sentence loses **fewer** words than Piper (4 of 118 against 9); handed the same
+sentence as two chunks split at a comma it loses four times as many (15 of 118, two-sided
+p = 0.015 against its own one-chunk arm, p = 0.033 against Piper at the same split, which went the
+other way). So the loss is at the **chunk boundary**, not in the model — and the catalogue may say
+that instead of the vaguer "may drop words".
+
+**What it sets up.** The next investigation is a chunker probe (`StreamTextChunker`,
+`SherpaTts.streamChunk`): what happens to a large chunk at a boundary, and why the drain reports
+`played` with a word missing. That is candidate work for a later release, **not a 0.9.2 blocker**.
+
+**What it does not do.** It does not remove Supertonic, does not change the default voice, and does
+not claim the ten-sentence bench is decisive: the script is committed so a wider run can settle the
+size of the effect rather than its direction.

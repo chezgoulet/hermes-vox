@@ -12,7 +12,7 @@ exits non-zero, not a sentence.
 | Bar | State | Evidence |
 |---|---|---|
 | 1. `baseline-diff.py` exits non-zero when a stated tolerance is crossed; a self-test feeds it a synthetic regression and requires a failure | **met** | `scripts/test_baseline_diff.py`, in the gate: a 3× slower first audio at n=8 fails on exit 1, a 2-turn run leaves those rows unjudged, a lost row exits 3, and two identical rows exit 0 |
-| 2. The gate-off row is taken on a fresh install and fills every row of #209 or says "not in log" | **met, with one honest hole** | Two rows on the bench Pixel 7, both `gate off, defaults` (below). The *fresh-install* half is not proven: the handset's saved gateway key is not available to an agent, so the install was reused rather than wiped. The row's own gate state is now written by the app (`event=alpha-gate`), which makes the next row's label provable instead of inferred |
+| 2. The gate-off row is taken on a fresh install and fills every row of #209 or says "not in log" | **not met — two rows taken, wrong label, now corrected** | Two rows on the bench Pixel 7, and neither is gate-off: **the alpha master was ON with Phone Tools selected** (`event=alpha-gate state=on presence=false continuous_listening=false turn_taking=false phone_tools=true`). The label was inferred from the absence of Presence lines and the default voice, and the inference was wrong. The fresh-install half is also unproven — the handset's saved key is not available to an agent. The gate-off row is still owed |
 | 3. Path 2 and 5 walked | **path 5 pending, path 2 partial** | Path 5 (`full=true` on a long reply) needs a spoken turn — a reply of the length that gets cut into chunks cannot be produced headlessly. Path 2's cold row is recorded on the candidate (`ms=108`) and has no baseline: `ColdFrame` postdates `v0.9.1.4` |
 | 4. #579 has its `event=profiles-ask` line, and paths 8 and 9 pass or the unreachable profile is named | **app half met, device half pending** | The probe line, `unreachable=` on the ask line, and the named switcher line are in, with 52 unit tests green on the build host. Paths 8 and 9 need the owner's handset — a card is queued |
 | 5. `docs/templates/RELEASE-CUT.md` gains #209 run+diff, the #208 template, F5, F8 | **met** | The cut checklist now carries all four, and §2a is the single-device behaviour matrix |
@@ -45,8 +45,16 @@ each one refuses to let a number say more than it can:
 ## The two rows
 
 Same handset (Pixel 7, serial `2A091FDH200AJ1`, Android as the device reports it), same
-procedure, both gate-off defaults: force-stop, cold launch, one call left open for ten minutes
-with **no speech in the room**, logcat captured, then hung up.
+procedure: force-stop, cold launch, one call left open for ten minutes with **no speech in the
+room**, logcat captured, then hung up.
+
+**The configuration is not gate-off, and this paragraph used to say it was.** Both rows were taken
+with the alpha master **on** and Phone Tools the only set selected — Presence, continuous
+listening, turn-taking, wake word and the digital assistant all off, and the voice on the
+default path (`whisper-base`, Piper, silero VAD). That was inferred, not read: no `er-soul` line
+and the default voice names. The app now writes the state itself, and when it was asked it said
+`state=on … phone_tools=true`. The rows are honest measurements of that configuration; the label
+was the error, and it is corrected here rather than in a quiet edit.
 
 | | 0.9.1.4 (versionCode 151) | testing `983f68b` nightly |
 |---|---|---|
@@ -60,15 +68,17 @@ with **no speech in the room**, logcat captured, then hung up.
 
 Both `event=res-summary` blocks cover 643 s with 66 samples.
 
-**The gate-off label is inferred for these two rows, not proven.** The app did not write its gate
-state when they were taken; it does now. The inference is strong — no `er-soul` line, no
-`capture-continuous` line, `Whisper-whisper-base` and `SherpaTts piper` in the warm legs — but it
-is an inference, and the record says so rather than banking it.
+**What the label check cost, and why it was worth it.** Writing `event=alpha-gate` into the app
+was meant to make the *next* row's label provable. It made this one's checkable, and the check
+failed: the inference "no Presence line means the gate is off" was wrong, because the gate has six
+sets and Phone Tools was on. Two lessons, both cheap ones bought here rather than at a cut —
+an absence is not a state, and a claim about configuration has to be read out of the build, not
+reasoned about from the log.
 
 ## The diff, as it printed
 
 ```
-baseline-diff: base «0.9.1.4 (versionCode 151), gate off, defaults, bench Pixel 7» vs candidate «testing 983f68b nightly, gate off, defaults, bench Pixel 7»
+baseline-diff: base «0.9.1.4 (versionCode 151), alpha master ON (phone tools only), voice defaults, bench Pixel 7» vs candidate «testing 983f68b nightly, alpha master ON (phone tools only), voice defaults, bench Pixel 7»
   turns: base 3 · candidate 2; calls: base 1 · candidate 1
 
 | Row | Base | Candidate | Allowed drift | Verdict | Note |
