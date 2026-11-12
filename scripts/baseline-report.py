@@ -5,6 +5,7 @@ Reads one or more exported logs (Settings -> Share full log, or logcat) and prin
 baseline table the issue asks for, from the app's own event lines:
 
   event=turn ... stt=MS firstByte=MS firstText=MS firstAudio=MS fullReply=MS outcome=O
+  event=lat label=cold metric=first-frame ms=MS (ColdFrame: the app's own cold start)
   event=er-soul ... ms=MS                      (a Presence render)
   event=res rssMb=… availMb=… thermal=…         (ResourceProbe, every 10 s of a call)
   event=res-summary peakRssMb=… minAvailMb=… thermalStart=… thermalEnd=… ms=…
@@ -13,9 +14,14 @@ baseline table the issue asks for, from the app's own event lines:
 
   python3 scripts/baseline-report.py log.txt [log2.txt …]
   python3 scripts/baseline-report.py --json log.txt
+  python3 scripts/baseline-report.py --json --label 0.9.1.4-gateoff log.txt
 
 A row the log cannot fill says "not in log" — the point is drift between cuts, so an
 absent number is reported as absent, never estimated.
+
+`--label` names the run in the JSON (`"label"`), so the row a cut is judged against says
+which build and which configuration produced it. Without a label the first file's name is
+used; the JSON cannot invent a build it was not told.
 """
 import json
 import re
@@ -44,7 +50,7 @@ def num(v):
 
 def parse(lines):
     turns = {k: [] for k in ("stt", "firstByte", "firstText", "firstAudio", "fullReply")}
-    renders, rss, avail, thermal, warm, summaries = [], [], [], [], {}, []
+    renders, rss, avail, thermal, warm, summaries, cold = [], [], [], [], {}, [], []
     dropped = failed = total_turns = 0
     for line in lines:
         if "event=turn " in line:
@@ -56,6 +62,12 @@ def parse(lines):
                     turns[k].append(n)
             if kv.get("outcome") in FAILED:
                 failed += 1
+        elif "event=lat " in line:
+            # ColdFrame's own row: the app measuring itself, not `am start -W`'s clock.
+            kv = dict(KV.findall(line))
+            n = num(kv.get("ms"))
+            if kv.get("label") == "cold" and kv.get("metric") == "first-frame" and n is not None:
+                cold.append(n)
         elif "event=turn-dropped" in line or "event=stream-turn-failed" in line:
             dropped += 1
         elif "event=er-soul " in line:
@@ -78,6 +90,7 @@ def parse(lines):
             warm[leg] = {k: num(kv[k]) for k in ("loadMs", "warmMs") if k in kv}
     return {
         "turns": total_turns,
+        "cold_start": {"p50": pct(cold, 0.5), "p95": pct(cold, 0.95), "n": len(cold)},
         "latency": {k: {"p50": pct(v, 0.5), "p95": pct(v, 0.95), "n": len(v)} for k, v in turns.items()},
         "presence_render": {"p50": pct(renders, 0.5), "p95": pct(renders, 0.95), "n": len(renders)},
         "peak_rss_mb": max(rss) if rss else None,
@@ -95,6 +108,8 @@ def table(r):
     def f(v, unit=" ms"):
         return "not in log" if v is None else f"{v}{unit}"
     rows = ["| Measure | Value |", "|---|---|"]
+    c = r.get("cold_start") or {"p50": None, "p95": None, "n": 0}
+    rows.append(f"| cold start → first frame p50 / p95 (n={c['n']}) | {f(c['p50'])} / {f(c['p95'])} |")
     for leg, w in sorted(r["warm"].items()):
         rows.append(f"| warm: {leg} | " + (", ".join(f"{k} {v} ms" for k, v in w.items()) or "logged, no time") + " |")
     if not r["warm"]:
@@ -114,13 +129,26 @@ def table(r):
 
 def main(argv):
     as_json = "--json" in argv
-    paths = [a for a in argv if not a.startswith("--")]
+    label, paths, it = "", [], iter(argv)
+    for a in it:
+        if a == "--label":
+            label = next(it, "")
+        elif a.startswith("--label="):
+            label = a.split("=", 1)[1]
+        elif a.startswith("--"):
+            continue
+        else:
+            paths.append(a)
     if not paths:
         print(__doc__.strip().splitlines()[0]); return 2
     lines = []
     for p in paths:
         lines += Path(p).read_text(errors="replace").splitlines()
     r = parse(lines)
+    # Which run this is, so a row carried into a cut document cannot be read as another
+    # build's. A name is provenance; an unnamed row is a number with no build behind it.
+    r["label"] = label or Path(paths[0]).name
+    r["sources"] = [str(p) for p in paths]
     print(json.dumps(r, indent=2) if as_json else table(r))
     return 0
 

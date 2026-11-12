@@ -26,11 +26,51 @@ ones that are "no". The tag is cut when the last line is ticked, and not before.
       which it returned `UNKNOWN` for.
 - [ ] All twelve paths in `docs/REGRESSION.md` walked; the evidence line for each
       recorded in the release document.
+- [ ] **#209 — the baseline row and the diff.** The row taken **gate off, on a fresh
+      install** (whisper-base, 900 ms partials, 800 ms VAD silence), labelled with the
+      build: `scripts/baseline-report.py --json --label "<build>, gate off, fresh
+      install" <log>`. Then `scripts/baseline-diff.py <previous release>.json
+      <this build>.json` — exit code `<0|1|3>`, verdict line `<quoted>`.
+      **A 1 or a 3 is a red line, not a tick**: 1 is a crossed tolerance, 3 is a row the
+      previous release measured and this one does not report.
+- [ ] **F5 — the thirty-minute soak.** One call left open for thirty minutes: peak RSS and
+      the lowest `MemAvailable` (`event=res-summary`), the thermal trace start → end, and
+      any dropped or failed turn. The release document gets the slope, not a single point.
+- [ ] **F8 — the ten-utterance verdict.** `scripts/verdict-f8.sh <build-label>`; the rows
+      stay in `docs/verdicts/<build-label>.md`. The script records the numbers; whether the
+      words were right is the human run's column.
+- [ ] **#208 — the behaviour matrix** (2a, below), one row per cut.
 - [ ] **A human run**: named `<name>` — the owner, or the volunteer who has taken
       the role — on a real device, in ordinary use, with the twelve paths among
       what they did. What they did and saw: `<one sentence>`.
       *(D41. There is no duration — the run is the gate. If the reviewer is also the
       cutter, say so here: a real run, not an independent one.)*
+
+### 2a. Behaviour matrix (#208)
+
+One device, named once — D29 ruled one, because a matrix nobody can fill is not an
+instrument. A second device adds a column; it does not add a second table.
+
+`<device> · Android <version> · build <version> (versionCode <n>)`
+
+Every cell is the log line that proves it, or `not run — <why>`.
+
+**Connect** — mode × endpoint state:
+
+| Mode | HTTPS gateway | cleartext refused | wrong key | unreachable |
+|---|---|---|---|---|
+| Realtime | | | | |
+| Enhanced Realtime | | | | |
+
+**Behaviour on the working endpoint:**
+
+| Behaviour | The line that proves it | Result |
+|---|---|---|
+| barge-in | `outcome=barge-in` | |
+| greeting | | |
+| Presence cadence | `event=er-soul` | |
+| cues, across the ringer matrix | | |
+| headset route | | |
 
 ## 3. Evidence
 

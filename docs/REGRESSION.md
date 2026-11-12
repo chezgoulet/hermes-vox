@@ -46,10 +46,50 @@ Worked examples:
 2. Run `bash scripts/regression-smoke.sh` with the phone attached; it prints what it proved and
    what it could not.
 3. Walk the manual set; record the evidence (a log line, a screenshot) in the release document.
-4. Any red is fixed, or deferred in writing with a reason and a linked issue. **No tag with an
+4. Take the **#209 row** and run the **comparator** against the previous release's row
+   (`## The baseline and the comparator`, below). A non-zero exit from the diff is a red, and
+   so is a row it reports as UNKNOWN — an unmeasured row is not a passing one.
+5. Any red is fixed, or deferred in writing with a reason and a linked issue. **No tag with an
    unexplained red.**
-5. The human run (layer 4): someone installs the candidate and uses it, and the document records
+6. The human run (layer 4): someone installs the candidate and uses it, and the document records
    who and what they saw. Then tag, then announce.
+
+## The baseline and the comparator (#209)
+
+The rule this serves is D3: performance within the measured baseline. A baseline nobody took is
+not a measurement, and a comparison nobody ran is not a gate. Two commands:
+
+```sh
+# 1. The row. An exported log from the candidate, taken gate-off on a fresh install
+#    (whisper-base, 900 ms partials, 800 ms VAD silence — the configuration a new user runs).
+python3 scripts/baseline-report.py --json --label "0.9.2 rc1, gate off, fresh install" log.txt > cand.json
+
+# 2. The comparison. base.json is the previous release's row, taken the same way.
+python3 scripts/baseline-diff.py base.json cand.json
+```
+
+The diff prints the two rows side by side with the allowance for each measure, then one verdict
+line. Its exit code is the instrument:
+
+- **0 — `BASELINE-DIFF PASS`.** No stated tolerance was crossed.
+- **1 — `BASELINE-DIFF REGRESSED`.** A tolerance was crossed, and the row is named. A red.
+- **2 — `BASELINE-DIFF USAGE`.** Not two baseline reports. Nothing was compared.
+- **3 — `BASELINE-DIFF UNKNOWN`.** The baseline measured a row and the candidate's log does not
+  report it. **This is not a green.** Unknown is not healthy (D44); the row is either restored
+  or the cut says in writing why it is gone.
+
+The tolerances, and the reason for each number, are in the script's header — one table, in the
+code, where a change to a number is a visible diff. `fullReply` is deliberately **not** compared:
+it is gateway time, not audio, and it grows with the length of the reply, so two runs of
+different replies cannot be differenced on it (`docs/REVIEW-0.9.1.md` records the recount that
+got this wrong).
+
+**The cold row has no 0.9.1.4 baseline, and this document does not pretend otherwise.**
+`ColdFrame` — the app's own `event=lat label=cold metric=first-frame` line — merged into
+`testing` after `v0.9.1.4` was tagged, so that release's log cannot carry it. At the 0.9.2 cut
+the row is recorded on the candidate and marked **pending** with a card (D47); it becomes
+judgeable at the cut after. `am start -W`'s TotalTime is recorded beside it as context and is
+not the same measurement — it is the launcher's clock, not the app's first frame.
 
 ## The regression set — twelve paths, every cut
 
@@ -59,9 +99,9 @@ Each names the thing that proves it. "Device" means a human, because the bench c
    `versionName` shows the new build and the switcher still lists what it did.
 2. **Cold start** — time to first frame. Proves: `am start -W` TotalTime and the app's own
    `event=lat label=cold metric=first-frame ms=…` row (`ColdFrame`), both printed by
-   `regression-smoke.sh start`. Judged against the #209 baseline's gate-off row once it exists;
-   until then the number is recorded in the release document and the judgement is marked
-   pending (D47).
+   `regression-smoke.sh start`. Judged by `scripts/baseline-diff.py` against the previous
+   release's gate-off row **once that row carries it** — `v0.9.1.4` predates `ColdFrame`, so at
+   the 0.9.2 cut the number is recorded and the judgement is marked pending with a card (D47).
 3. **A call reaches green** — gateway, hearing and voice all ready; the readiness overlay clears.
    Proves: the gate's own states and `event=tts-ready`.
 4. **A short reply speaks and ends promptly** — the #538 class. Proves:

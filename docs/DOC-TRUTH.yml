@@ -540,3 +540,23 @@
   match: 'C0 build guard FAILED: HERMES_VOX_API_KEY is set'
 
 
+
+# #209: the comparator is the sentence turned into an exit code. The document says what the
+# codes mean, so the script has to still have them.
+- id: baseline-diff-verdict
+  says: "BASELINE-DIFF REGRESSED"
+  doc: docs/REGRESSION.md
+  file: scripts/baseline-diff.py
+  match: 'BASELINE-DIFF REGRESSED'
+
+- id: baseline-diff-fullreply-excluded
+  says: "is deliberately **not** compared"
+  doc: docs/REGRESSION.md
+  file: scripts/baseline-diff.py
+  match: 'EXCLUDED = \['
+
+- id: cut-checklist-runs-the-diff
+  says: "scripts/baseline-diff.py"
+  doc: docs/templates/RELEASE-CUT.md
+  file: scripts/baseline-diff.py
+  match: 'def main\('
