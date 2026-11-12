@@ -335,7 +335,7 @@ class BeingThread(private val surface: SurfaceTexture) : Thread("being-render") 
         // A catastrophically slow frame steps down at once; a merely heavy one needs a trend.
         if (r.quality < 2 && (ms > 80f || (frames > 20 && ema > 26f))) {
             r.quality = r.quality + 1
-            VoxLog.d("being: frame ${"%.1f".format(ema)} ms over budget -> quality ${r.quality}")
+            VoxLog.d("being: frame ${VoxLog.num(ema, 1)} ms over budget -> quality ${r.quality}")
             frames = 0
         }
     }

@@ -4,6 +4,7 @@ import com.hermesvox.core.JArr
 import com.hermesvox.core.JObj
 import com.hermesvox.core.JStr
 import com.hermesvox.core.Json
+import com.hermesvox.core.ProfileReach
 
 /**
  * ProfilesAsk — the profile list asked in conversation (#384, SPEC-conversational-bridge §A).
@@ -69,6 +70,13 @@ object ProfilesAsk {
 
     /** At most eight probes in flight (SPEC §A: "at most 8 at a time"). */
     const val PROBE_CONCURRENCY = 8
+
+    /**
+     * How much of a failed probe's body is read. The only thing the body is asked for is the
+     * host's missing-profile marker (`Unknown or unconfigured profile`); a kilobyte holds it
+     * with room to spare, and a gateway answering an error page cannot flood the log.
+     */
+    const val PROBE_BODY_MAX = 1024
 
     /** A manual refresh inside this window of the last ask is refused. */
     const val REFRESH_MIN_MS = 60_000L
@@ -469,6 +477,64 @@ object ProfilesAsk {
     /** A probe's verdict: a 200 is the only proof a profile is usable. */
     fun probeSucceeded(status: Int): Boolean = status == 200
 
+    /**
+     * One probe's verdict, and the route that produced it — the #579 field-log line.
+     *
+     * `status` is what the profile's own route answered, or what the root answered when the
+     * profile route did not exist; `reason` says which of those it was, so a log reader can
+     * tell "this profile is gone" from "this gateway has no per-profile route".
+     */
+    data class Probed(val name: String, val host: String, val status: Int, val reason: String) {
+        val reachable: Boolean get() = status == 200
+    }
+
+    /**
+     * Whether a failed probe should ask the root before the profile is called unreachable.
+     *
+     * Only a 404 that is **not** the host's own missing-profile answer proves anything about
+     * the route: a gateway that serves `/v1/models` and not `/p/<name>/v1/models` answers a
+     * generic 404, and that 404 is a fact about the gateway, not about the profile. Every
+     * other failure (401, 403, 500, a refused connection, a timeout) is an answer about the
+     * profile and is taken as one.
+     *
+     * The guard the probe exists for survives: on a host that *does* serve `/p/<name>`
+     * routes, a name the agent invented answers 404 **with** `Unknown or unconfigured
+     * profile`, and is never rescued by the root.
+     */
+    fun rootProbeNeeded(profileStatus: Int, profileBody: String): Boolean =
+        profileStatus == 404 && !ProfileReach.isMissingAnswer(profileStatus, profileBody)
+
+    /**
+     * Fold one probe's answers into a verdict. [rootStatus] is null when the root was not
+     * asked (it is only asked when [rootProbeNeeded]).
+     */
+    fun probeVerdict(
+        name: String,
+        host: String,
+        profileStatus: Int,
+        profileBody: String,
+        rootStatus: Int? = null,
+    ): Probed = when {
+        profileStatus == 200 -> Probed(name, host, 200, "profile-route")
+        ProfileReach.isMissingAnswer(profileStatus, profileBody) ->
+            Probed(name, host, profileStatus, "unknown-profile")
+        rootStatus == 200 -> Probed(name, host, 200, "root-fallback")
+        rootStatus != null -> Probed(name, host, rootStatus, "root-status")
+        profileStatus < 0 -> Probed(name, host, profileStatus, "timeout")
+        else -> Probed(name, host, profileStatus, "status")
+    }
+
+    /** The one line a probe writes: no key, no route, no body — the host and the verdict. */
+    fun probeLine(p: Probed, ms: Long): String =
+        "event=profiles-probe name=${p.name} host=${p.host} status=${p.status} " +
+            "reason=${p.reason} reachable=${p.reachable} ms=$ms"
+
+    /** A URL reduced to `host:port`, for a log line that must carry no path and no key. */
+    fun hostOf(url: String): String {
+        val noScheme = url.substringAfter("://", url)
+        return noScheme.substringBefore('/').substringBefore('?').substringBefore('#')
+    }
+
     /** The registry after one proven answer, with the line the switcher should say. */
     data class Applied(
         val merge: HostProfiles.Merge,
@@ -503,15 +569,24 @@ object ProfilesAsk {
         )
         return Applied(
             merged, usable, unreachable, merged.added.size,
-            line(result, merged.added.size, unreachable.size),
+            line(result, merged.added.size, unreachable.size, unreachable),
         )
     }
 
     /**
      * The switcher's one line for a result. A partial refresh names both halves; a full one
      * is the familiar count. Each failure names which failure it was, never an empty list.
+     *
+     * [unreachableNames] makes the partial line actionable: the names that did not answer,
+     * which is what #579's report could not say. Empty means the caller only has a count,
+     * and the line falls back to it rather than inventing names.
      */
-    fun line(result: Result, added: Int = 0, unreachable: Int = 0): String = when (result) {
+    fun line(
+        result: Result,
+        added: Int = 0,
+        unreachable: Int = 0,
+        unreachableNames: List<String> = emptyList(),
+    ): String = when (result) {
         is Result.Failed -> when (result.failure) {
             Failure.NO_BLOCK -> FALLBACK_NO_BLOCK
             Failure.EMPTY_BLOCK -> FALLBACK_EMPTY_BLOCK
@@ -520,8 +595,36 @@ object ProfilesAsk {
             Failure.TIMEOUT -> FALLBACK_TIMEOUT
         }
         is Result.Named ->
-            if (unreachable > 0) "${count(added, "profile")} added · $unreachable not reachable"
+            if (unreachable > 0)
+                "${count(added, "profile")} added · ${named(unreachableNames, unreachable)} not reachable"
             else HostProfiles.line(HostProfiles.Answer.Advertised(result.served, result.default))
+    }
+
+    /**
+     * The names behind "not reachable": up to three, then a count. A count alone told the
+     * owner of #579 that something was wrong and nothing about what to do, and the profile
+     * name is the one word that sends him to the right place on the host.
+     */
+    private fun named(names: List<String>, count: Int): String {
+        val shown = names.take(3)
+        if (shown.isEmpty()) return "$count"
+        if (names.size > shown.size) return shown.joinToString(", ") + " and ${names.size - shown.size} more"
+        return if (shown.size == 1) shown[0] else shown.dropLast(1).joinToString(", ") + " and " + shown.last()
+    }
+
+    /**
+     * The ask line's `reason=`: why this refresh ended the way it did. The status says what
+     * the host answered; this says what the app made of it, which is the half the field log
+     * could not state for #579.
+     */
+    fun reasonOf(result: Result, unreachable: Int = 0): String = when (result) {
+        is Result.Named -> if (unreachable > 0) "partial" else "whole"
+        is Result.Failed -> when (result.failure) {
+            Failure.NO_BLOCK -> "no-block"
+            Failure.EMPTY_BLOCK -> "empty-block"
+            Failure.UNUSABLE -> "unusable"
+            Failure.TIMEOUT -> "timeout"
+        }
     }
 
     private fun count(n: Int, noun: String): String = if (n == 1) "1 $noun" else "$n ${noun}s"

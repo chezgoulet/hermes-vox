@@ -351,6 +351,7 @@ class ProfileDialogs(
             "event=profiles-ask kind=${kind.name.lowercase()} " +
                 "source=${sourceOf(result)} status=${statusOf(result)} ms=$elapsedMs fast=$fastCode " +
                 "answered_by=$answeredBy added=$added unavailable=$unavailable " +
+                "unreachable=$unreachable reason=${ProfilesAsk.reasonOf(result, unreachable)} " +
                 "dropped=${droppedOf(result)} seen=${seenOf(result)}"
         )
         if (activity.isFinishing || activity.isDestroyed) return
@@ -492,6 +493,12 @@ class ProfileDialogs(
     /**
      * Run the probes: one `GET …/v1/models` per proven candidate, at most eight in flight,
      * each with a 10 s budget. A 200 is the only "usable".
+     *
+     * #579: a probe that fails is not immediately called an unreachable profile. A 404 that
+     * is not the host's own missing-profile answer means this gateway serves no
+     * `/p/<name>/…` route at all, and the root `/v1/models` is asked before the profile is
+     * written off — the route that exists, in the words of the issue. Every probe writes one
+     * dated line, because the refresh that produced the owner's failure logged nothing.
      */
     private fun probeAll(probes: List<ProfilesAsk.Probe>, key: String): Map<String, Boolean> {
         if (probes.isEmpty()) return emptyMap()
@@ -502,9 +509,23 @@ class ProfileDialogs(
                 // A probe is already the whole URL, `/v1/models` included. Appending there
                 // is how the picker came to ask `/v1/models/v1/models` and call a working
                 // profile unreachable.
-                val futures = batch.map { p -> pool.submit { out[p.name] = ProfilesAsk.probeSucceeded(statusOfUrl(p.url, key)) } }
+                val futures = batch.map { p ->
+                    pool.submit {
+                        val t0 = System.currentTimeMillis()
+                        val (code, body) = probeOnce(p.url, key)
+                        // Only a route that does not exist is re-asked at the root: the root
+                        // answers 200 for any working gateway, so using it for every failure
+                        // would turn a refused profile into a working one.
+                        val rootStatus = if (ProfilesAsk.rootProbeNeeded(code, body))
+                            probeOnce(HostProfiles.modelsUrl(p.url), key).first else null
+                        val verdict = ProfilesAsk.probeVerdict(
+                            p.name, ProfilesAsk.hostOf(p.url), code, body, rootStatus)
+                        VoxLog.d(ProfilesAsk.probeLine(verdict, System.currentTimeMillis() - t0))
+                        out[p.name] = verdict.reachable
+                    }
+                }
                 for (f in futures) {
-                    try { f.get(ProfilesAsk.PROBE_TIMEOUT_MS + 2_000L, TimeUnit.MILLISECONDS) }
+                    try { f.get(ProfilesAsk.PROBE_TIMEOUT_MS * 2L + 2_000L, TimeUnit.MILLISECONDS) }
                     catch (_: Throwable) { /* the name stays absent = unavailable */ }
                 }
             }
@@ -513,8 +534,12 @@ class ProfileDialogs(
     }
 
 
-    /** One probe at a full URL, with the probe budget. */
-    private fun statusOfUrl(url: String, key: String): Int = try {
+    /**
+     * One probe at a full URL: the status, and the body only when it is not a 200. The body
+     * is what tells a missing profile (`Unknown or unconfigured profile`) apart from a
+     * missing route, so a 404 is read, not just counted.
+     */
+    private fun probeOnce(url: String, key: String): Pair<Int, String> = try {
         val c = URL(url).openConnection() as HttpURLConnection
         try {
             c.requestMethod = "GET"
@@ -525,9 +550,12 @@ class ProfileDialogs(
             val code = c.responseCode
             // A 200 here is the same proof the connect probe uses: this profile exists.
             if (code == 200) ProfileReach.clearedByModels(url)
-            code
+            val body = if (code == 200) "" else runCatching {
+                (c.errorStream ?: c.inputStream).use { it.readBytes().toString(Charsets.UTF_8) }
+            }.getOrDefault("").take(ProfilesAsk.PROBE_BODY_MAX)
+            code to body
         } finally { c.disconnect() }
-    } catch (_: Throwable) { -1 }
+    } catch (_: Throwable) { -1 to "" }
 
     private fun toast(msg: String) = Toast.makeText(activity, msg, Toast.LENGTH_LONG).show()
 }

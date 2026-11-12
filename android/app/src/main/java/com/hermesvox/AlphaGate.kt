@@ -89,6 +89,9 @@ object AlphaGate {
 
     fun masterOn(r: Reader): Boolean = r.getBoolean(KEY_MASTER, DEFAULT_MASTER)
 
+    /** The same question asked of prefs directly, for callers that hold them and not a Reader. */
+    fun masterOn(prefs: SharedPreferences): Boolean = masterOn(reader(prefs))
+
     fun selected(r: Reader, set: FeatureSet): Boolean = r.getBoolean(set.key, false)
 
     /**
