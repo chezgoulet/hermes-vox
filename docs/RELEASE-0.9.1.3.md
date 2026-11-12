@@ -13,9 +13,14 @@ gateway had answered in about two seconds and sat idle; the screen said "The ent
 the microphone took no turn, and barge-in had nothing to hear. `/new` appeared to fix it because
 the next reply was usually longer.
 
-The evidence is a field log: in its 0.9.1 block, **40 replies carried under four seconds of audio
-and 22 of them ran to 126.8–127.1 s**, the turn budget expiring. Of the 83 replies of four seconds
-or more, 9 ran that long.
+The evidence is a field log: in its 0.9.1 block, **twelve replies of 14–50 characters (roughly one
+to three seconds of speech) each held the turn for 126.8–128.8 s**, the turn budget expiring, with
+no error logged. Count it with `scripts/field-log-turns.py LOG --since-field speechEndToRenderDone`.
+*Corrected 2026-11-11:* this note first said "40 replies under four seconds of audio, 22 of them
+ran to 126.8–127.1 s; of the 83 of four seconds or more, 9 ran that long". Those figures do not
+reproduce from the log under any counting rule. The log records no audio length for a streamed
+reply, so "short" here is estimated from the reply's characters; and the long replies that ran
+past two minutes were playing two minutes of speech, not stalled.
 
 Two changes: on Android 12+ the track starts after **a quarter-second** whatever its capacity (the
 capacity stays four seconds — it is the synthesis worker's headroom), and every drain is bounded by

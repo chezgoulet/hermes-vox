@@ -96,6 +96,9 @@ python3 scripts/test_presence_session_report.py 2>&1 | tail -3
 python3 scripts/test_presence_reports.py 2>&1 | tail -3
 # #256: the invention classifier's own tests. The measurement gates nothing; its code is kept honest.
 python3 scripts/test_invention_report.py 2>&1 | tail -3
+# The field-log counter quoted by release notes (G5): its definitions are pinned, because the
+# 0.9.1.3 note quoted a count this script's first version could not reproduce either.
+python3 scripts/test_field_log_turns.py 2>&1 | tail -3
 
 # #221: the app skill (skills/hermes-vox-app/SKILL.md) is the app's self-description,
 # and a skill that disagrees with the code is wrong. The checker verifies every
