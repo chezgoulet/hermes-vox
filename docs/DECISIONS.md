@@ -1413,6 +1413,12 @@ close to the worst size for Supertonic. The concrete candidate fix is therefore 
 chunk cap** — one chunker, one cap per voice, not a second delivery path — which is a settings
 change, not a model change and not a chunker rewrite.
 
+**Superseded the same day, by the model.** Supertonic **3** (`sherpa-onnx-supertonic-3-tts-int8-2026-05-11`)
+does not show the fragment sensitivity at all: 1.7 / 0.8 / 0.8 / 5.1 % where v1.6 read 3.4 / 11.0 /
+22.9 / 15.3 % on the same sentences. **The fix is a model bump, not a cap and not a track change** —
+the 30-character cap is fine when the engine keeps its words at 30 characters. The paragraph below
+is kept because it is what the arithmetic says *if* the cap is ever revisited for another engine.
+
 **The cap is bounded by the playback track, not by taste.** Supertonic speaks at 14.5 chars/s
 against Piper's 20.5 (measured on the same sentences), so a 30-character chunk is 2.1 s of its
 audio against Piper's 1.5 s. The track is 4 s, which makes **45 characters (≈3.1 s)** the largest

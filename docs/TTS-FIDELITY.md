@@ -86,6 +86,46 @@ the engine is asked to speak changes. **So the loss is per synthesis, not per jo
 Supertonic's behaviour on short fragments, and the app's 30-character chunk cap — right for Piper,
 which does not care — hands it about the worst input it can get.
 
+## Supertonic 3 — the defect belongs to v1.6, and it is fixed upstream
+
+The bench above ran on `sherpa-onnx-supertonic-tts-int8-2026-03-06` (bundle `tts_version`
+v1.6.0). The next thing to try was the newer model, because Supertonic 3's release note says
+*"improved reading accuracy … fewer repeat/skip failures"* — which is a description of this
+defect. Same script, same ten sentences, same control, same method:
+
+| Pieces | Supertonic v1.6 | Supertonic 3 | Piper (control, v3 run) |
+|---|---|---|---|
+| 1 | 3.4 % | **1.7 %** | 3.4 % |
+| 2 | 11.0 % | **0.8 %** | 4.2 % |
+| 3 | 22.9 % | **0.8 %** | 11.0 % |
+| 4 | 15.3 % | **5.1 %** | 2.5 % |
+
+**The fragment sensitivity is gone.** v1.6 went from 4 lost words on one piece to 27 on three;
+v3 loses one word at two pieces and one at three. At the sizes the app actually feeds it, the
+newer model is *better than the control voice*, and better than its own one-piece rate — which is
+what "fewer skip failures" means in numbers.
+
+**So the fix is a model bump, not a chunker change.** The per-engine chunk cap that D48 proposed
+is not needed, and neither is a larger playback track: the 30-character cap is fine when the
+engine keeps its words at 30 characters. What was a chunking problem turns out to have been a
+model-version problem, and the honest thing is to say so rather than ship the workaround.
+
+What a bump touches, and what is still open:
+
+- **the bundle**: `sherpa-onnx-supertonic-3-tts-int8-2026-05-11`, 128,774,318 bytes,
+  sha256 `82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427` — 122.8 MB against the
+  current 84.7 MB, so the download row in Settings grows;
+- **the runtime**: the bundle is dated 2026-05-11 and the app pins `sherpa-onnx-1.13.6`
+  (published 2026-08-18), so the pinned runtime post-dates the model and should load it. That is
+  an argument from dates, not a test on the device — the test is one render on the phone;
+- **the voices**: `voice.bin` is byte-size identical between the two bundles (517,168 bytes), so
+  the ten-voice surface should carry over — also to be confirmed on device;
+- **the licence**: the bundle ships an **MIT** LICENSE (Supertone Inc.), while `ModelCatalog.kt`
+  describes this entry as *"model: OpenRAIL-M"*. One of the two is wrong and neither should be
+  asserted until the upstream model card is read;
+- **French**: v3 supports 31 languages including `fr`. That is a first-party French voice in the
+  same engine as the ten-voice surface, and it belongs in 0.10's localisation plan (#518).
+
 ## What it does not say
 
 - Ten sentences, 118 words a side. The effect is large enough to be worth acting on and small
