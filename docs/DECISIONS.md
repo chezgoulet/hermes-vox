@@ -1410,10 +1410,20 @@ chunks changed nothing (17 lost, was 15).
 
 The app's `StreamTextChunker.CHUNK_CAP_CHARS = 30` is tuned for Piper, which does not care, and is
 close to the worst size for Supertonic. The concrete candidate fix is therefore a **per-engine
-chunk cap** — 60, then 90 characters, measured the same way — which is a settings change, not a
-model change and not a chunker rewrite. *(This decision was first written saying "the boundary is
-the defect, the model is not"; the gap and sweep experiments in `docs/TTS-FIDELITY.md` replaced
-that reading rather than being allowed to sit beside it.)*
+chunk cap** — one chunker, one cap per voice, not a second delivery path — which is a settings
+change, not a model change and not a chunker rewrite.
+
+**The cap is bounded by the playback track, not by taste.** Supertonic speaks at 14.5 chars/s
+against Piper's 20.5 (measured on the same sentences), so a 30-character chunk is 2.1 s of its
+audio against Piper's 1.5 s. The track is 4 s, which makes **45 characters (≈3.1 s)** the largest
+cap that fits today with headroom; 60 characters is ≈4.1 s and would recreate the #515 class of
+defect, where the next chunk waits for the previous one to finish playing. Anything past 45 needs a
+larger track in the same change, and the bench has to measure the gaps as well as the words.
+
+*(This decision was first written saying "the boundary is the defect, the model is not"; the gap
+and sweep experiments in `docs/TTS-FIDELITY.md` replaced that reading rather than being allowed to
+sit beside it. It then said the cap should be tried at 60, then 90, which the same measurements
+show cannot fit the track.)*
 
 **What it does not do.** It does not remove Supertonic, does not change the default voice, and does
 not claim the ten-sentence bench is decisive: the script is committed so a wider run can settle the
