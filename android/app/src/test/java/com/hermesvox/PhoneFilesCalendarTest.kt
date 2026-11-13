@@ -257,6 +257,22 @@ class PhoneFilesCalendarTest {
         assertNull("the platform was never asked to look it up", fake.seenFile)
     }
 
+    @Test fun an_off_group_refuses_not_granted_and_names_the_group() {
+        val file = call(
+            mapOf("action" to "file_read", "name" to "notes.txt"),
+            grants = PhoneGrants.ALL_OFF,
+        )
+        assertFalse(file.ok)
+        assertEquals(PhoneReason.NOT_GRANTED, file.reason)
+        assertTrue("the refusal names the group", file.detail!!.contains("Files"))
+        assertNull("nothing reached the platform", fake.seenFile)
+
+        val calendar = call(mapOf("action" to "agenda"), grants = PhoneGrants.ALL_OFF)
+        assertFalse(calendar.ok)
+        assertEquals(PhoneReason.NOT_GRANTED, calendar.reason)
+        assertTrue("the refusal names the group", calendar.detail!!.contains("Calendar"))
+    }
+
     @Test fun file_offer_hands_back_the_bridge_capability_not_the_bytes() {
         fake.folders = listOf(folder)
         fake.handoff = PhoneEngine.PhonePlatform.FileHandoff.Ready(
