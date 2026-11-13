@@ -19,7 +19,8 @@ one session is one sitting of focused work.
 2. **Record the good runs.** We have kept the failures and thrown away the successes (#596), so
    every argument about how the product feels rests on a bad day and a robot. The instrument comes
    before the features.
-3. **Hone the repo to what is real and useful.** 170 documents in `docs/`, of which a large share
+3. **Hone the repo to what is real and useful.** 184 documents in `docs/` as audited on 2026-11-13 (it was 170 when
+this plan was written, so the count is itself evidence), of which a large share
    are build briefs for releases that shipped months ago. Truth first, because a stale document is
    worse than no document.
 4. **Presence gets a fundamental design review, not a repair.** The current answer — a 2.6 GB
@@ -104,7 +105,7 @@ than none because it makes a session re-derive what it already had.
    `PLAN-0[0-9]*` (19 files by pattern), `HANDOFF-*`, `SPEC-*`, `PLAN-0.9.1`, `PLAN-0.9.2`,
    `PLAN-0.9.x-to-1.0`, `PLAN-1.0`, `PLAN-2.0`, `0.9.1-SCOPE`, `BUDGETS-0.9.1`,
    `BARGE-WHY-0.7-WORKED`, `BARGE-REGRESSION-ANALYSIS`, `LOGGING-BLIND-SPOTS-AUDIT-2026-09-05`,
-   `INVESTIGATION-px9-trueblack-aura`, `MATRIX.md`. Roughly 40 of 170 files.
+   `INVESTIGATION-px9-trueblack-aura`, `MATRIX.md`. Roughly 45 of 184 files, and the number grows between audits.
 4. **DOC-TRUTH checks only current documents.** An archived file cannot fail the gate; a current
    file must pass it.
 5. **Dead code gets an inventory, not a reflex.** Every candidate is listed with its callsite count

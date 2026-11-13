@@ -125,7 +125,8 @@ claim.
 times the previous actual length, one clip ahead) — this is the prosody fix, and it is why a reply
 stops resetting its intonation every two seconds; per-engine speech settings; the **Supertonic 3**
 bundle (`#589`) verified on the bench phone first, which is the "stops swallowing words" half;
-semantic endpointing off by default with its dead `DEFAULT_ON`/`KEY` constants deleted;
+semantic endpointing off by default — **flip `SemanticEndpoint.DEFAULT_ON`, do not delete it**: it is read at
+`VoiceController.kt:960` alongside `KEY`, so a deletion breaks the call path;
 `#569`'s arms as the input.
 
 **Rides along, no claim:** the **per-turn timeline** (`event=tl`: speech-end, sent, first token, first
