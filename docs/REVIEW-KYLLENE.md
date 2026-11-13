@@ -207,6 +207,107 @@ rejected, desktop furniture a voice client cannot use, or a gap we already close
 
 ---
 
+---
+
+## 8. Against our own research, not against their code
+
+The shortlist in §7 is ranked by effort and effect. This section tests the same findings against
+what we already believe an excellent voice agent *is* — `docs/RESEARCH-2026-10-voice-agents.md`,
+D18's cadence target, and the four consequences that research drew. The question is not "do they
+have it" but "does their reasoning agree with ours, and if not, who is right".
+
+### Where they converge with findings we had already made, and implement them better than we do
+
+**Recovery after an interruption (research §4).** Our checkpoint says we have "no notion of any of
+the three" recovery criteria: resume the workflow, address the interjection, do not re-deliver what
+was heard. Kyllene has the third one *mechanically*: a per-reply voiced watermark, playback held
+rather than stopped, and a rejected trip resuming mid-word. That is the implementation our finding
+implies and we never built. They are silent on the first two — they resume the **reply**, not the
+**task** — which is exactly where our agentic angle is ahead, and worth keeping in view: nobody in
+this pair has built the recovery that matters for a long tool run.
+
+**TTS must begin before the reply is complete (D18).** Our decision says the endpointer must commit
+early and TTS must start before the reply finishes. Their chunk shaping — short first piece, then
+each piece growing to 3× the actual previous length, one clip pre-synthesised ahead — is that
+sentence as an algorithm. We have the principle and not the mechanism; they have the mechanism
+without having written the principle down.
+
+**Overlap is a *class*, not a level (research §3).** Our checkpoint states the field's
+polarisation: "trigger-happy VAD" versus "unacceptable response delays", and concludes the missing
+dimension is the class of the sound. Kyllene's barge gate is **still a level gate** — adaptive,
+hysteretic, sustained — so on our own reading of the literature they are at the trigger-happy pole
+with better engineering. But two devices of theirs converge on §3 from a different direction and
+deserve to be read as evidence:
+
+- **transcript similarity** rejects a trip when the captured audio transcribes to what is being
+  spoken. That is classification, but of *self-echo vs user*, not of *backchannel vs interruption*.
+  It answers a question our §3 framing never separated out, and it is the precondition for any
+  barge policy in a room where the phone can hear itself.
+- **the 900 ms continued-speech test** is a duration proxy for class: a short syllable resumes the
+  reply, sustained speech cancels it. That happens to produce the §3 outcome (a backchannel does
+  not kill the reply) without ever predicting the class. It is a cheap heuristic that gets the
+  behaviour right — not the same thing as the finding, and not to be mistaken for it.
+
+**AGC defeats endpointing (research §5 and D18).** Their recorder deliberately disables automatic
+gain control, with the reason stated: AGC lifts the room hum until every pause reads as talking and
+end-of-speech is never found. That is our §5 conclusion arrived at from a bug, and it is worth
+recording as confirmation.
+
+### Where they diverge, and our research is right
+
+**Their endpoint pause cannot meet D18.** They wait 1.25 s of silence before declaring the turn
+over, with 12 s and 60 s caps. D18 forbids exactly that shape: at a 700 ms p50 speech-end-to-audio
+target you cannot wait out a silence threshold and still be natural — the endpointer commits early
+and is occasionally wrong, which is what the provisional-endpoint frame exists for. They can afford
+1.25 s because their reply comes from a cloud model with its own round-trip; we cannot, and copying
+their number would quietly repeal D18.
+
+**Their endpointing is a policy, not a prediction.** §5 says endpointing is a prediction problem
+and that backchannel timing is continuous and language-specific. Their state machine is a good
+policy over levels and durations; it is not the architecture our research points at. Adopt the
+hysteresis, the two confirmation windows, the idle/max caps and the manual commit — as an interim,
+not as the answer.
+
+**Their barge-in has no notion of addressing the interjection.** §4 asks whether the agent addresses
+what the user said when they cut in. Theirs cancels the reply and takes the new turn; the
+interjection is not treated as content to be answered specially. Ours is not better — we have no
+recovery at all — but the finding stays open, and this is the clearest place where "port their
+device" would leave the actual goal untouched.
+
+### Where our corpus had a blind spot, and they fill it
+
+None of our four findings mention any of these, and each decides whether the policies work in a
+real room:
+
+- **the first syllable.** An 800 ms pre-roll ring buffer flushed into the recording at the trip.
+  Our research discusses *when* to interrupt and *what to do after*, never *whether the beginning
+  survived*.
+- **a manual commit** ("send now") for wind, cars and any room where the pause never comes. D18's
+  early-commit design has a failure mode — being wrong — and this is the human override for it.
+- **a spoken approval grammar that fails closed**: allow-list per choice, any hedge or question
+  means ask again, no approval while the device is locked. Approval is the one place a misheard yes
+  is unrecoverable, and our corpus talks about latency and interruption but not about consent.
+- **the self-echo class.** Separating "the phone heard itself" from "the user spoke" is a
+  precondition for measuring anything else about barge-in, and it is absent from our findings.
+
+### The comparison in one line
+
+They have solved **the physics** — echo, pre-roll, chunk shaping, resume — and not **the
+linguistics** — what kind of sound an overlap is, what the user meant by it, and what the agent owes
+them afterwards. Our corpus names the linguistics and has not built the physics. The shortlist in §7
+is ordered by physics first for a reason: the linguistics cannot be measured while the microphone is
+still arguing with the speaker.
+
+### What that changes about the shortlist
+
+Nothing is removed, and two items move:
+
+- **Echo rejection rises above the adaptive bar.** A barge policy whose input is contaminated by
+  its own output is measuring the wrong signal; fix the signal before tuning the threshold.
+- **Recovery splits in two.** "Do not re-deliver what was heard" (theirs, mechanical, half a day)
+  and "resume the task and address the interjection" (ours, unbuilt by anyone here — needs an issue
+  of its own, and it is the honest answer to §4 rather than a port).
+
 ## Appendix — where the evidence is
 
 - Protocol and surface decision: `docs/hermes-protocol-research.md:10-25, 59-70`.
