@@ -6,6 +6,7 @@
      nothing and would describe a value unrelated to that profile. Settings adds it to the
      dialog it controls; the editor never inflates it. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/d_mtls_block"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
@@ -17,7 +18,7 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Client certificate (mTLS)"
+        android:text="@string/mtls_cert_title"
         android:textAllCaps="true"
         android:textColor="@color/hv_text_dim"
         android:textSize="12sp" />
@@ -36,7 +37,7 @@
             android:layout_weight="1"
             android:ellipsize="middle"
             android:singleLine="true"
-            android:text="None (system default)"
+            tools:text="None (system default)"
             android:textColor="@color/hv_text"
             android:textSize="14sp" />
 
@@ -45,7 +46,7 @@
             style="@style/Widget.AppCompat.Button.Borderless"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Choose"
+            android:text="@string/mtls_cert_choose"
             android:textColor="@color/hv_cyan"
             android:textSize="14sp" />
 
@@ -54,7 +55,7 @@
             style="@style/Widget.AppCompat.Button.Borderless"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Clear"
+            android:text="@string/mtls_cert_clear"
             android:textColor="@color/hv_text_dim"
             android:textSize="14sp"
             android:visibility="gone" />
