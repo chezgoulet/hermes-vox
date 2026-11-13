@@ -61,6 +61,33 @@ class CommandGlyphTest {
         }
     }
 
+    // ---- drawn for the entry's size, not scaled down from a poster ----------
+
+    /**
+     * These are 24 dp drawings — the entry's glyph, and the size the Appearance row shows
+     * them at — so the numbers are held to that size rather than to a poster. At 24 dp a
+     * stroke under 1.6 units greys out to a hairline, a drawing that does not fill the grid
+     * looks timid beside its neighbours, and a drawing of many small parts turns to noise
+     * (the caduceus is the one that taught this: a second turn of each snake read as a knot).
+     * Every glyph is therefore one optical band, at most eight parts, and at least 60 % of
+     * the grid across.
+     */
+    @Test fun theDrawingsAreMadeForTheEntrysSize() {
+        for (icon in icons) {
+            val shapes = CommandGlyph.shapes(icon)
+            val (lo, hi) = bounds(icon)
+            assertTrue("${icon.label} is drawn small in the grid (${"%.1f".format(hi - lo)} of 24 dp)",
+                hi - lo >= CommandGlyph.GRID * 0.6f)
+            for (s in shapes) {
+                if (s is CommandGlyph.Disc) continue     // a filled dot has no stroke to weigh
+                assertTrue("${icon.label} has a ${s.weight} u stroke — a hairline at 24 dp",
+                    s.weight in 1.6f..2.1f)
+            }
+            assertTrue("${icon.label} spends ${shapes.size} parts on a 24 dp glyph",
+                shapes.size <= 8)
+        }
+    }
+
     // ---- the ink -------------------------------------------------------------
 
     @Test fun theGlyphsArePaintedInTheThemesInkNotALiteralColour() {

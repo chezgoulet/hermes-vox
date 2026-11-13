@@ -132,25 +132,29 @@ object CommandGlyph {
     fun shapes(icon: Icon): List<Shape> = when (icon) {
         Icon.STEVE -> {
             val w = 1.9f
-            val loop = 2.9f
+            val loop = 3.2f
+            // The loops cross the square's corners rather than kissing them: at 24 dp a
+            // tangent join reads as four loose dots beside a box.
             listOf(
-                Poly(w, listOf(Pt(9.2f, 9.2f), Pt(14.8f, 9.2f), Pt(14.8f, 14.8f), Pt(9.2f, 14.8f)), closed = true),
-                Arc(w, Pt(6.3f, 6.3f), loop, loop, 0f, 360f),
-                Arc(w, Pt(17.7f, 6.3f), loop, loop, 0f, 360f),
-                Arc(w, Pt(6.3f, 17.7f), loop, loop, 0f, 360f),
-                Arc(w, Pt(17.7f, 17.7f), loop, loop, 0f, 360f),
+                Poly(w, listOf(Pt(9.4f, 9.4f), Pt(14.6f, 9.4f), Pt(14.6f, 14.6f), Pt(9.4f, 14.6f)), closed = true),
+                Arc(w, Pt(6.4f, 6.4f), loop, loop, 0f, 360f),
+                Arc(w, Pt(17.6f, 6.4f), loop, loop, 0f, 360f),
+                Arc(w, Pt(6.4f, 17.6f), loop, loop, 0f, 360f),
+                Arc(w, Pt(17.6f, 17.6f), loop, loop, 0f, 360f),
             )
         }
         Icon.BILL -> {
             val w = 1.8f
+            // Three letterforms on one cap height (7..17): the C's bowl and the D's are the
+            // same height as the M's stems, so the wordmark is not a C with two big brothers.
             listOf(
                 // C — an open ring, opening to the right.
-                Arc(w, Pt(4.9f, 12f), 3.1f, 4.0f, 55f, 250f),
+                Arc(w, Pt(5.4f, 12f), 3.4f, 5f, 50f, 260f),
                 // M — down, to the middle, out, up.
-                Poly(w, listOf(Pt(8.6f, 16f), Pt(8.6f, 8f), Pt(11.9f, 13f), Pt(15.2f, 8f), Pt(15.2f, 16f))),
+                Poly(w, listOf(Pt(9.4f, 17f), Pt(9.4f, 7f), Pt(12.6f, 13.4f), Pt(15.8f, 7f), Pt(15.8f, 17f))),
                 // D — stem plus a half-round bowl.
-                Poly(w, listOf(Pt(17.2f, 8f), Pt(17.2f, 16f))),
-                Arc(w, Pt(17.2f, 12f), 5.0f, 4.0f, -90f, 180f),
+                Poly(w, listOf(Pt(17.8f, 7f), Pt(17.8f, 17f))),
+                Arc(w, Pt(17.8f, 12f), 4f, 5f, -90f, 180f),
             )
         }
         Icon.LINUS -> {
@@ -164,22 +168,23 @@ object CommandGlyph {
             val w = 1.7f
             listOf(
                 // the staff
-                Poly(w, listOf(Pt(12f, 6.2f), Pt(12f, 18.6f))),
+                Poly(w, listOf(Pt(12f, 5.8f), Pt(12f, 19.2f))),
                 // the bead at its top
-                Disc(Pt(12f, 4.5f), 1.25f),
+                Disc(Pt(12f, 4.4f), 1.2f),
                 // the wings, swept up and out from the staff
-                Curve(w, listOf(Pt(12f, 7.6f), Pt(9.2f, 5.3f), Pt(5.8f, 5.8f), Pt(4.1f, 7.9f))),
-                Curve(w, listOf(Pt(12f, 7.6f), Pt(14.8f, 5.3f), Pt(18.2f, 5.8f), Pt(19.9f, 7.9f))),
-                // the two snakes, interwoven around the staff
+                Curve(w, listOf(Pt(12f, 7.2f), Pt(9f, 5.2f), Pt(5.6f, 5.6f), Pt(3.8f, 7.6f))),
+                Curve(w, listOf(Pt(12f, 7.2f), Pt(15f, 5.2f), Pt(18.4f, 5.6f), Pt(20.2f, 7.6f))),
+                // the two snakes: one turn each, crossing on the staff, so at 24 dp the
+                // wave is wide enough to survive — a second turn reads as a knot.
                 Curve(w, listOf(
-                    Pt(12f, 8.8f),
-                    Pt(8.4f, 10f), Pt(8.4f, 11.6f), Pt(12f, 12.8f),
-                    Pt(15.6f, 14f), Pt(15.6f, 16f), Pt(12f, 17.6f),
+                    Pt(12f, 8.6f),
+                    Pt(16.6f, 9.8f), Pt(16.6f, 12.2f), Pt(12f, 13.4f),
+                    Pt(7.4f, 14.6f), Pt(7.4f, 17f), Pt(12f, 19.4f),
                 )),
                 Curve(w, listOf(
-                    Pt(12f, 8.8f),
-                    Pt(15.6f, 10f), Pt(15.6f, 11.6f), Pt(12f, 12.8f),
-                    Pt(8.4f, 14f), Pt(8.4f, 16f), Pt(12f, 17.6f),
+                    Pt(12f, 8.6f),
+                    Pt(7.4f, 9.8f), Pt(7.4f, 12.2f), Pt(12f, 13.4f),
+                    Pt(16.6f, 14.6f), Pt(16.6f, 17f), Pt(12f, 19.4f),
                 )),
             )
         }
