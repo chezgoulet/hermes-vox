@@ -36,17 +36,22 @@ MD="$OUT_DIR/$LABEL.md"
 JSON="$OUT_DIR/$LABEL.json"
 RAW="$(mktemp -t verdict-f8-XXXXXX.log)"
 
+# The ten. Rewritten 2026-11-13: the first list asked for the calendar, an email draft, a
+# send and a trail report — all of which need phone tools, which default OFF. The owner's
+# verdict on it was "didn't make sense to say" — a script a gate-off build cannot answer
+# measures the tools, not the voice. These ten need nothing but ears and a conversation.
+# Nothing comparability-wise is lost: F8 had never produced a row.
 UTTERANCES=(
-  "What's on my calendar today?"
-  "Decline the eleven o'clock and tell them I'm travelling."
-  "Draft an email to Sam about the dock delivery, keep it short."
-  "Change 'Friday' to 'Tuesday' in that draft."
-  "Send it, then block an hour for the drive."
-  "What are the trail conditions at the lodge right now?"
-  "How many unread messages do I have?"
-  "Cancel that — stop, I changed my mind."
-  "Read me the last three lines of what you just wrote."
-  "Do the thing that failed a minute ago, but slower."
+  "What's the weather going to be like this afternoon?"
+  "Tell me about the last time the power went out here."
+  "What would you do to prepare the lodge for a hard frost?"
+  "Say that again, but in one sentence."
+  "What's forty-seven times twelve?"
+  "Cancel that — I changed my mind. Tell me something else entirely."
+  "What did you just say?"
+  "Read that back to me, slowly."
+  "Why did you answer that way?"
+  "Say goodbye in a way I'd remember."
 )
 WHAT_IT_TESTS=(
   "a plain read, one tool"
