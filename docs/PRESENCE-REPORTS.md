@@ -1,9 +1,39 @@
 # Presence reports (#417)
 
 A report is worth reading only if the configuration travels with it. `Settings → Presence →
-Advanced → Copy diagnostic summary` puts one fenced block on the clipboard; the issue template
-asks for it, and `scripts/presence-reports.py` parses it. Prose around the block is welcome;
-the block is what gets counted.
+Advanced → Copy diagnostic summary` and the `/diagnostics` command put one fenced block on the
+clipboard; the issue template asks for it, and `scripts/presence-reports.py` parses it. Prose
+around the block is welcome; the block is what gets counted.
+
+## Two entry points, one block
+
+The block is built in one place (`PresenceDiagnostic.block`, filled in by
+`PresenceDiagnosticCollect.collect`) and put on the clipboard by one function
+(`PresenceDiagnosticCollect.copy`). Both entry points call that function with the same prefs, so
+the text is byte-identical — the aggregator parses one shape, not two.
+
+| Entry point | Where | What it says |
+|---|---|---|
+| Settings action | `Settings → Presence → Advanced → Copy diagnostic summary` | a toast: *"Diagnostic summary copied — safe to paste in a public report"* |
+| Command | `/diagnostics`, under **The agent** in the commands sheet | one line: *"Diagnostic summary copied"* — no dialog |
+
+`/diagnostics` is listed only while the switch below is on. A command that cannot run is not
+listed, the same principle as the permission spine's schema following the grants; the `/help`
+card is written from the same gates, so it never teaches a command the sheet would not show.
+
+## The switch
+
+`Settings → About & Diagnostics → Diagnostic summary` is the gate, beside *Log spoken transcript
+(privacy)* and *Verbose file log (debug)*, stored as `debug_diag_summary`, **off by default**.
+
+Its description is the promise: *"Adds a command that copies a report block for a bug report;
+contains no conversations"*. The person turning it on is about to paste the result in public, so
+the row says what it does and what it does not carry. Everything below — *What is deliberately
+excluded* — is that promise kept.
+
+Nothing turns it on for you: not a first run, not another preference. The tap is the consent.
+Restoring *About & Diagnostics* to its defaults writes the shipped value (off) with everything
+else in that section, so the command leaves the sheet with the rest of the debug switches.
 
 ## The block
 

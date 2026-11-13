@@ -44,6 +44,9 @@ class CommandsSheet(
     private val act: AppCompatActivity,
     /** #284: what the app knows about the moment — the screen leads with what fits it. */
     private val situation: () -> CommandCatalog.Situation,
+    /** #417: which gated commands are on right now, read when the sheet is shown. A command
+     *  whose switch is off is not a row: what cannot run is not listed. */
+    private val gates: (DiagnosticSummary.Gate) -> Boolean,
     private val run: (CommandCatalog.Command, (Boolean) -> Unit) -> Unit,
 ) {
     private var dialog: Dialog? = null
@@ -139,13 +142,13 @@ class CommandsSheet(
                 list.addView(header("Fits now"))
                 for (c in now) list.addView(row(c, d, chipKey = "now:" + c.name))
             }
-            for ((group, cmds) in CommandCatalog.grouped()) {
+            for ((group, cmds) in CommandCatalog.grouped(gates = gates)) {
                 list.addView(header(group.label))
                 for (c in cmds) list.addView(row(c, d))
             }
             return
         }
-        val hits = CommandCatalog.search(query)
+        val hits = CommandCatalog.search(query, gates)
         list.addView(header(if (hits.isEmpty()) "No command for that — try asking the agent" else "Matches"))
         for (c in hits) list.addView(row(c, d))
     }
@@ -244,7 +247,7 @@ class CommandsSheet(
     private fun paint(key: String) {
         val chip = chips[key] ?: return
         val name = key.removePrefix("now:")
-        val c = CommandCatalog.find(name) ?: return
+        val c = CommandCatalog.find(name, gates) ?: return
         val s = state[name] ?: CommandCatalog.RunState.IDLE
         val elapsed = if (s == CommandCatalog.RunState.RUNNING)
             SystemClock.elapsedRealtime() - (startedAt[name] ?: SystemClock.elapsedRealtime()) else 0L

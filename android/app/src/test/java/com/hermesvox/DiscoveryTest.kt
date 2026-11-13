@@ -27,7 +27,7 @@ class DiscoveryTest {
     }
 
     @Test fun aBlankQueryIsEverythingAndNonsenseIsNothing() {
-        assertEquals(CommandCatalog.ALL, CommandCatalog.search("  "))
+        assertEquals(CommandCatalog.ALL, CommandCatalog.search("  ", CommandCatalog.ALL_GATES_OPEN))
         assertTrue(CommandCatalog.search("zzqx").isEmpty())
     }
 

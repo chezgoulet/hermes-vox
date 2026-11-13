@@ -2263,8 +2263,16 @@ open class MainActivity : AppCompatActivity() {
         CommandsSheet(this, situation = {
             CommandCatalog.Situation(connected = session != null && !lastTurnFailed,
                 lastTurnFailed = lastTurnFailed, sessionTurns = LatencyStats.sessionTurns())
-        }) { c, done -> runCommand(c, done) }
+        }, gates = ::commandGate) { c, done -> runCommand(c, done) }
     }
+
+    /**
+     * #417: the switches behind commands, as the sheet asks for them. Read per call, never
+     * remembered: the diagnostic summary's switch lives in Settings, and the commands screen
+     * must see it when the person comes back.
+     */
+    private fun commandGate(g: DiagnosticSummary.Gate): Boolean =
+        g.open { key, default -> prefs.getBoolean(key, default) }
     // #284: the last turn failed (not an interruption) — the screen and the line offer the fix.
     private var lastTurnFailed = false
     private var stuckShownThisCall = false
@@ -2517,6 +2525,15 @@ open class MainActivity : AppCompatActivity() {
             "/new" -> newSession(onDone = done)
             "/reconnect" -> reconnect(done)
             "/clear" -> newSession(ConversationReset.Trigger.CLEAR, done)
+            // #417: one block, one builder — the same copy call the Settings action makes, so
+            // the text cannot drift. The sheet does not list it while the switch is off; a sheet
+            // opened before the switch was turned off must not copy either.
+            DiagnosticSummary.COMMAND -> {
+                if (!DiagnosticSummary.enabled(prefs)) { done(false); return }
+                val ok = PresenceDiagnosticCollect.copy(this, prefs)
+                setStatus(if (ok) DiagnosticSummary.COPIED else DiagnosticSummary.COPY_FAILED, true)
+                done(ok)
+            }
             else -> showHelpCard()   // /help
         }
     }
@@ -2678,7 +2695,7 @@ open class MainActivity : AppCompatActivity() {
     private fun showHelpCard() {
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Commands")
-            .setMessage(CommandCatalog.helpText())   // #226: written from the catalogue, never out of step
+            .setMessage(CommandCatalog.helpText(::commandGate))   // #226: written from the catalogue, never out of step — and from the same gates as the sheet (#417)
             .setPositiveButton("OK", null).show()
     }
 

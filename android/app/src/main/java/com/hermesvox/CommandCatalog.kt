@@ -56,6 +56,10 @@ object CommandCatalog {
         val kind: Kind,
         /** #284: the words a person uses for what they want, not for the command. */
         val keywords: List<String> = emptyList(),
+        /** #417: the switch that must be on for the command to exist at all. A command that
+         *  cannot run is not listed — the same principle as the permission spine's schema
+         *  following the grants ([DiagnosticSummary.Gate]). */
+        val gate: DiagnosticSummary.Gate? = null,
         /** Whether the sheet lists it. `/help` answers a typed or spoken "/help", but on the
          *  sheet it would be a row that opens a copy of the sheet. Search still finds it. */
         val listed: Boolean = true,
@@ -98,6 +102,14 @@ object CommandCatalog {
             cost = null,   // it asks and reports; nothing changes
             category = Category.INSPECT, kind = Kind.CARD,
             listOf("is it working", "server", "gateway", "up", "down", "version", "status")),
+        // #417: behind Settings → About & Diagnostics → Diagnostic summary. Inline: it copies
+        // here and says so on the row. It reads settings and measured numbers; it changes nothing.
+        Command(DiagnosticSummary.COMMAND, emptyList(), Group.AGENT,
+            effect = "Copy a report block for a bug report",
+            cost = null,
+            category = Category.INSPECT, kind = Kind.INLINE,
+            listOf("bug", "report", "diagnostic", "diagnostics", "issue", "support", "summary", "copy"),
+            gate = DiagnosticSummary.Gate.DIAGNOSTIC_SUMMARY),
         Command("/help", emptyList(), Group.AGENT,
             effect = "What each command does",
             cost = null,
@@ -123,17 +135,37 @@ object CommandCatalog {
         keywords = listOf("share", "file", "clipboard", "attach", "document", "send file"),
     )
 
-    /** The command a typed or spoken name means, by its name or an alias. */
-    fun find(name: String): Command? {
+    /** The command a typed or spoken name means, by its name or an alias. A gated command is
+     *  reachable only while its switch is on: [gates] answers per [DiagnosticSummary.Gate],
+     *  closed by default so a caller that forgets cannot resurrect a command that is off. */
+    fun find(
+        name: String,
+        gates: (DiagnosticSummary.Gate) -> Boolean = { false },
+    ): Command? {
         val n = name.trim().lowercase()
-        return (ALL + SHARE).firstOrNull { it.name.lowercase() == n || n in it.aliases }
+        return (ALL + SHARE).firstOrNull {
+            (it.name.lowercase() == n || n in it.aliases) && available(it, gates)
+        }
     }
 
+    /** Whether [c] exists right now. An ungated command always does. */
+    fun available(c: Command, gates: (DiagnosticSummary.Gate) -> Boolean = { false }): Boolean =
+        c.gate?.let { gates(it) } ?: true
+
+    /** Every gate open — for tests and for anything that must see the whole catalogue. The
+     *  screen itself reads the prefs, never this. */
+    val ALL_GATES_OPEN: (DiagnosticSummary.Gate) -> Boolean = { true }
+
     /** The sheet in screen order: groups in [Group] order, listed commands in catalogue order.
-     *  [all] includes the unlisted ones (the /help card is written from every command). */
-    fun grouped(all: Boolean = false): List<Pair<Group, List<Command>>> =
-        Group.values().map { g -> g to ALL.filter { it.group == g && (all || it.listed) } }
-            .filter { it.second.isNotEmpty() }
+     *  [all] includes the unlisted ones (the /help card is written from every command). A gated
+     *  command is left out unless its switch is on, so the sheet never lists what cannot run. */
+    fun grouped(
+        all: Boolean = false,
+        gates: (DiagnosticSummary.Gate) -> Boolean = { false },
+    ): List<Pair<Group, List<Command>>> =
+        Group.values().map { g ->
+            g to ALL.filter { it.group == g && (all || it.listed) && available(it, gates) }
+        }.filter { it.second.isNotEmpty() }
 
     /** Whether the row can report this command's own progress. A card command's work happens
      *  in the view it opens, so its row says where to look instead of showing a state it
@@ -168,9 +200,12 @@ object CommandCatalog {
      * the effect line and each command's keywords — as well as its name, so "it's slow" finds
      * /compress and "can't reach it" finds /reconnect. A blank query is the whole catalogue.
      */
-    fun search(query: String): List<Command> {
+    fun search(
+        query: String,
+        gates: (DiagnosticSummary.Gate) -> Boolean = { false },
+    ): List<Command> {
         val q = query.trim().lowercase().removePrefix("/")
-        if (q.isEmpty()) return ALL
+        if (q.isEmpty()) return ALL.filter { available(it, gates) }
         val words = q.split(Regex("[^a-z0-9']+")).filter { it.length >= 2 }
         fun score(c: Command): Int {
             var s = 0
@@ -185,7 +220,8 @@ object CommandCatalog {
             }
             return s
         }
-        return (ALL + SHARE).map { it to score(it) }.filter { it.second > 0 }
+        return (ALL + SHARE).filter { available(it, gates) }.map { it to score(it) }
+            .filter { it.second > 0 }
             .sortedByDescending { it.second }.map { it.first }
     }
 
@@ -209,8 +245,11 @@ object CommandCatalog {
         else -> emptyList()
     }
 
-    /** The /help card, written from the catalogue so the two cannot disagree. */
-    fun helpText(): String = grouped(all = true).joinToString("\n\n") { (g, cmds) ->
+    /** The /help card, written from the catalogue so the two cannot disagree — and from the
+     *  same gates, so it never teaches a command the sheet would not show. */
+    fun helpText(
+        gates: (DiagnosticSummary.Gate) -> Boolean = { false },
+    ): String = grouped(all = true, gates = gates).joinToString("\n\n") { (g, cmds) ->
         g.label + "\n" + cmds.joinToString("\n") { c ->
             (listOf(c.name) + c.aliases).joinToString(" ") + " — " + c.effect
         }

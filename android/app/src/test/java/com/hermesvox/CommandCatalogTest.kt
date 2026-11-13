@@ -35,7 +35,9 @@ class CommandCatalogTest {
     }
 
     @Test fun groupsAreInScreenOrderAndNoneIsEmpty() {
-        val g = CommandCatalog.grouped()
+        // Structural claim about the catalogue: every listed command has a home. Which of them
+        // is reachable is the switches' business (#417), so the gates are asked open here.
+        val g = CommandCatalog.grouped(gates = CommandCatalog.ALL_GATES_OPEN)
         assertEquals(CommandCatalog.Group.values().toList(), g.map { it.first })
         assertTrue(g.all { it.second.isNotEmpty() })
         assertEquals(CommandCatalog.ALL.count { it.listed }, g.sumOf { it.second.size })
@@ -69,11 +71,13 @@ class CommandCatalogTest {
             "/profiles" to "The agent",
             "/reconnect" to "The agent",
             "/health" to "The agent",
+            // #417: the diagnostic summary's command, behind its switch (off by default).
+            "/diagnostics" to "The agent",
             "/help" to "The agent",
         )
         assertEquals(expected.keys, CommandCatalog.ALL.map { it.name }.toSet())
         for ((name, label) in expected) {
-            val c = CommandCatalog.find(name)!!
+            val c = CommandCatalog.find(name, CommandCatalog.ALL_GATES_OPEN)!!
             assertTrue("$name has no group", c.group.label.isNotBlank())
             assertEquals("$name is under the wrong group", label, c.group.label)
         }
@@ -81,7 +85,8 @@ class CommandCatalogTest {
         assertEquals(listOf("This conversation", "The agent"),
             CommandCatalog.Group.values().map { it.label })
         // And each listed command appears exactly once in the rendered list.
-        val rendered = CommandCatalog.grouped().flatMap { it.second }.map { it.name }
+        val rendered = CommandCatalog.grouped(gates = CommandCatalog.ALL_GATES_OPEN)
+            .flatMap { it.second }.map { it.name }
         val listed = CommandCatalog.ALL.filter { it.listed }.map { it.name }
         assertEquals(listed.size, rendered.size)
         assertEquals(listed.toSet(), rendered.toSet())
@@ -94,13 +99,14 @@ class CommandCatalogTest {
      */
     @Test fun aCommandThatLosesSomethingSaysWhatAndNoOtherDoes() {
         for (name in listOf("/new", "/clear", "/compress", "/models", "/profiles")) {
-            val cost = CommandCatalog.find(name)!!.cost
+            val cost = CommandCatalog.find(name, CommandCatalog.ALL_GATES_OPEN)!!.cost
             assertTrue("$name loses something and must say what", cost != null)
             assertTrue("$name's cost is a sentence", cost!!.text.length in 20..48)
             assertTrue("$name's cost has no line break", !cost.text.contains('\n'))
         }
-        for (name in listOf("/reconnect", "/health", "/help"))
-            assertNull("$name loses nothing; it has no cost line", CommandCatalog.find(name)!!.cost)
+        for (name in listOf("/reconnect", "/health", DiagnosticSummary.COMMAND, "/help"))
+            assertNull("$name loses nothing; it has no cost line",
+                CommandCatalog.find(name, CommandCatalog.ALL_GATES_OPEN)!!.cost)
         assertNull("the share row sends nothing by itself", CommandCatalog.SHARE.cost)
     }
 
@@ -129,7 +135,7 @@ class CommandCatalogTest {
 
     @Test fun inlineCommandsAreTheOnesThatRunInPlace() {
         val inline = CommandCatalog.ALL.filter { it.kind == CommandCatalog.Kind.INLINE }.map { it.name }
-        assertEquals(listOf("/compress", "/clear", "/new", "/reconnect"), inline)
+        assertEquals(listOf("/compress", "/clear", "/new", "/reconnect", DiagnosticSummary.COMMAND), inline)
     }
 
     /**
@@ -168,7 +174,8 @@ class CommandCatalogTest {
     }
 
     @Test fun helpIsWrittenFromTheCatalogue() {
-        val h = CommandCatalog.helpText()
+        // The card lists what can run now; with every switch open that is the whole catalogue.
+        val h = CommandCatalog.helpText(CommandCatalog.ALL_GATES_OPEN)
         for (c in CommandCatalog.ALL) assertTrue(c.name, h.contains(c.effect))
         assertTrue(h.contains("/clear /reset"))
     }
