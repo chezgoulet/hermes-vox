@@ -34,6 +34,11 @@ assert r["dropped_turns"] == 1 and r["calls"] == 1 and r["failed_turns"] == 1, r
 # The cold row is ColdFrame's own line: a ledger row that also starts `event=lat ` must not
 # be read as a cold start, and a log with no cold line reports n=0 rather than a number.
 assert r["cold_start"] == {"p50": 812, "p95": 812, "n": 1}, r["cold_start"]
+# The split the plan rests on: firstText and firstAudio share an anchor, so their difference is
+# the app-owned interval, and firstText alone is the brain-owned one. Two turns: 400/300 ms.
+# p95 uses the same nearest-lower index as every other row (n=2 -> the lower of the two).
+assert r["app_first_sound"] == {"p50": 300, "p95": 300, "n": 2}, r["app_first_sound"]
+assert r["brain_first_token"] == {"p50": 800, "p95": 800, "n": 2}, r["brain_first_token"]
 t = br.table(r)
 assert "| cold start → first frame p50 / p95 (n=1) | 812 ms / 812 ms |" in t, t
 assert "| peak RSS | 2600 MB |" in t and "not in log" not in t.split("first byte")[0].replace("warm", ""), t
