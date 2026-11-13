@@ -60,10 +60,11 @@ class AlphaGateTest {
     }
 
     @Test fun master_on_and_one_set_selected_enables_exactly_that_set() {
-        val phone = AlphaGate.FeatureSet.PHONE_TOOLS
-        val s = Fake(mutableMapOf(AlphaGate.KEY_MASTER to true, phone.key to true))
-        assertTrue(AlphaGate.allows(s, phone))
+        val sessions = AlphaGate.FeatureSet.SESSIONS
+        val s = Fake(mutableMapOf(AlphaGate.KEY_MASTER to true, sessions.key to true))
+        assertTrue(AlphaGate.allows(s, sessions))
         assertFalse(AlphaGate.allows(s, P))
+        assertFalse(AlphaGate.allows(s, AlphaGate.FeatureSet.PHONE_TOOLS))
         assertEquals(1, AlphaGate.selectedCount(s))
     }
 
@@ -89,6 +90,7 @@ class AlphaGateTest {
         assertEquals("Phone tools", set.label)
         assertTrue(set.blurb, set.blurb.contains("Vox runs a small server on your tailnet with its own token"))
         assertTrue(set.blurb, set.blurb.contains("Off until you set it up."))
+        assertTrue(set.blurb, set.blurb.contains("Requires Presence"))
         assertFalse("the gate is the only thing that enables it", AlphaGate.allows(Fake(), set))
     }
 
@@ -223,33 +225,42 @@ class AlphaGateTest {
         assertFalse(AlphaGate.allows(s, L))
     }
 
-    /** D38: Phone tools is the mind acting on the phone; Presence is the being. Neither needs the other. */
-    @Test fun phone_tools_and_presence_are_independent_sets() {
-        val phoneOnly = Fake(mutableMapOf(
-            AlphaGate.KEY_MASTER to true,
-            AlphaGate.FeatureSet.PHONE_TOOLS.key to true,
-        ))
-        assertTrue("the phone is the mind's capability", AlphaGate.allows(phoneOnly, AlphaGate.FeatureSet.PHONE_TOOLS))
-        assertFalse("and not a reason to run the being", AlphaGate.allows(phoneOnly, P))
-
-        val presenceOnly = Fake(mutableMapOf(
-            AlphaGate.KEY_MASTER to true,
-            P.key to true,
-        ))
-        assertTrue("the being is a voice", AlphaGate.allows(presenceOnly, P))
-        assertFalse("and it does not open the phone tool", AlphaGate.allows(presenceOnly, AlphaGate.FeatureSet.PHONE_TOOLS))
-        assertNull("the dependency table only names continuous listening",
-            AlphaGate.dependencyRefusal(phoneOnly, AlphaGate.FeatureSet.PHONE_TOOLS))
+    /**
+     * D38: Phone tools acts inside the being's conversation, so it belongs with Presence. The
+     * stored preference is not enough — an earlier build could have left it selected alone.
+     */
+    @Test fun phone_tools_cannot_run_without_presence() {
+        val phone = AlphaGate.FeatureSet.PHONE_TOOLS
+        val s = Fake(mutableMapOf(AlphaGate.KEY_MASTER to true, phone.key to true))
+        assertFalse("selected alone is inert", AlphaGate.allows(s, phone))
+        assertEquals(
+            "Requires Presence: phone actions belong to the being's conversation.",
+            AlphaGate.dependencyRefusal(s, phone),
+        )
+        assertFalse("and it does not run the being on its own", AlphaGate.allows(s, P))
+        s.putBoolean(P.key, true)
+        assertNull("Presence makes it reachable", AlphaGate.dependencyRefusal(s, phone))
+        assertTrue(AlphaGate.allows(s, phone))
+        // Turning Presence off leaves the stored selection in place but inert.
+        s.putBoolean(P.key, false)
+        assertTrue(AlphaGate.selected(s, phone))
+        assertFalse(AlphaGate.allows(s, phone))
+        // The master still rules everything.
+        s.putBoolean(AlphaGate.KEY_MASTER, false)
+        assertFalse(AlphaGate.allows(s, phone))
     }
 
     /** The picker refuses the impossible selection where the user makes it, with the reason on screen. */
-    @Test fun the_picker_refuses_continuous_listening_without_presence() {
+    @Test fun the_picker_refuses_dependent_sets_without_presence() {
         val panel = File(src, "AlphaPanel.kt").readText()
         assertTrue("the row asks the one dependency question", panel.contains("AlphaGate.dependencyRefusal("))
         assertTrue("a refused tap does not store the preference", panel.contains("if (refusal != null)"))
         assertTrue("the row shows the returned line", panel.contains("text = if (inert) \"Inert — \$why\" else why"))
         val gate = File(src, "AlphaGate.kt").readText()
-        assertTrue("the line says why", gate.contains("Requires Presence: continuous listening is how the being hears."))
+        assertTrue("continuous listening says why",
+            gate.contains("Requires Presence: continuous listening is how the being hears."))
+        assertTrue("phone tools says why",
+            gate.contains("Requires Presence: phone actions belong to the being's conversation."))
         assertTrue("allows() refuses the stale preference too",
             gate.contains("dependencyRefusal(r, set) == null"))
     }

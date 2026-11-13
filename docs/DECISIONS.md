@@ -1123,11 +1123,12 @@ what is running, the time left, the device facts — because that is what lets i
 about four minutes left". It may not set, cancel or change anything. `PhoneReadout` exposes the
 registry and nothing else, so a mutating capability is absent from its type, not merely discouraged.
 
-**The gate is two independent sets.** Presence is the being; **Phone tools** is the mind acting on
-the phone. Either can be taken without the other, and no dependency is added between them.
-**Continuous listening** belongs with Presence because it is how the being hears: it cannot be
-selected without Presence, `AlphaGate.allows()` refuses a stored preference from an earlier build,
-and turning Presence off leaves it inert with the picker saying why.
+**Two sets depend on Presence.** Presence is the being. **Continuous listening** is how it hears,
+and **Phone tools** is the mind acting inside the same conversation, so neither can be selected
+without Presence. The picker refuses the tap with one line saying why, and `AlphaGate.allows()`
+refuses a stored preference from an earlier build even when the preference survives. Turning
+Presence off leaves both stored selections in place but inert, and the picker says so; the master
+still rules all.
 
 **What it does not decide.** Whether a future foreground model ever gets a safe, separate voice
 action lane (it would be a new decision and would need its own always-on guarantee), and whether the

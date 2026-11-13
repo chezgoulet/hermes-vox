@@ -89,7 +89,8 @@ Each set is selected on its own; with the master off, everything below is dimmed
   (`event=er-pending`) prove the caller was not dropped.
 - Presence may read what the phone is doing — a running timer, the time left, the device facts —
   so it can say *"your timer has about four minutes left"*. It may not set, cancel or change
-  anything: phone actions belong to the mind. Presence and **Phone tools** are independent sets.
+  anything: phone actions belong to the mind. **Phone tools** and continuous listening require
+  Presence; neither can be selected without it.
 - Presence is unfinished and says so. It needs the 2.6 GB presence model and a phone with 8 GB of
   memory; the hardware check advises and the first real load can demote the choice.
 
@@ -111,8 +112,9 @@ Each set is selected on its own; with the master off, everything below is dimmed
   and listen, or start a new turn.
 
 ### Phone tools
-- This is the mind acting on the phone, and it is independent of Presence: take either set without
-  the other.
+- This is the mind acting on the phone. It **requires Presence**: the tool is the mind acting
+  inside the being's conversation. The picker refuses it without Presence, a stored selection from
+  an earlier build is inert, and turning Presence off leaves it inert and says so.
 - The mind acts on the phone through **one MCP tool**, `phone`, on the tailnet, with a result for
   every call and an undo for every reversible one. The tool schema is built from **thirteen
   capability groups**, each Off / Ask / Allow and **all Off by default**. Tier 2 is refused and

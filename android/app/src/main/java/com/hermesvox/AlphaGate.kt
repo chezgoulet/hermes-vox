@@ -15,9 +15,8 @@ import android.content.SharedPreferences
  *
  * A set's own preferences keep their meaning *inside* the gate: Presence's switch, and the two
  * continuous-listening switches (which default **on**, D29), apply only once the set is allowed.
- * Continuous listening is how the being hears, so it also requires the Presence set; Phone tools
- * is the mind acting on the phone and is independent of Presence (D38). Either can be taken
- * without the other.
+ * Continuous listening and Phone tools both happen inside the being's conversation, so neither
+ * can be selected without the Presence set (D38). Turning Presence off leaves both inert.
  *
  * Upgrades keep what was running ([migrate]): an install that already had Presence running (the
  * layer chosen and its model downloaded) or continuous capture switched on keeps it, with the
@@ -41,7 +40,7 @@ object AlphaGate {
                 "your agent's voice. It may look at what the phone is doing; it does not act on " +
                 "the phone. Needs its on-device model (about 2.6 GB) and a phone with 8 GB of " +
                 "memory. While a call is live it holds about 3 GB of memory. Unfinished, and " +
-                "honest about it. Independent of Phone tools.",
+                "honest about it. Continuous listening and Phone tools require it.",
         ),
         CONTINUOUS_LISTENING(
             "alpha_set_continuous_listening", "Continuous listening",
@@ -62,7 +61,7 @@ object AlphaGate {
             "The mind acting on the phone: your agent can set a timer or an alarm, change Do Not " +
                 "Disturb or the volume, through one tool. Vox runs a small server on your tailnet " +
                 "with its own token, and your agent reaches it over MCP. Off until you set it up. " +
-                "Independent of Presence.",
+                "Requires Presence: phone actions belong to the being's conversation.",
         ),
         PROFILES(
             "alpha_set_profiles", "Switching profiles",
@@ -93,22 +92,28 @@ object AlphaGate {
     fun selected(r: Reader, set: FeatureSet): Boolean = r.getBoolean(set.key, false)
 
     /**
-     * The one dependency between sets: continuous listening is how the being hears, so it
-     * cannot run without Presence. Null means none.
+     * The dependencies between sets, in the one place the picker and [allows] both read. Null
+     * means none.
      *
-     * Phone tools has no entry here on purpose. The phone is the mind's capability and the being
-     * is a voice; either can be taken without the other (D38).
+     * Continuous listening is how the being hears, and Phone tools is the mind acting inside the
+     * same conversation, so neither may run without Presence (D38).
      */
-    fun dependencyRefusal(r: Reader, set: FeatureSet): String? =
-        if (set == FeatureSet.CONTINUOUS_LISTENING && !selected(r, FeatureSet.PRESENCE))
-            "Requires Presence: continuous listening is how the being hears."
-        else null
+    fun dependencyRefusal(r: Reader, set: FeatureSet): String? {
+        if (selected(r, FeatureSet.PRESENCE)) return null
+        return when (set) {
+            FeatureSet.CONTINUOUS_LISTENING ->
+                "Requires Presence: continuous listening is how the being hears."
+            FeatureSet.PHONE_TOOLS ->
+                "Requires Presence: phone actions belong to the being's conversation."
+            else -> null
+        }
+    }
 
     /**
      * The one question every alpha surface asks: may [set] run (and be reached) right now?
      *
-     * The set's own selection is not enough for continuous listening — a stored preference from
-     * an earlier build where Presence was off must be inert, not merely dimmed in the picker.
+     * The set's own selection is not enough for a dependent set — a stored preference from an
+     * earlier build where Presence was off must be inert, not merely dimmed in the picker.
      */
     fun allows(r: Reader, set: FeatureSet): Boolean =
         masterOn(r) && selected(r, set) && dependencyRefusal(r, set) == null

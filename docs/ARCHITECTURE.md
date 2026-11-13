@@ -176,8 +176,9 @@ One actor. The phone does not parse the caller's words; every voice turn goes to
   The three states mean the same thing for every group; the tier only describes the
   consequence and whether an undo exists. `docs/MCP-PHONE.md` is the contract.
 - **Presence may look, never act.** The being reads the registry and device facts through
-  `PhoneReadout`, which exposes no mutating call. Presence and Phone tools are independent
-  Alpha sets; continuous listening belongs with Presence because it is how the being hears.
+  `PhoneReadout`, which exposes no mutating call. Both Phone tools and continuous listening
+  require the Presence Alpha set; neither can be selected without it, and turning Presence off
+  leaves both inert.
 
 ### 6. Profiles — saved connections
 A profile is the whole connection: base URL (`https://host/p/<name>`), its own key, model,

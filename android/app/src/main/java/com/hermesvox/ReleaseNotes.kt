@@ -121,7 +121,7 @@ internal object ReleaseNotes {
                 "A new session during a call re-opens the microphone immediately, so /new no longer leaves the call deaf for a turn; starting over never waits on the gateway.",
                 "An interrupted reply stops the audio that was already in flight: every frame is keyed to its reply, so nothing from the old answer resumes after you start speaking.",
                 "Presence is a layer rather than a mode, and a repaired presence line is logged as repaired — a shortened reply is never read as silence.",
-                "Presence may see what the phone is doing but never act on it. Phone actions belong to Hermes: with Phone tools set up and the action's permission granted, Hermes sets the timer; without it, it says so. The two Alpha choices are independent.",
+                "Presence may see what the phone is doing but never act on it. Phone actions belong to Hermes: with Phone tools set up and the action's permission granted, Hermes sets the timer; without it, it says so. Phone tools and continuous listening require Presence.",
                 "The app can teach your agent about itself: after the connection is verified it offers, once, to install the app skill on the gateway.",
             ),
         ),

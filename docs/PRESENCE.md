@@ -257,8 +257,9 @@ path's grant and card.
 **Presence may look; it may not act.** The being reads the registry so it can say *"your timer has
 about four minutes left"*, and it reads the clock, battery, network and Do Not Disturb state. It does
 not get a call that sets, cancels or changes anything: `PhoneReadout` exposes the registry and
-nothing else. The mind is what acts. Presence and **Phone tools** are therefore independent sets —
-either can be taken without the other.
+nothing else. The mind is what acts. **Phone tools** and continuous listening require Presence:
+neither can be selected without it, and turning Presence off leaves both inert with the picker
+saying why.
 
 **The actions the mind can ask for** (Tier 0, reversible and private, which is the description of
 their consequence and undo — not a permission the phone grants itself):
