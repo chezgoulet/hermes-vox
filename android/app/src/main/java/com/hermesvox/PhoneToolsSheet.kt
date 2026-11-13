@@ -150,7 +150,6 @@ class PhoneToolsSheet(
                 openDndSettings()
             }
         }
-        row(col, "Volume permission", PhoneToolsView.volume(status.volumeGranted))
         row(col, "Last request", PhoneToolsView.lastRequest(status.lastRequest, status.lastRequestAt, now))
         row(col, "Token", PhoneToolsView.token(status.token))
 

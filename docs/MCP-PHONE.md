@@ -16,8 +16,8 @@ configuration; the manual block remains for an agent that cannot.
 
 ## Setting it up: the app asks your agent, not you
 
-The setup path is a turn, not a block to paste. **Settings → About & Diagnostics → Phone as an MCP
-server → Set up with my agent** composes one ordinary turn and sends it through the app's existing
+The setup path is a turn, not a block to paste. **Settings → Entity & Connection → Phone tools →
+Set up with my agent** composes one ordinary turn and sends it through the app's existing
 session. The agent edits its own configuration, verifies the entry, and says what it changed. The
 turn is visible in the sheet behind **Show the setup turn**, and the agent's own reply is shown
 beneath the state — a change to the agent's configuration is never silent.
@@ -35,6 +35,10 @@ end state; the sheet's **Ask again** is safe.
 `initialize`; the phone's own server sees it, and only then may the sheet say **Connected**. An
 agent's "done" is displayed, but it cannot change the state. The proof is tied to the token in
 force: rotating the token clears it.
+
+On first run, once the connection probe succeeds and Presence is on by the owner's choice, the app
+offers this same sheet once — not a second flow. Closing or declining is remembered, and the Settings
+row is the permanent way back.
 
 ### The state machine
 
@@ -237,7 +241,7 @@ off-device.
 | `ACCESS_NETWORK_STATE` | the app reads whether a network is usable before a model download and in the voice turn's context; not needed by the MCP listener itself | `ModelDownloader`, `VoiceController` |
 | `ACCESS_NOTIFICATION_POLICY` | **Do Not Disturb only.** This is a *special* access: the user grants it on Android's own screen, not in a runtime dialog. The sheet shows whether it is granted and opens `ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS`; `dnd` refuses with `reason:"permission"` when it is missing | `LocalActions.dndGranted`, `LocalActions.setDnd`, `PhoneToolsSheet` |
 | `POST_NOTIFICATIONS` | the timer/alarm notification on Android 13+. The ringtone is the signal that matters, so a denial is logged and the timer still rings | `LocalActions.fire` |
-| `MODIFY_AUDIO_SETTINGS` | the media stream: `setStreamVolume` and `adjustStreamVolume` are what `volume` changes. It is a normal permission, granted at install | `LocalActions.setVolume`, `LocalActions.adjustVolume` |
+| `MODIFY_AUDIO_SETTINGS` | **audio routing for a call, not the `volume` action.** `CommRoute` uses `setCommunicationDevice` / `startBluetoothSco` so a headset's mic joins the call; `volume` changes the media stream with `AudioManager.setStreamVolume` / `adjustStreamVolume`, which needs no permission | `CommRoute.select`, `CommRoute.clear` |
 | `VIBRATE` | the haptic half of the app's sound cues (not a phone action) | `SoundCuePlayer` |
 | `WAKE_LOCK` | the voice call and model downloads (not a phone action; the MCP listener has no service of its own) | `MainActivity`, `ModelDownloadService` |
 | `RECORD_AUDIO` | the voice line (not a phone action) | `MainActivity`, `VoiceController` |

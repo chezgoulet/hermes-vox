@@ -1,5 +1,6 @@
 package com.hermesvox
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -82,6 +83,27 @@ class PhoneMcpWiringTest {
         assertTrue(settings.contains("R.id.row_phone_mcp"))
         assertTrue("one sheet owns the flow", settings.contains("PhoneToolsSheet(this"))
         assertFalse("the setup path is not a config dialog", settings.contains("setTitle(\"Phone MCP\")"))
+    }
+
+    @Test fun the_phone_row_sits_with_the_connection_section() {
+        val layout = File("src/main/res/layout/activity_settings.xml").readText()
+        val entity = layout.indexOf("android:id=\"@+id/sec_entity\"")
+        val about = layout.indexOf("android:id=\"@+id/sec_about\"")
+        val row = layout.indexOf("android:id=\"@+id/row_phone_mcp\"")
+        assertTrue("the row exists", row > 0)
+        assertTrue("it is inside Entity & Connection, not About", entity in 0 until row && row < about)
+        assertTrue("the entry is called Phone tools", layout.contains("android:text=\"Phone tools\""))
+        assertEquals("one row, not two", 1, Regex("row_phone_mcp").findAll(layout).count())
+    }
+
+    @Test fun first_run_offers_the_same_sheet_once() {
+        val onboarding = File("src/main/java/com/hermesvox/OnboardingActivity.kt").readText()
+        val offer = File("src/main/java/com/hermesvox/PhoneToolsOffer.kt").readText()
+        assertTrue("the verified first run calls the offer", onboarding.contains("PhoneToolsOffer.offerOnce"))
+        assertTrue("after the connection probe and the app-skill offer", onboarding.indexOf("AppSkillInstall.offerOnce") < onboarding.indexOf("PhoneToolsOffer.offerOnce"))
+        assertTrue("the offer opens the one sheet", offer.contains("PhoneToolsSheet("))
+        assertTrue("Presence's own choice gates it", offer.contains("PresenceGate.chosen(prefs)"))
+        assertTrue("and it is remembered whatever the answer was", offer.contains("putBoolean(PREF_OFFERED, true)"))
     }
 
     @Test fun setup_is_an_ordinary_turn_composed_by_the_app() {

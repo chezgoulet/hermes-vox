@@ -54,7 +54,6 @@ object PhoneMcp {
         val lastRequestAt: Long?,
         val token: TokenState,
         val dndGranted: Boolean,
-        val volumeGranted: Boolean,
     )
 
     @Volatile private var server: PhoneMcpServer? = null
@@ -192,12 +191,6 @@ object PhoneMcp {
         } catch (_: Throwable) {
             false
         }
-        val volume = try {
-            app.checkSelfPermission(android.Manifest.permission.MODIFY_AUDIO_SETTINGS) ==
-                android.content.pm.PackageManager.PERMISSION_GRANTED
-        } catch (_: Throwable) {
-            true   // a normal permission; before the check API it is granted at install
-        }
         return Status(
             tailnet = tailnet,
             listening = s != null,
@@ -207,7 +200,6 @@ object PhoneMcp {
             lastRequestAt = lastRequestAt,
             token = tokenState(app),
             dndGranted = dnd,
-            volumeGranted = volume,
         )
     }
 

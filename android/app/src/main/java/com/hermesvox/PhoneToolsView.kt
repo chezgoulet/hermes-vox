@@ -37,10 +37,6 @@ object PhoneToolsView {
         if (granted) "Granted — the phone may change Do Not Disturb"
         else "Not granted — only you can give this in system settings"
 
-    fun volume(granted: Boolean): String =
-        if (granted) "Granted — the phone may change the media volume"
-        else "Not granted — volume changes will refuse with a reason"
-
     /** The compact value on the Settings row. Never says connected before the handshake. */
     fun rowValue(state: PhoneSetup.State): String = when (state) {
         PhoneSetup.State.CONNECTED -> "connected"

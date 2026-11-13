@@ -196,7 +196,11 @@ class OnboardingActivity : AppCompatActivity() {
                 ).show()
                 // #285: the first moment an agent exists to ask — offer it the app's own
                 // description once, then go on whatever the answer was.
-                AppSkillInstall.offerOnce(this, prefs, session, versionName()) { goMain() }
+                AppSkillInstall.offerOnce(this, prefs, session, versionName()) {
+                    // #421: connection proved and Presence is on by choice — the one moment the
+                    // phone can be offered to the agent, using the same sheet Settings opens.
+                    PhoneToolsOffer.offerOnce(this, prefs) { goMain() }
+                }
             }
         }
     }
@@ -223,6 +227,12 @@ class OnboardingActivity : AppCompatActivity() {
     private fun versionName(): String = try {
         packageManager.getPackageInfo(packageName, 0).versionName ?: ""
     } catch (_: Throwable) { "" }
+
+    /** A grant made in system settings while the setup sheet is open must be visible on return. */
+    override fun onResume() {
+        super.onResume()
+        PhoneToolsSheet.refreshOpen()
+    }
 
     private fun goMain() {
         startActivity(Intent(this, MainActivity::class.java))
