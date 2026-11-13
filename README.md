@@ -216,6 +216,28 @@ model and how to report a vulnerability.
 - It cannot recognise a language the installed recognition model does not cover. The default is
   English; multilingual Whisper models are in **Settings → Voice models**.
 
+## Where this is going
+
+Six milestones, in this order, each defined by something you could say after updating. No dates: a
+release ships when its gate is green.
+
+1. **The gate** — the app's own latency measured, good runs recorded instead of only failures, and the
+   documentation brought back in line with the code.
+2. **Promote what already works** — approvals, the digital assistant, phone tools, turn-taking,
+   continuous listening and Presence. Most of this is built and switched off; it leaves the gate as it
+   proves out, not on a schedule.
+3. **Small builds that stop the app misleading you** — a refused key named as a refused key, a
+   question asked mid-run actually shown, the last few turns kept so silence is not mistaken for an
+   answer.
+4. **How a reply is spoken** — phrasing that does not reset every two seconds.
+5. **Interruption that keeps the work** — it can be interrupted, and what it was doing survives.
+6. **Localisation readiness** — every string in a resource, verified with a pseudo-locale, so the next
+   release can be translation rather than archaeology.
+
+The full plan, with effort classes and exit criteria: [`ROADMAP.md`](ROADMAP.md). The reasoning behind
+it, including the two independent reviews that reshaped it: [`docs/PLAN-MVP.md`](docs/PLAN-MVP.md) and
+[`docs/SECOND-OPINIONS-2026-11-13.md`](docs/SECOND-OPINIONS-2026-11-13.md).
+
 ## Where the rest of the documentation is
 
 What is being built next, and how to pick it up: [ROADMAP.md](ROADMAP.md) is the plan of record, and
