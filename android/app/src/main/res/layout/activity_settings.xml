@@ -1839,7 +1839,7 @@
                         android:id="@+id/set_command_icon_val"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Clanker"
+                        android:text="Steve"
                         style="@style/HvRowValue" />
                 </LinearLayout>
 

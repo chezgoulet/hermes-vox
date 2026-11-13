@@ -257,7 +257,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1" />
         <!-- #370: the main surface keeps the call glyph and one commands entry, nothing
-             else. The entry's glyph is the choice in Settings → Appearance (Clanker by
+             else. The entry's glyph is the choice in Settings → Appearance (Steve by
              default), drawn from our own vector paths by CommandGlyph — never a font
              glyph or a bitmap — and painted in the theme's ink. The label a screen
              reader announces is still "Commands". PASTE and FILE are gone — both are

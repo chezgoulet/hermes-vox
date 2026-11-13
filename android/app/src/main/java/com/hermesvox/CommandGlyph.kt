@@ -61,10 +61,11 @@ object CommandGlyph {
         }
     }
 
-    /** Clanker ships (#second phone pass): the robot is the app's default mark. The pref is
-     *  only ever written by the chooser, so an install that has never chosen one gets this,
-     *  and an explicit choice (Steve included) is left exactly as it was saved. */
-    val DEFAULT = Icon.CLANKER
+    /** Steve ships: the command symbol is what the entry drew before this was a setting, so
+     *  adding the choice changes nothing until someone makes one. The pref is only ever
+     *  written by the chooser, so an install that has never chosen gets this, and an explicit
+     *  choice — Clanker included — is left exactly as it was saved. */
+    val DEFAULT = Icon.STEVE
 
     /** The one pref read. Every screen calls this; none of them decodes the token itself. */
     fun current(context: Context): Icon = Icon.of(

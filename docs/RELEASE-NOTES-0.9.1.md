@@ -30,7 +30,7 @@ The published release note for 0.9.1. The scope record is
 
 ## Commands and settings
 - Massive visual and functional upgrades to Commands
-- Five selectable glyphs, Clanker default
+- Five selectable glyphs, Steve default
 - Animation from six verbs
 - Settings grouped by question
 - One alpha block at the end

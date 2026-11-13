@@ -12,7 +12,7 @@ import java.io.File
  * keeps it honest off-device:
  *
  *   * the pref maps to exactly five drawings, and an absent/unknown token is the shipped
- *     default (Clanker); an explicit saved token — Steve included — is never overwritten;
+ *     default (Steve); an explicit saved token — Clanker included — is never overwritten;
  *   * every drawing is our own geometry on the 24 dp grid — no two are the same drawing;
  *   * nothing in the drawing names a colour: the ink is the theme's `hv_text` token, and
  *     each glyph's stroke clears 4.5:1 on the light page and on the dark ground, on both
@@ -27,17 +27,19 @@ class CommandGlyphTest {
 
     // ---- the setting ---------------------------------------------------------
 
-    @Test fun theDefaultIsClankerAndAnExplicitChoiceSurvives() {
-        assertEquals("Clanker", CommandGlyph.DEFAULT.label)
-        assertEquals("clanker", CommandGlyph.DEFAULT.token)
-        // An install that never chose one (no pref, or a token that names nothing) gets Clanker.
-        assertEquals(CommandGlyph.Icon.CLANKER, CommandGlyph.Icon.of(null))
-        assertEquals(CommandGlyph.Icon.CLANKER, CommandGlyph.Icon.of(""))
-        assertEquals(CommandGlyph.Icon.CLANKER, CommandGlyph.Icon.of("bugdroid"))
+    @Test fun theDefaultIsSteveAndAnExplicitChoiceSurvives() {
+        assertEquals("Steve", CommandGlyph.DEFAULT.label)
+        assertEquals("steve", CommandGlyph.DEFAULT.token)
+        // An install that never chose one (no pref, or a token that names nothing) gets Steve:
+        // the glyph the entry drew before it was a setting, so the choice changes nothing
+        // until it is made.
+        assertEquals(CommandGlyph.Icon.STEVE, CommandGlyph.Icon.of(null))
+        assertEquals(CommandGlyph.Icon.STEVE, CommandGlyph.Icon.of(""))
+        assertEquals(CommandGlyph.Icon.STEVE, CommandGlyph.Icon.of("bugdroid"))
         // Every token the picker can write maps back to itself, and to nothing else — so a
-        // saved Steve stays Steve even though it is no longer the default.
+        // saved Clanker stays Clanker even though it is not the default.
         for (icon in icons) assertEquals(icon, CommandGlyph.Icon.of(icon.token))
-        assertEquals(CommandGlyph.Icon.STEVE, CommandGlyph.Icon.of("steve"))
+        assertEquals(CommandGlyph.Icon.CLANKER, CommandGlyph.Icon.of("clanker"))
     }
 
     @Test fun theFiveChoicesAreTheOnesTheOwnerNamed() {
