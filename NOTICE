@@ -25,8 +25,6 @@ component inside it.
   - sherpa-onnx (k2-fsa) — Apache-2.0
   - espeak-ng (the fork used by sherpa-onnx) — GPL-3.0
   - ONNX Runtime (Microsoft) — MIT
-  - Material Icons "keyboard command key" path (Google) — Apache-2.0
-    (the ⌘ entry glyph only; `res/drawable/ic_command.xml`)
   - Hermes Agent client protocol and documentation (Nous Research)
 
 ## Models (downloaded separately, not part of the app)
