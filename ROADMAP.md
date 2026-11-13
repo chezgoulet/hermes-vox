@@ -126,7 +126,7 @@ precede all others, because every later exit criterion is one of these lines.
 | Extend `event=turn` with `lastSound`, `segs`, `gapP95`, `route`, and `firstToken→firstSound` | S | finish |
 | `app-first-sound` and `app-gap` rows in the comparator | S | build |
 | **Success sampling** (`#596`): every fifth call and first-after-install, ten kept, one-tap "send this — it went well" | S | build |
-| **Recorded-utterance corpus** replayed through the real pipeline | M | build |
+| **Recorded stimulus corpus** replayed through the real pipeline — fixed utterances in three environments (parked, driving, reflective room), stratified so every third run covers each. A stimulus set, **not a conversation** | M | build |
 | Thirty-minute soak harness | S | build |
 | Repo truth: one `DECISIONS.md`, an archive for the historical files, DOC-TRUTH on current files only, a file count the gate enforces | S | build |
 | Correct the four false statements the audit found in this document | XS | fix |
@@ -135,8 +135,17 @@ precede all others, because every later exit criterion is one of these lines.
 sampled real calls from three installs; a recorded conversation replays reproducibly; the soak runs
 and reports; `docs/` is ≤60 current files plus an archive.
 
-**Needs the owner:** ten to twenty spoken utterances recorded on a handset, with consent. Without
-them, interruption and echo stay judged by ear.
+**What the bench asserts, and what it refuses to.** Three jobs only: regression mitigation (the turn
+completed, the transcript matched its sidecar, the tool fired, nothing dropped) · metrics under
+conditions (`app-first-sound`, gaps, recogniser time, memory, thermal, per environment) · and **tool
+calls**, which become fully deterministic by driving recorded audio into the app against the fake
+gateway that already ships — a timer call, an approval and a result asserted exactly, with no model in
+the loop. **It never asserts that a conversation was good**: barge correctness, turn-taking feel,
+resume-without-repeat and backchannel timing are human review, always.
+
+**Needs the owner:** the same utterances recorded three ways — parked and silent, driving, and a
+reflective room — with consent. Parked is the control, driving is signal-to-noise and the VAD floor,
+reflective is reverberation and echo.
 
 ### M1 — promote what already works
 
@@ -190,6 +199,12 @@ construction.
 | Steer instead of stop: cut locally, classify, steer the live run, stop only on an explicit abort | L | build |
 | Amend path: commit on `PROVISIONAL`, extend and re-send if speech resumes | L | build |
 | Transcript-similarity echo rejection, and true pause-not-stop | M | build |
+
+**Exit — the mechanism from the log, the judgement from the owner.** The harness asserts only what is
+mechanical: a steer was sent rather than a stop, `run.steered` came back, the sequence carries no
+double-spoken reply, and the run is still alive afterwards. **Whether an interruption was understood
+correctly is a human sitting** — a cough, an "mm-hm" and a real change of mind — with no bench verdict
+attached to any of them.
 
 ### M5 — localisation readiness verified
 
