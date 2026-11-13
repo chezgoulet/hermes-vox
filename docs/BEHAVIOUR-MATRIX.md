@@ -7,7 +7,7 @@ the working endpoint. Every cell is the log line that proves it, or `not run —
 A cell is not a tick. `verdict=unreachable` is a *pass* for the unreachable column, because the
 column asks "does the app say so, and say why"; a column that produces no line is the failure.
 
-## Row 1 — 2026-11-12, Pixel 7, `testing` `7d59e35`
+## Row 1 — 2026-11-12, Pixel 7, `testing` `7d59e35` (amended 2026-11-13 by the owner's handset)
 
 Device: Pixel 7 (`2A091FDH200AJ1`), Android as the device reports it, build
 `0.9.1.4-nightly-7d59e35`. Endpoint under test: `http://mikoa.leopard-vibes.ts.net:8642`,
@@ -18,7 +18,7 @@ which writes `conn-test: verdict=… ping=… stream=…` — one line, naming t
 
 | Mode | HTTPS gateway | cleartext refused | wrong key | unreachable |
 |---|---|---|---|---|
-| Realtime | not run — the bench endpoint is cleartext on the tailnet; the working state is proved by `call-ready phase=green` below | `conn-test: verdict=unreachable live=unknown ping=0(IOException: Cleartext HTTP traffic to 100.64.0.1 not permitted)` | **not run — owner only**: the key field holds the only copy of the test key, and overwriting it would leave the bench phone unable to connect | `conn-test: verdict=unreachable live=unknown ping=0(UnknownHostException: Unable to resolve host "nothing.leopard-vibes.ts.net")` |
+| Realtime | not run — the bench endpoint is cleartext on the tailnet; the working state is proved by `call-ready phase=green` below | `conn-test: verdict=unreachable live=unknown ping=0(IOException: Cleartext HTTP traffic to 100.64.0.1 not permitted)` | **pass**, owner's handset, 2026-11-13: an invalid key was refused and named as a key failure, not as a network failure; the real key restored and the test returned `ok` | `conn-test: verdict=unreachable live=unknown ping=0(UnknownHostException: Unable to resolve host "nothing.leopard-vibes.ts.net")` |
 | Enhanced Realtime | not run this pass | not run this pass | not run this pass | not run this pass |
 
 Working endpoint, after restoring the address:
@@ -28,7 +28,7 @@ Working endpoint, after restoring the address:
 
 | Behaviour | The line that proves it | Result |
 |---|---|---|
-| barge-in | `outcome=barge-in` | not run — needs a voice |
+| barge-in | `outcome=barge-in` | **pass**, owner's handset, 2026-11-13 (walkthrough `vox-sprint1-test-20261113-002842`): speaking over the reply cut it and the new question was answered without repeating what had been heard |
 | greeting | — | not run — needs a voice |
 | Presence cadence | `event=er-soul` | not run — Presence requires the gate and the 2.6 GB model on the device |
 | cues, across the ringer matrix | — | not run — needs ringer-state changes and a voice |
