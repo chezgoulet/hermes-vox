@@ -62,15 +62,41 @@ class PhoneSetupTest {
         )
     }
 
-    /** The documented CLI is the route, and the token is what its auth prompt gets. */
-    @Test fun the_prompt_uses_hermes_mcp_add_with_the_phones_token() {
+    /**
+     * The command that works from a tool call is `hermes config set`. The turn names the exact
+     * nested key paths, in order, with this phone's URL and bearer, so nothing has to be improvised.
+     */
+    @Test fun the_prompt_writes_the_entry_with_config_set_in_order() {
         val p = PhoneSetup.prompt(host, token)
-        assertTrue("the documented CLI, with the real URL", p.contains("hermes mcp add vox --url \"http://100.101.102.103:8765/mcp\""))
-        assertTrue("header auth is named", p.contains("--auth header"))
-        assertTrue("the short connect timeout is named", p.contains("--connect-timeout 5"))
-        assertTrue("the token is pasted at the prompt", p.contains("paste exactly the token above"))
-        assertTrue("the listener is open when the command runs", p.contains("listener is open for as long as this attempt runs"))
-        assertTrue("a refused probe is reported, not skipped past", p.contains("it will refuse a server it cannot reach"))
+        val url = "hermes config set mcp_servers.vox.url http://100.101.102.103:8765/mcp"
+        val auth = "hermes config set mcp_servers.vox.headers.Authorization \"Bearer $token\""
+        val enabled = "hermes config set mcp_servers.vox.enabled true"
+        assertTrue("the real URL, at the documented key path", p.contains(url))
+        assertTrue("the bearer, at the documented header key path", p.contains(auth))
+        assertTrue("the entry is enabled", p.contains(enabled))
+        assertTrue(
+            "the order is URL, header, enabled",
+            p.indexOf(url) < p.indexOf(auth) && p.indexOf(auth) < p.indexOf(enabled),
+        )
+        assertTrue("why these commands", p.contains("These are the commands that work from a tool call"))
+        assertTrue(
+            "the listener is open when the commands run",
+            p.contains("listener is open for as long as this attempt runs"),
+        )
+    }
+
+    /**
+     * `hermes mcp add` stays, but only as an alternative: it prompts, and a tool call has no stdin.
+     * The turn may not present it as the route that works, because that is what forced the agent to
+     * improvise on the device.
+     */
+    @Test fun the_prompt_keeps_hermes_mcp_add_only_as_an_alternative_with_its_limitation() {
+        val p = PhoneSetup.prompt(host, token)
+        assertTrue(p, p.contains("`hermes mcp add` is an alternative only"))
+        assertTrue("it asks questions", p.contains("asks two questions interactively"))
+        assertTrue("a tool call has no stdin", p.contains("a tool call has no stdin"))
+        assertTrue("so it may fail to save", p.contains("may fail to save"))
+        assertFalse("not presented as the primary command", p.contains("hermes mcp add vox --url"))
     }
 
     /**
@@ -137,7 +163,7 @@ class PhoneSetupTest {
     /**
      * The phone's own token is still the escape hatch for a host that is not the one this phone
      * talks to, and the manual block is where it lives. The setup turn carries it now for the
-     * agent's `hermes mcp add`; the fallback remains the same credential.
+     * agent's `hermes config set`; the fallback remains the same credential.
      */
     @Test fun the_manual_fallback_still_carries_the_real_token() {
         val block = PhoneMcpConfig.snippet(host, token)
@@ -149,9 +175,9 @@ class PhoneSetupTest {
 
     /**
      * There is no restart. A running gateway reconciles its MCP configuration on its own, so the
-     * instruction asks only for the add and explicitly forbids the restart the old flow invented.
+     * instruction asks only for the write and explicitly forbids the restart the old flow invented.
      * The one thing it states is the listener window the press opened — that is what makes the
-     * add's own reachability probe succeed from an idle phone.
+     * commands reach this phone from an idle start.
      */
     @Test fun the_prompt_asks_for_no_restart_and_states_the_listener_window() {
         val p = PhoneSetup.prompt(host, token)
@@ -159,8 +185,8 @@ class PhoneSetupTest {
         assertTrue("the gateway picks the entry up by itself", p.contains("picks the new server up"))
         assertTrue("no restart is wanted", p.contains("No restart is needed and none is wanted"))
         assertTrue("the agent is told not to create a job", p.contains("do not create or run a job"))
-        assertTrue("the agent reports what it changed", p.contains("verify that a server named `vox` appears"))
-        assertTrue("and says whether the add succeeded", p.contains("say explicitly whether the add succeeded"))
+        assertTrue("the agent verifies the saved entry", p.contains("verify it with `hermes mcp list`"))
+        assertTrue("and names the URL it saved", p.contains("report the URL you saved"))
         assertFalse("no job id is asked for", p.contains("JOB_ID"))
         assertFalse("no host command is asked for", p.contains("systemctl"))
         assertFalse("no cron job is asked for", p.contains("hermes cron create"))
@@ -168,14 +194,30 @@ class PhoneSetupTest {
     }
 
     /**
-     * `hermes mcp add` verifies before it saves, so a refused probe is a refusal — the agent must
-     * report it rather than writing a dead entry. That is the fact that makes a saved entry proven.
+     * The instruction has to leave a named result, not just a saved file. `hermes mcp list` (or
+     * `hermes mcp test`) is the verification, and the reply must name the URL it saved.
      */
-    @Test fun the_prompt_says_the_add_verifies_before_it_saves() {
+    @Test fun the_prompt_requires_verification_and_a_reply_naming_the_saved_url() {
         val p = PhoneSetup.prompt(host, token)
-        assertTrue(p.contains("verifies the connection before it saves"))
-        assertTrue(p.contains("will refuse a server it cannot reach"))
-        assertTrue("a refusal is reported, not papered over", p.contains("say plainly that the add did not succeed"))
+        assertTrue("the list command", p.contains("`hermes mcp list`"))
+        assertTrue("or the per-server test", p.contains("`hermes mcp test vox`"))
+        assertTrue("the reply names the URL", p.contains("report the URL you saved"))
+        assertTrue(
+            "a reply without the URL is not a completed setup",
+            p.contains("A reply that does not name the saved URL is not a completed setup"),
+        )
+    }
+
+    /**
+     * A handshake proves the phone was reached, not that the entry was saved. The prompt says both,
+     * so the agent cannot declare the setup complete on the strength of the connection alone.
+     */
+    @Test fun the_prompt_keeps_the_limit_of_a_handshake() {
+        val p = PhoneSetup.prompt(host, token)
+        assertTrue(
+            p.contains("A handshake proves this phone was reached; it does not prove the entry was saved"),
+        )
+        assertTrue("only the phone decides connected", p.contains("Do not claim the phone is connected"))
         assertFalse(p.contains("save the entry anyway"))
     }
 
@@ -351,6 +393,27 @@ class PhoneSetupTest {
                 assertFalse("$state must not use the word: $copy", copy.contains("connected", ignoreCase = true))
             }
         }
+    }
+
+    /**
+     * Connected states both the proof and its limit: the handshake proves the agent reached this
+     * phone, and the agent's own reply is where the saved entry is named. The same sentence is on
+     * both Connected screens, so they cannot drift.
+     */
+    @Test fun the_connected_copy_states_the_proof_and_its_limit() {
+        val meaning = PhoneToolsView.setupNext(PhoneSetup.State.CONNECTED)
+        assertTrue(meaning, meaning.contains("reached this phone"))
+        assertTrue("the handshake is the proof", meaning.contains("completed the MCP handshake"))
+        assertTrue("and its limit", meaning.contains("does not prove the entry was saved"))
+        assertTrue(
+            "the reply is where the saved entry is named",
+            meaning.contains("reply") && meaning.contains("saved URL"),
+        )
+        assertEquals(
+            "both Connected screens say the same thing",
+            meaning,
+            PhoneBootstrap.CONNECTED_MEANING,
+        )
     }
 
     /** Three states, six lines, no two the same: the owner can tell where he is at a glance. */

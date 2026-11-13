@@ -216,7 +216,10 @@ object PhoneToolsView {
         state == PhoneSetup.State.IDLE -> NOT_SET_UP_MEANING
         state == PhoneSetup.State.WAITING -> WAITING_MEANING
         state == PhoneSetup.State.CONNECTED ->
-            "Your agent reached this phone and completed the MCP handshake. The entry is lazy: the tool is registered from its schema, so your agent can reach this phone whenever a call is live — it does not need to have reached it recently. That is the proof; its reply is below for the record."
+            "Your agent reached this phone and completed the MCP handshake. The entry is lazy, so " +
+                "the tool stays registered and your agent can reach this phone whenever a call is " +
+                "live. That is the proof the phone was reached; it does not prove the entry was " +
+                "saved — your agent's own reply is where the saved URL is named."
         state == PhoneSetup.State.UNREACHABLE ->
             "Check the gateway connection in Settings, then try again."
         state == PhoneSetup.State.REFUSED ->

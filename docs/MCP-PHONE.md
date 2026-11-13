@@ -25,7 +25,7 @@ string in one place.
 - A gateway configured under **Entity & Connection**: an address with a scheme and a key. The setup
   turn is sent on that connection, and an unconfigured one is refused with its own line.
 - The agent running on that gateway, able to edit its own MCP configuration with the tools it
-  already has (`hermes mcp add`, or the equivalent `mcp_servers` entry).
+  already has (`hermes config set`, or `hermes mcp add` as a fallback).
 - A live call for the agent to reach the phone outside setup. The listener has no daemon of its own.
 
 ## How it is set up
@@ -59,19 +59,27 @@ The turn is `PhoneSetup.prompt`, and its text is pinned by a test. It names:
 - the server name `vox`, the real tailnet URL `http://<tailnet-address>:8765/mcp`, and the tool
   name the model will see, `mcp__vox__phone`;
 - the phone's `Token:`;
-- the documented command `hermes mcp add vox --url … --auth header --connect-timeout 5`, and the
-  equivalent `mcp_servers` entry;
+- the three documented commands that write the entry, in this order:
+  `hermes config set mcp_servers.vox.url …`,
+  `hermes config set mcp_servers.vox.headers.Authorization "Bearer …"`, and
+  `hermes config set mcp_servers.vox.enabled true`;
+- `hermes mcp add` only as an alternative, with its limitation: it asks which tools to enable and
+  whether to save, and a tool call has no stdin;
 - the documented per-server `lazy` key: `hermes config set mcp_servers.vox.lazy true`;
 - what the phone can and cannot do, and that only granted groups are offered;
 - the idempotence rule — update an existing `vox` entry in place, never add a second;
 - that this phone's listener is open for the attempt;
+- that the agent must verify with `hermes mcp list` (or `hermes mcp test vox`) and name the URL it
+  saved — a reply without that URL is not a completed setup;
 - that **no restart is needed and none is wanted**, because a running gateway reconciles its own MCP configuration.
 
 It is idempotent by content. Sending the same turn twice therefore describes the same end state,
 and **Ask again** is safe.
 
-`hermes mcp add` verifies the connection before it saves and refuses a server it cannot reach, so
-the turn tells the agent to report a refusal plainly rather than write a dead entry.
+`hermes config set` writes nested keys, creates the entry without `--force`, and a running gateway
+reconciles the change by itself. A handshake proves the phone was reached; it does not prove the
+entry was saved, so the turn requires the named URL in the agent's reply. `hermes mcp add` verifies
+before it saves and refuses a server it cannot reach, but it prompts, and a tool call has no stdin.
 
 ### The states the sheet shows
 
@@ -101,7 +109,7 @@ attempt, and the copyable turn stays on screen.
 
 The entry the agent writes carries `lazy: true`. A lazy entry is registered from its schema cache
 on disk, so `mcp__vox__phone` is in the model's hands whether or not the phone has been reached
-recently; the connection is made when the tool is used. `hermes mcp add`'s own verification fills
+recently; the connection is made when the tool is used. A successful connection to the phone fills
 the cache. A missing or stale cache falls back to the ordinary eager connect at startup.
 
 ### The manual fallback

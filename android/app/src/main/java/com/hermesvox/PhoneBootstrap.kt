@@ -90,8 +90,9 @@ object PhoneBootstrap {
     const val CONNECTED_HEADING = PhoneToolsView.CONNECTED_HEADING
     const val CONNECTED_MEANING =
         "Your agent reached this phone and completed the MCP handshake. The entry is lazy, so the " +
-            "tool stays registered: your agent can reach this phone whenever a call is live, and " +
-            "does not need to have reached it recently."
+            "tool stays registered and your agent can reach this phone whenever a call is live. " +
+            "That is the proof the phone was reached; it does not prove the entry was saved — your " +
+            "agent's own reply is where the saved URL is named."
 
     // ---- the failures, each named ----
 

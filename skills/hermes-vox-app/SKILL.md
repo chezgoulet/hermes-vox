@@ -1432,9 +1432,10 @@ What the app needs from the agent, and how to prove each part:
   name from `data[0].id`.
 - **Which route do turns use?** `POST /v1/runs` with the profile's bearer. A gateway that answers
   the admission with 404 is the one case that falls back to `POST /v1/responses`, once.
-- **Is the phone tool reachable?** `hermes mcp add vox --url … --auth header …` verifies the
-  server before it saves and refuses one it cannot reach (docs/MCP-PHONE.md `hermes mcp add` verifies the connection before it saves and refuses a server it cannot reach). A saved entry is
-  proof the phone answered; a refusal is proof it did not.
+- **Is the phone tool reachable?** `hermes mcp list` names the saved entry, and `hermes mcp test
+  vox` connects without editing it (docs/MCP-PHONE.md `A handshake proves the phone was reached; it does not prove the`). `hermes mcp add vox --url … --auth header …` also verifies the
+  server before it saves and refuses one it cannot reach, but it prompts, and a tool call has no
+  stdin. A saved entry is proof the phone answered; a refusal is proof it did not.
 
 An agent that answers about the gateway's own voice settings instead of the app's is usually an
 agent without this skill, or one whose install went to another profile.

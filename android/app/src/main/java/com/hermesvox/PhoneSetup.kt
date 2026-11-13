@@ -69,22 +69,27 @@ object PhoneSetup {
 
     /**
      * The exact turn the app sends. It carries the address, the server and tool names, the token,
-     * the documented `hermes mcp add` command, the documented per-server `lazy` key
-     * (`hermes config set mcp_servers.<name>.lazy true`) that keeps the tool registered while the
-     * phone is idle, the statement that the listener is open for this setup, what the phone can and
-     * cannot do, and the idempotence rule. It asks for no restart and no job id: a running gateway
-     * reconciles its MCP configuration by itself.
+     * the `hermes config set` commands that write the entry (including the documented per-server
+     * `lazy` key that keeps the tool registered while the phone is idle), `hermes mcp add` as a
+     * limited alternative, the statement that the listener is open for this setup, what the phone
+     * can and cannot do, the idempotence rule, and the verification that must name the saved URL.
+     * It asks for no restart and no job id: a running gateway reconciles its MCP configuration by
+     * itself.
      *
-     * **It carries this phone's token** because `hermes mcp add` writes it into the agent's own
+     * **It carries this phone's token** because `hermes config set` writes it into the agent's own
      * configuration as the server's bearer. The token leaves the phone only on this turn, over the
      * same authenticated connection every other turn uses; [PhoneSetupStore] keeps the text in
      * memory for this process only, and [PhoneBootstrapStore] never logs, audits or persists it.
      * The agent is told to keep it out of its reply.
      *
      * **It says the listener is up now.** The button opened the listener before this turn was sent,
-     * and it stays up while the attempt runs, so the agent's `hermes mcp add` can prove reachability
-     * whenever it gets there. The instruction says so plainly, because the agent would otherwise
-     * assume an idle phone.
+     * and it stays up while the attempt runs, so the agent's commands can reach this phone whenever
+     * it gets there. The instruction says so plainly, because the agent would otherwise assume an
+     * idle phone.
+     *
+     * **A handshake is not a saved entry.** The reply must name the URL it saved; the phone's own
+     * `initialize` proves only that it was reached. The prompt says both, so the agent cannot
+     * declare the setup complete on the strength of the connection alone.
      */
     fun prompt(
         host: String,
@@ -100,21 +105,18 @@ object PhoneSetup {
             appendLine("Tool: ${PhoneTool.NAME} — you will see it as ${PhoneMcpConfig.MODEL_TOOL_NAME}")
             appendLine("Token: $token")
             appendLine()
-            appendLine("Add it with the documented CLI:")
+            appendLine("Write the entry with `hermes config set`, running these commands in this order:")
             appendLine()
-            appendLine("hermes mcp add ${PhoneMcpConfig.SERVER_NAME} --url \"$url\" --auth header --connect-timeout 5")
-            appendLine()
-            appendLine("When it asks for the API key / bearer token, paste exactly the token above. This phone's listener is open for as long as this attempt runs — however long you take — so the connection probe should succeed now.")
-            appendLine()
-            appendLine("`hermes mcp add` verifies the connection before it saves, and it will refuse a server it cannot reach. If it refuses, do not write a dead entry and do not guess: say plainly that the add did not succeed and name what the command said.")
-            appendLine()
-            appendLine("This also works with the equivalent `mcp_servers` entry, in the profile's `~/.hermes/config.yaml`: the same `$url`, an `Authorization: \"Bearer $token\"` header, and `lazy: true`. Whichever route you use, the server name stays `${PhoneMcpConfig.SERVER_NAME}`.")
-            appendLine()
-            appendLine("Set that lazy key with the documented command, whichever route you used:")
-            appendLine()
+            appendLine("hermes config set mcp_servers.${PhoneMcpConfig.SERVER_NAME}.url $url")
+            appendLine("hermes config set mcp_servers.${PhoneMcpConfig.SERVER_NAME}.headers.Authorization \"Bearer $token\"")
+            appendLine("hermes config set mcp_servers.${PhoneMcpConfig.SERVER_NAME}.enabled true")
             appendLine("hermes config set mcp_servers.${PhoneMcpConfig.SERVER_NAME}.lazy true")
             appendLine()
-            appendLine("The tool is registered from its schema, so it is always available to you; the connection is made when it is used, so this phone does not need to have been reached recently for the tool to be there. `hermes mcp add` has already connected once, which fills that schema cache; if the cache is missing, the entry falls back to connecting at startup as it did before.")
+            appendLine("`hermes config set` writes nested keys, creates the entry if it does not exist without `--force`, and a running gateway reconciles the change by itself. These are the commands that work from a tool call. The second command writes the `Authorization: \"Bearer $token\"` header, and the entry also carries `lazy: true`. The tool is registered from its schema, so it is always available to you; the connection is made when it is used, so this phone does not need to have been reached recently for the tool to be there. If the schema cache is missing, the entry falls back to connecting at startup as it did before.")
+            appendLine()
+            appendLine("`hermes mcp add` is an alternative only. It asks two questions interactively — which tools to enable, then whether to save — and a tool call has no stdin, so it may fail to save. If you use it, do not expect the prompt to be answered for you. Whichever route you use, the server name stays `${PhoneMcpConfig.SERVER_NAME}`.")
+            appendLine()
+            appendLine("This phone's listener is open for as long as this attempt runs — however long you take — so the connection probe should succeed now.")
             appendLine()
             appendLine("No restart is needed and none is wanted. A running gateway picks the new server up from its own configuration and registers the tool by itself; there is no restart, reload or lifecycle command on this surface, so do not call one and do not create or run a job for it.")
             appendLine()
@@ -124,7 +126,7 @@ object PhoneSetup {
             appendLine()
             appendLine("What the phone can do: set and cancel timers and alarms; turn Do Not Disturb on and off; change media volume; save a short note; report what is running; undo a reversible action. Only the capability groups the owner has granted are offered — a group that is Off is absent from the tool's action list, and a call that still names one is refused with reason=not_granted rather than performed. What it cannot do: read messages, place calls, send email, share files, launch apps, delete anything, or make purchases. Those actions need the owner's approval on the phone, and this server refuses them rather than performing them.")
             appendLine()
-            appendLine("After the add, verify that a server named `${PhoneMcpConfig.SERVER_NAME}` appears in the MCP configuration you loaded. Then reply with what you changed, and say explicitly whether the add succeeded. Do not claim the phone is connected — the phone checks that itself when your client's handshake arrives, and its listener closes when this attempt ends. If you cannot edit your own configuration, say so plainly and name the file or permission that stopped you. Never paste the token into your reply, a message or a log: it stays in your configuration, and this conversation needs no credential beyond this instruction.")
+            appendLine("After writing the entry, verify it with `hermes mcp list`, or with `hermes mcp test ${PhoneMcpConfig.SERVER_NAME}`, and report the URL you saved. A reply that does not name the saved URL is not a completed setup. Do not claim the phone is connected — the phone checks that itself when your client's handshake arrives, and its listener closes when this attempt ends. A handshake proves this phone was reached; it does not prove the entry was saved. If you cannot edit your own configuration, say so plainly and name the file or permission that stopped you. Never paste the token into your reply, a message or a log: it stays in your configuration, and this conversation needs no credential beyond this instruction.")
         }.trimEnd()
     }
 
