@@ -65,13 +65,30 @@ object VoxLog {
     @Volatile private var writesSinceCheck = 0
     private val rotationLock = Object()
 
+    /** True once this process has installed the file log. */
+    @Volatile private var ready = false
+
+    /**
+     * Install the file log for THIS PROCESS. Called from [VoxApplication.onCreate] so every
+     * entry point — a service, a receiver, the assist activity, Settings after a process
+     * restart — writes a file, not only logcat.
+     *
+     * It used to be called from `MainActivity.onCreate` alone, and the hole that left is the
+     * one a support export falls into: a session that reached Settings without the main screen
+     * wrote nothing to `hermes-vox.log`, and "Send full log" honestly reported
+     * `no runtime log` — on a build that was logging the whole time. Idempotent, because both
+     * call sites now run in a normal launch; the second call only refreshes the preferences.
+     */
     fun init(context: Context) {
+        val prefs = context.getSharedPreferences("hv", Context.MODE_PRIVATE)
+        debugFile = prefs.getBoolean("debug_log", false)
+        verboseNeverPrune = debugFile   // 0.6.10: verbose ON = never prune (see the field doc)
+        if (ready) return
         file = File(context.filesDir, "logs/hermes-vox.log")
         file?.parentFile?.mkdirs()
-        debugFile = context.getSharedPreferences("hv", Context.MODE_PRIVATE).getBoolean("debug_log", false)
-        verboseNeverPrune = debugFile   // 0.6.10: verbose ON = never prune (see the field doc)
         rotateIfNeeded()   // K2: check on open — a previous run may have left an oversized file
         setUncaughtHandler()
+        ready = true
     }
 
     fun setDebugFile(on: Boolean) {
