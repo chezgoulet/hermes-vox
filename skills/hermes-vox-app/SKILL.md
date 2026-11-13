@@ -51,9 +51,9 @@ turn's text to `/v1/runs`
    server-side (docs/ARCHITECTURE.md `Only an admission that answers **404** falls back to this route, once.`).
 4. **By default nothing leaves the phone except that turn** — text to your own gateway, plus
    model files fetched over HTTPS when you install them (PRIVACY.md `A model host`). Two
-   opt-in paths send audio elsewhere: the remote-STT backend and the platform (Google)
-   recogniser; both are described in section 4 and must be named when a user asks about
-   privacy.
+   paths send audio elsewhere: the remote-STT backend you configure, and the platform (Google)
+   recogniser the app falls back to when no on-device model is installed; both are described in
+   section 4 and must be named when a user asks about privacy.
 
 ### The words this file uses
 
@@ -121,9 +121,13 @@ Every refusal below is as deliberate as a capability, and each one prevents a co
 answer. State it plainly, in these words; none of them is a bug report.
 
 - **No cloud, no account, no vendor server.** There is no hosted service, no sign-up and
-  nothing operated by the maintainers (README.md `no account, no hosted service`); the gateway
-  key goes only to the gateway (PRIVACY.md `The app sends **text**, not audio, to the gateway`). The only *default*
-  network peer is your gateway plus the model host you install from (PRIVACY.md `the Hermes server you configure`).
+  nothing operated by the maintainers (README.md `no account, no hosted service`). The
+  destinations form a closed list — your gateway, a remote speech server you configure, a model
+  host while a model is being installed, the phone's own recogniser when the app falls back to
+  it, and the agent over the tailnet while a phone tool is in use
+  (PRIVACY.md `A destination you choose — your gateway, a remote speech server, a model host`).
+  The gateway key goes to one destination: requests to the gateway origin you configured
+  (SECURITY.md `The key goes to one destination`).
 - **No Play Store, no AAB.** Google Play is dropped as a rail; distribution is GitHub,
   Obtainium and F-Droid, always with our own signature (docs/DECISIONS.md `Google Play is dropped`).
 - **No iOS, no desktop.** Android only; the reusable core that a port would have needed was
@@ -1062,8 +1066,9 @@ Silero VAD, Supertonic and Whisper base.en: the offline voice needs all three
 ### What cannot co-exist comfortably on a small device
 
 - **Gemma (2.6 GB) + the streaming arm (~900 MB resident)** is the worst pairing; Gemma also
-  wants the GPU, and on a device it cannot use it runs 5× slower on CPU
-  (docs/DECISIONS.md `The GPU engine does not fit`).
+  wants the GPU, and a phone whose GPU it cannot use runs it on the CPU
+  (docs/DECISIONS.md `The GPU engine does not fit`) at roughly five times the cost
+  (docs/DECISIONS.md `On CPU it is ~5× slower than the model it would replace`).
 - The app warns explicitly on low-RAM devices when the streaming arm is selected: it "needs
   ~900 MB RAM; may be slow or close other apps on this phone"
   (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `needs ~900 MB RAM`). The
