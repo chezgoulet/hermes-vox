@@ -668,7 +668,18 @@ The commands sheet's header carries the same drawing
 (android/app/src/main/java/com/hermesvox/CommandsSheet.kt `lead = CommandMark`). Clanker
 is drawn from scratch — a rounded outline head, two dot eyes, a top antenna and a small
 smile — with no attribution needed; the other four are geometric marks, not borrowed
-assets. Typing `/` on the main screen opens the same sheet
+assets.
+
+**Why the fifth is not the Bugdroid.** Google's Android robot is CC BY 3.0: usable with
+the attribution line ("Android robot © Google, CC BY 3.0"), but its brand guidelines also
+bar any use that suggests Google's endorsement or affiliation. The commands entry is the
+app's own affordance — and, as the default, the first control a new install shows — so
+putting the robot there reads as exactly that suggestion, in an app that is not Google's.
+The fifth drawing is therefore our own robot, in our own ink, with nothing in the APK
+carrying that licence. If it is ever wanted, the rule is fixed: the credit line goes in
+About, and it is never the default.
+
+Typing `/` on the main screen opens the same sheet
 (android/app/src/main/java/com/hermesvox/MainActivity.kt `fun dispatchKeyEvent`).
 
 The first row inside that sheet is **Share with agent**. It is an artifact action, not a slash
