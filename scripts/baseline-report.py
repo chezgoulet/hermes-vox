@@ -5,6 +5,10 @@ Reads one or more exported logs (Settings -> Share full log, or logcat) and prin
 baseline table the issue asks for, from the app's own event lines:
 
   event=turn ... stt=MS firstByte=MS firstText=MS firstAudio=MS fullReply=MS outcome=O
+               firstText and firstAudio are both anchored at the turn's start, so
+               firstAudio - firstText is the app-owned interval: first reply token seen
+               -> first audible sample. That is the split documented in docs/PLAN-MVP.md
+               §2 — the app owns the first sound, the mind owns the first token.
   event=lat label=cold metric=first-frame ms=MS (ColdFrame: the app's own cold start)
   event=er-soul ... ms=MS                      (a Presence render)
   event=res rssMb=… availMb=… thermal=…         (ResourceProbe, every 10 s of a call)
@@ -51,6 +55,7 @@ def num(v):
 def parse(lines):
     turns = {k: [] for k in ("stt", "firstByte", "firstText", "firstAudio", "fullReply")}
     renders, rss, avail, thermal, warm, summaries, cold = [], [], [], [], {}, [], []
+    app_first, brain_first = [], []
     dropped = failed = total_turns = 0
     for line in lines:
         if "event=turn " in line:
@@ -60,6 +65,13 @@ def parse(lines):
                 n = num(kv.get(k))
                 if n is not None:
                     turns[k].append(n)
+            # App-owned: first reply token -> first audible sample. Brain-owned: request ->
+            # first token. Kept apart because the second is the server's and must never gate.
+            ft, fa = num(kv.get("firstText")), num(kv.get("firstAudio"))
+            if ft is not None:
+                brain_first.append(ft)
+            if ft is not None and fa is not None and fa >= ft:
+                app_first.append(fa - ft)
             if kv.get("outcome") in FAILED:
                 failed += 1
         elif "event=lat " in line:
@@ -91,6 +103,8 @@ def parse(lines):
     return {
         "turns": total_turns,
         "cold_start": {"p50": pct(cold, 0.5), "p95": pct(cold, 0.95), "n": len(cold)},
+        "app_first_sound": {"p50": pct(app_first, 0.5), "p95": pct(app_first, 0.95), "n": len(app_first)},
+        "brain_first_token": {"p50": pct(brain_first, 0.5), "p95": pct(brain_first, 0.95), "n": len(brain_first)},
         "latency": {k: {"p50": pct(v, 0.5), "p95": pct(v, 0.95), "n": len(v)} for k, v in turns.items()},
         "presence_render": {"p50": pct(renders, 0.5), "p95": pct(renders, 0.95), "n": len(renders)},
         "peak_rss_mb": max(rss) if rss else None,
@@ -118,6 +132,10 @@ def table(r):
                      ("firstAudio", "first audio"), ("fullReply", "full reply")):
         l = r["latency"][k]
         rows.append(f"| {label} p50 / p95 (n={l['n']}) | {f(l['p50'])} / {f(l['p95'])} |")
+    a = r.get("app_first_sound") or {"p50": None, "p95": None, "n": 0}
+    rows.append(f"| app first sound p50 / p95 (n={a['n']}) | {f(a['p50'])} / {f(a['p95'])} |")
+    b = r.get("brain_first_token") or {"p50": None, "p95": None, "n": 0}
+    rows.append(f"| brain first token p50 / p95 (n={b['n']}) — reported, not gated | {f(b['p50'])} / {f(b['p95'])} |")
     p = r["presence_render"]
     rows.append(f"| presence render p50 / p95 (n={p['n']}) | {f(p['p50'])} / {f(p['p95'])} |")
     rows.append(f"| peak RSS | {f(r['peak_rss_mb'], ' MB')} |")

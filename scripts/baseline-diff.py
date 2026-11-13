@@ -93,6 +93,16 @@ def _pct(report, name, p="p50"):
     return d.get(p), int(d.get("n") or 0)
 
 
+def _app_first(report, p="p50"):
+    d = report.get("app_first_sound") or {}
+    return d.get(p), int(d.get("n") or 0)
+
+
+def _brain_first(report, p="p50"):
+    d = report.get("brain_first_token") or {}
+    return d.get(p), int(d.get("n") or 0)
+
+
 def _cold(report, p="p50"):
     d = report.get("cold_start") or {}
     return d.get(p), int(d.get("n") or 0)
@@ -133,6 +143,13 @@ ROWS = [
         basis="gateway"),
     Row("firstAudio", "first audio (p50)", lambda r: _pct(r, "firstAudio"), rel=0.20, abs_=80,
         basis="gateway"),
+    # App-owned and gated: first reply token -> first audible sample. This is the row the
+    # release claim rests on, because it is the only part of the wait the app decides.
+    Row("appFirst", "app first sound (p50, first token → first audio)", _app_first,
+        rel=0.25, abs_=100),
+    # Brain-owned and REPORTED: request -> first token. It moves with the server, the model and
+    # the load; it is context for every release and never a red.
+    Row("brainFirst", "brain first token (p50) — reported", _brain_first, basis="report"),
     Row("presence", "presence render (p50)", lambda r: (
         (r.get("presence_render") or {}).get("p50"),
         int((r.get("presence_render") or {}).get("n") or 0)), rel=0.25, abs_=120),
@@ -183,6 +200,10 @@ def judge(row, base, cand, bn=None, cn=None):
     # Presence is settled before anything else: a row that is simply not in one of the runs
     # must never be reclassified as "context", or a row could stop being reported and the
     # diff would call that a pass. That is the failure this instrument exists to catch.
+    # A brain-owned row is reported and never judged: printing it beside an app-owned row is
+    # what makes a slow release legible ("the app did its part") without blaming us for the model.
+    if row.basis == "report":
+        return "reported", None, "brain-owned; reported, never gated"
     if row.kind == "thermal":
         if base is None and cand is None:
             return "n/a", None, "the phone never said"
@@ -227,6 +248,10 @@ def fmt(v, unit):
 def band(row, allowed, base):
     if row.kind == "count":
         return "0"
+    # A brain-owned row is reported and never judged: printing it beside an app-owned row is
+    # what makes a slow release legible ("the app did its part") without blaming us for the model.
+    if row.basis == "report":
+        return "reported", None, "brain-owned; reported, never gated"
     if row.kind == "thermal":
         return "rank"
     sign = "−" if row.kind == "down" else "+"
@@ -289,7 +314,7 @@ def main(argv):
                   f"{', '.join(r.key for r in ROWS + warm_rows(base))}", file=sys.stderr)
             return USAGE
 
-    out, worst, compared, weak, unknown_rows, bad, context_rows = [], OK, 0, [], [], [], []
+    out, worst, compared, weak, unknown_rows, bad, context_rows, reported_rows = [], OK, 0, [], [], [], [], []
     for row in rows:
         b, bn = row.get(base)
         c, cn = row.get(cand)
@@ -302,6 +327,8 @@ def main(argv):
             unknown_rows.append(row.key)
         elif verdict == "context":
             context_rows.append(row.key)
+        elif verdict == "reported":
+            reported_rows.append(row.key)
         # A warned row (a dropped turn) is printed and counted, but does not by itself turn
         # the diff red: a drop can be the caller hanging up, and that is not the build's fault.
         if verdict == "regressed":
@@ -351,6 +378,8 @@ def main(argv):
     else:
         tail = f", {len(context_rows)} row{'s' if len(context_rows) != 1 else ''} printed as " \
                f"context and not judged" if context_rows else ""
+        if reported_rows:
+            tail += f", {len(reported_rows)} brain-owned row{'s' if len(reported_rows) != 1 else ''} reported"
         print(f"BASELINE-DIFF PASS ({compared} rows compared{tail})")
     return worst
 

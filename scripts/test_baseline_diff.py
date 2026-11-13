@@ -29,6 +29,8 @@ BASE = {
     "turns": 8,
     "calls": 1,
     "cold_start": {"p50": 780, "p95": 900, "n": 3},
+    "app_first_sound": {"p50": 400, "p95": 520, "n": 8},
+    "brain_first_token": {"p50": 2200, "p95": 2600, "n": 8},
     "latency": {
         "stt": {"p50": 300, "p95": 420, "n": 8},
         "firstByte": {"p50": 280, "p95": 350, "n": 8},
@@ -143,6 +145,19 @@ for k in ("firstAudio",):
     lost = json.loads(json.dumps(BASE))
     lost["latency"][k] = {"p50": None, "p95": None, "n": 0}
     case(f"a lost conversational row is UNKNOWN ({k})", BASE, lost, 3, "BASELINE-DIFF UNKNOWN")
+
+# The split that matters: an app-owned regression is a red; a brain-owned move is reported and
+# never fails a build, because the app does not decide it.
+slow_app = json.loads(json.dumps(BASE))
+slow_app["app_first_sound"] = {"p50": 900, "p95": 900, "n": 8}
+out = case("a slower app first sound fails", BASE, slow_app, 1, "BASELINE-DIFF REGRESSED")
+assert "app first sound" in out
+
+slow_brain = json.loads(json.dumps(BASE))
+slow_brain["brain_first_token"] = {"p50": 4200, "p95": 4200, "n": 8}
+out = case("a slower brain first token is reported, not judged", BASE, slow_brain, 0, "BASELINE-DIFF PASS")
+assert "| reported |" in out, out
+assert "brain-owned; reported, never gated" in out
 
 # 3. Unknown is not healthy. The baseline measured first audio; the candidate's log has no
 #    turn rows at all (a truncated export, or the row stopped being logged). Exit 3, named.
