@@ -19,6 +19,9 @@ import kotlin.concurrent.thread
  * machinery is shared; a voice only decides how the engine is configured and how one phrase is
  * synthesized.
  *
+ * **Superseded 2026-11-12 by D48:** the recommendation is **Piper**; Supertonic stays selectable and
+ * experimental for its ten voices (#559, #589). The bake-off reasoning below stands as history.
+ *
  * The 2026-09-29 bake-off (docs/VOICE-BAKEOFF.md) chose SUPERTONIC as the recommended voice:
  * ~10x faster than real time on a desktop CPU with two threads (RTF 0.10-0.15), 44.1 kHz, ten
  * built-in voices, and every word of the test sentence intact on eight of ten voices. Kokoro
