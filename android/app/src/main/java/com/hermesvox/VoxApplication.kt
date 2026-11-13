@@ -18,6 +18,11 @@ import android.app.Application
 class VoxApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        // The file log belongs to the process, not to a screen. Installed here so an export
+        // from Settings — or a log written by a service before any activity exists — has
+        // something to export. (It was in MainActivity.onCreate alone; see VoxLog.init.)
+        VoxLog.init(this)
+        CrashLog.init(this)
         val prefs = getSharedPreferences("hv", MODE_PRIVATE)
         // #404: the `/v1/runs` fallback is per profile and survives a restart. Install the
         // store before any session can be built.
