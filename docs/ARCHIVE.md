@@ -1,0 +1,134 @@
+# Archive — the past, kept and labelled
+
+Everything here is **historical**. It is kept because it is the record of how the project got
+somewhere, and because deleting history is how a lesson gets learned twice. Nothing in this folder
+is a claim about the current build, and `scripts/check-doc-truth.py` does not check it.
+
+**126 files.** Each line names the file and what it was.
+
+- `0.9.1-SCOPE.md` — 0.9.1 — everything we are building
+- `ACCESSIBILITY-TIER.md` — The accessibility tier: screen control for the agent (#429, Tier 3)
+- `BARGE-REGRESSION-ANALYSIS.md` — Barge-in regression analysis — 0.8.1 (Go core) vs 0.9.0 (Kotlin core)
+- `BARGE-WHY-0.7-WORKED.md` — Why barge-in worked in 0.7.x and not now
+- `BUILD-DIRECTIVE-fix053.md` — BUILD DIRECTIVE — qwen3.8-max implements the 0.5.3 sprint map. Build the BEST version.
+- `BUILD-DIRECTIVE-video-routing.md` — BUILD-DIRECTIVE: video-routing (Part 1) — widen the shape vocabulary
+- `BUILD-DIRECTIVE-video-statewire.md` — BUILD-DIRECTIVE: video state-wiring (Wave 1 shapes fire in their named states + configurable)
+- `BUILD-ER-enhanced-realtime.md` — BUILD SPEC — Enhanced Realtime (ER) mode. The full implementation plan.
+- `CLAUDE-BRIEF-0403.md` — BRIEF — 0.4.0.3: make barge-in cut through loud TTS reliably. YOU are the diagnostician.
+- `CLAUDE-BRIEF-0404.md` — BRIEF — 0.4.0.4: the ghost re-speak after hush. YOU are the diagnostician.
+- `CLAUDE-BRIEF-0502-anim.md` — BRIEF — 0.5.0.2: the animation facelift. YOU are the motion designer.
+- `CLAUDE-BRIEF-routing.md` — Visual Routing Fix — spec for the next 0.5 point release
+- `CRAWL-SCROLLBACK.md` — The crawl's scrollback (#368)
+- `DECISIONS-538.md` — 538 — decisions
+- `DESIGN-enhanced-realtime-voice.md` — DESIGN — Enhanced Realtime voice: bridging a bespoke Hermes agent to the on-phone voice
+- `DESIGN-presence-motion.md` — DESIGN — Presence & motion system (next after transcript-sync) — FOR YOUR EYES, not built yet
+- `DESIGN-sound-cues.md` — Sound cues — the being's procedural voice (#156, D7)
+- `HANDOFF-2026-08-28.md` — Hermes Vox — Session Handoff (2026-08-28)
+- `HANDOFF-ER-session.md` — HANDOFF — Hermes Vox: Enhanced Realtime mode
+- `INVESTIGATION-px9-trueblack-aura.md` — Investigation: the Pixel 9 "aura" (non-true-black region around the being)
+- `LOGGING-BLIND-SPOTS-AUDIT-2026-09-05.md` — Hermes Vox — Logging Blind-Spot Audit & Patch Spec
+- `NOTES-api-events.md` — What the Hermes API server gives the app
+- `NOTES-voicemanager.md` — Notes — what VoiceManager teaches us
+- `PLAN-0.4.0-polish.md` — PLAN 0.4.0 — the polish series: no baked secrets, VPN explicit, walkie out, harden in
+- `PLAN-0.8-accelerator.md` — PLAN — Hermes Vox 0.8: the accelerator series
+- `PLAN-0.9.1.md` — Plan — 0.9.1, the mechanics release
+- `PLAN-0.9.2.md` — Plan — 0.9.2, Presence
+- `PLAN-0.9.x-to-1.0.md` — Plan — from 0.9.0 to 1.0
+- `PLAN-0401-barge-telemetry.md` — SPEC — 0.4.0.1: barge near-miss telemetry + log-honesty fixes
+- `PLAN-0402-level-escape.md` — SPEC — 0.4.0.2: level-sustained barge escape (VAD veto under echo)
+- `PLAN-0501-visual-categories.md` — SPEC — 0.5.1: exposable visual categories + connection-test/dialing pill fix
+- `PLAN-0502-claude.md` — SPEC — 0.5.2-CLAUDE: fix the false-401 conn-test + add a user-facing /compress command
+- `PLAN-0502-qwen.md` — SPEC — 0.5.2-QWEN: massively expand the visualizations; expose every style as a
+- `PLAN-0503-static-transcript.md` — SPEC — 0.5.0.3: kill the Star-Wars drift + screen-alive toggle (post-facelift)
+- `PLAN-1.0.md` — Plan — 1.0, the horizon
+- `PLAN-2.0.md` — Plan — 2.0, "the presence that follows you"
+- `PLAN-FUTURE.md` — Plan — unnumbered work: what is on the table
+- `PLAN-barge-endpoint-modelreview.md` — PLAN — Barge-in single-capture fix + VAD-extended endpointing + model-switch review
+- `PLAN-c1-vpn-explicit.md` — SPEC — C1: VPN-explicit onboarding + version bump (0.4.0 polish, batch 2)
+- `PLAN-c2-walkie-strip.md` — SPEC — C2: strip walkie-talkie (PTT) mode (0.4.0 polish, batch 3)
+- `PLAN-c3-audio-lifecycle.md` — SPEC — C3: audio lifecycle hardening (0.4.0 polish, batch 4)
+- `PLAN-c4-log-honesty.md` — SPEC — C4: firstAudio truth + log rotation (0.4.0 polish, batch 5, final before release)
+- `PLAN-immediate-silence.md` — SPEC — Immediate silence on stop + voice-usage default OFF (0.3.32.2)
+- `PLAN-logging-patch.md` — PLAN — Hermes Vox logging patch (P0 + latency/poll infra)
+- `PLAN-pause-first-silence.md` — SPEC — Pause-first silence: stop must not wait for the write it is killing (0.3.32.4)
+- `PLAN-presence-motion.md` — SPEC — 0.5.0-previewB: state-driven presence motion (the maintainer-approved vocabulary)
+- `PLAN-stt-backend-remote.md` — PLAN — remote STT backend (VoxStt over an OpenAI-compatible endpoint)
+- `PLAN-transcript-sync.md` — SPEC — Speech-locked transcript (0.5.0-preview A)
+- `PLAN-tts-usage-toggle-barge-ui.md` — SPEC — Voice-call echo routing toggle + barge tuning UI (0.3.32.1)
+- `PLAN-worker-retirement.md` — SPEC — Worker-owner reply retirement + start-stream provenance (0.3.32.3)
+- `PRESENCE-BENCH.md` — Presence bench — Qwen 3.5 0.8B and the lighter candidates on a Pixel 7
+- `PRESENCE-COST.md` — What the presence layer costs, and what each way of not paying it costs instead
+- `PRESENCE-GUARD-BOUNDS.md` — Presence guard bounds — measured, then split into content and shape
+- `PRESENCE-LATE-DIAGNOSIS.md` — Presence lane — why a line is dropped `late`
+- `RELEASE-0.3.31.md` — Hermes Vox 0.3.31.0 — release notes
+- `RELEASE-0.3.32.1.md` — Hermes Vox 0.3.32.1 — release notes
+- `RELEASE-0.3.32.2.md` — Hermes Vox 0.3.32.2 — release notes
+- `RELEASE-0.3.32.3.md` — Hermes Vox 0.3.32.3 — release notes
+- `RELEASE-0.3.32.4.md` — Hermes Vox 0.3.32.4 — release notes
+- `RELEASE-0.3.32.md` — Hermes Vox 0.3.32.0 — release notes
+- `RELEASE-0.4.0.1.md` — Hermes Vox 0.4.0.1 — release notes
+- `RELEASE-0.4.0.2.md` — Hermes Vox 0.4.0.2 — release notes
+- `RELEASE-0.4.0.3.md` — Hermes Vox 0.4.0.3 — release notes
+- `RELEASE-0.4.0.4.md` — Hermes Vox 0.4.0.4 — release notes
+- `RELEASE-0.4.0.md` — Hermes Vox 0.4.0 — release notes
+- `RELEASE-0.5.0-previewA.md` — Hermes Vox 0.5.0-previewA — speech-locked transcript
+- `RELEASE-0.5.0-previewB.md` — Hermes Vox 0.5.0-previewB — state-driven presence motion
+- `RELEASE-0.5.0.1.md` — Hermes Vox 0.5.0.1 — crash guard
+- `RELEASE-0.5.0.2.md` — Hermes Vox 0.5.0.2 — the being shapes its own light
+- `RELEASE-0.5.0.3.md` — Hermes Vox 0.5.0.3 — static in-place transcript + screen-alive toggle
+- `RELEASE-0.5.0.md` — Hermes Vox 0.5.0 — the presence release
+- `RELEASE-0.5.1.md` — Hermes Vox 0.5.1 — exposable visual categories + Dialing/Warming pill phases
+- `RELEASE-0.5.2-claude.md` — Hermes Vox 0.5.2-claude — no false 401, and a user-facing /compress
+- `RELEASE-0.5.2-qwen.md` — Hermes Vox 0.5.2-qwen — massively expanded visual categories + cycle-all
+- `RELEASE-0.5.3.md` — Hermes Vox 0.5.3 — the reliability batch (part 1)
+- `RELEASE-0.5.4.md` — Hermes Vox 0.5.4 — reliability batch part 2 + Kotlin 2.2 toolchain
+- `RELEASE-0.5.5.1.md` — Hermes Vox 0.5.5.1 — eye-fix patch
+- `RELEASE-0.5.5.2.md` — Hermes Vox 0.5.5.2 — iris centers properly
+- `RELEASE-0.5.5.3.md` — Hermes Vox 0.5.5.3 — the eye pivots as one object
+- `RELEASE-0.5.5.4.md` — Hermes Vox 0.5.5.4 — the eye is a rotating sphere
+- `RELEASE-0.5.5.5.md` — Hermes Vox 0.5.5.5 — sphere fork + eye aperture
+- `RELEASE-0.5.5.md` — Hermes Vox 0.5.5 — the video release (shape routing + Wave 1 + state-wiring)
+- `RELEASE-0.5.6.1.md` — Hermes Vox 0.5.6.1 — settings-ux wave 2
+- `RELEASE-0.5.6.2.md` — Hermes Vox 0.5.6.2 — ER-alpha labeling + docs accuracy
+- `RELEASE-0.5.6.md` — Hermes Vox 0.5.6 — settings-ux, P0 wave 1 (voice mode, reset scopes, bootstrapping)
+- `RELEASE-0.5.7.md` — Hermes Vox 0.5.7 — 100% Android-native (Ebitengine fully removed)
+- `RELEASE-0.6.0.md` — Hermes Vox 0.6.0
+- `RELEASE-0.6.1.md` — Hermes Vox 0.6.1 — Enhanced Realtime, wired (alpha)
+- `RELEASE-0.6.2.md` — Hermes Vox 0.6.2 — ER hotfix pass + the honest self-review
+- `RELEASE-0.6.3.md` — Hermes Vox 0.6.3 — the field-log fix
+- `RELEASE-0.6.4.md` — Hermes Vox 0.6.4 — the cadence fix + the render crash guard
+- `RELEASE-0.6.5.md` — Hermes Vox 0.6.5 — the silent-reply fix
+- `RELEASE-0.6.6.md` — Hermes Vox 0.6.6 — the ER tool-call crash
+- `RELEASE-0.7.0.md` — Hermes Vox 0.7.0 — the naturalness release
+- `RELEASE-0.7.2.md` — Hermes Vox 0.7.2 — true black
+- `RELEASE-0.7.3.md` — Hermes Vox 0.7.3 — the first-run fix
+- `RELEASE-0.8.0.md` — Hermes Vox 0.8.0 — "the accelerator release"
+- `RELEASE-0.8.1.md` — Hermes Vox 0.8.1 — "the headset release"
+- `RELEASE-0.9.0.1.md` — 0.9.0.1 — the /new fix
+- `RELEASE-0.9.0.2.md` — Hermes Vox 0.9.0.2
+- `RELEASE-0.9.0.3.md` — Hermes Vox 0.9.0.3
+- `RELEASE-0.9.0.md` — Hermes Vox 0.9.0 — "the HTTPS release"
+- `RESEARCH-2026-10-voice-agents.md` — Research checkpoint — voice interaction with agents, October 2026
+- `REVIEW-0.5.2-findings.md` — Hermes Vox — Adversarial Code Review
+- `REVIEW-DIRECTIVE-hermes-gateway.md` — DIRECTIVE — Hermes Agent (NousResearch) adversarial code review (Opus). Read-only.
+- `REVIEW-DIRECTIVE-vox.md` — DIRECTIVE — Hermes Vox (chezgoulet/hermes-vox) adversarial code review (Opus). Read-only.
+- `SPEC-conversational-bridge.md` — SPEC — the conversational bridge (profiles and files, without touching Hermes)
+- `SPRINT-2026-10-30-device-free.md` — Sprint specification — the device-free half of 0.9.1
+- `SPRINT-MAP.md` — SPRINT MAP — 0.5.3 fix batch (from Opus review). For delegation to a CHEAP model.
+- `SPRINT-PLAN-040-gates-impl.md` — Hermes Vox — Sprint 4 Implementation Plan (branch `feature/040-gates`)
+- `SPRINT-PLAN-040-gates.md` — Hermes Vox — Sprint 4 Plan Brief: Stability + Voice-Quality (fix the deferred items first)
+- `SPRINT-PLAN-DIRECTIVE.md` — SPRINT-PLAN DIRECTIVE — Plan the fix batch (qwen3.8-max). You plan; a CHEAPER model implements.
+- `SPRINT-PLAN-foundation.md` — Hermes Vox — Sprint 5 Plan Brief: Polished Foundation (before Enhanced Realtime)
+- `SPRINT-PLAN-polish-impl.md` — Sprint 6 — Polish / UX — Implementation Plan (byte-precise)
+- `SPRINT-PLAN-polish.md` — Hermes Vox — Sprint 6: Polish / UX Sprint (before Enhanced Realtime)
+- `SPRINT-PLAN-realtime.md` — Hermes Vox — Sprint 2 Plan Brief: Realtime Loop — re-arm + survive re-init + session isolation
+- `SPRINT-PLAN-release-security-impl.md` — Sprint 3 Implementation Plan — Release Signing + Security Cluster + #60 (prepared from `docs/SPRINT-PLAN-relea
+- `SPRINT-PLAN-release-security.md` — Hermes Vox — Sprint 3 Plan Brief: Release Signing + Security Cluster + Streaming Tidy-Up
+- `SPRINT-PLAN.md` — Hermes Vox — Sprint 1 Plan Brief
+- `STATE-AUDIT.md` — State audit — which surface carries which state (#280)
+- `STT-AB.md` — Streaming STT A/B — measured on a Pixel 7
+- `TEST-PLAN-0.9.md` — Hermes Vox 0.9 — device test pass
+- `VOICE-BAKEOFF.md` — Voice bake-off — 2026-09-29
+- `design-menu-shapes.md` — Shape-Expansion — the maintainer's Shapes (addendum to design menu)
+- `handoff.md` — Hermes Vox — Handoff to the Next Agent
+- `research-on-device-voice-2026-08-27.md` — On-Device Voice Interaction — Open-Source Landscape, Best Practices, and Patterns for Hermes Vox
