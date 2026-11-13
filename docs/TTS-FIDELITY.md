@@ -139,22 +139,20 @@ What a bump touches, and what is still open:
 
 ## The decision
 
-**D48 — Supertonic stays an experimental option; the word loss is a chunking defect, not the
-model.** The owner's ruling of 2026-11-12 is that Supertonic remains available and experimental
+**D48 — Supertonic stays an experimental option; the word loss is v1.6's, and v3 fixes it.** The owner's ruling of 2026-11-12 is that Supertonic remains available and experimental
 for the foreseeable future and is not under pressure to be faultless: the ten voices are worth
 having. This bench does not change that — it changes what the label can honestly say and what the
 next piece of work is:
 
 - the catalogue and Settings copy may say *"experimental: drops words when the reply is spoken in
   short pieces"* rather than the vaguer "may drop words";
-- the concrete candidate fix is a **per-engine chunk cap**: the app feeds every voice 30 characters
-  (`StreamTextChunker.CHUNK_CAP_CHARS`), which is tuned for Piper and is near the worst size for
-  Supertonic. One chunker with a cap per voice — not a second delivery path;
-- **45 characters is the ceiling today, and the reason is arithmetic.** Supertonic speaks at
+- **the fix is the model, not the cap: ship Supertonic 3** (#589). The sweep above shows v1.6 losing
+  words per synthesis and v3 not losing them, so the per-engine chunk cap this document first
+  proposed is **not needed and should not be built**. The measurement stands as the reason;
+- **if a cap is ever revisited for a future engine,** the arithmetic is: Supertonic speaks at
   14.5 chars/s against Piper's 20.5, so 30 characters is 2.1 s of its audio and 45 is 3.1 s. The
-  playback track is 4 s; 60 characters would be 4.1 s and would bring back the #515 defect where
-  the next chunk waits for the last one to finish playing. Measure 45 first; larger caps need a
-  larger track in the same change, and the gaps measured as well as the words;
+  playback track is 4 s, so 60 characters would be 4.1 s and would bring back the #515 class. That
+  is a constraint for a future experiment, not a task;
 - **not a 0.9.2 blocker.** Nothing here moves the release; it removes the excuse for guessing.
 
 The owner has already put voice quality where it belongs for this series — the recommendation is
