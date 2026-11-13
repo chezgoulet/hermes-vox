@@ -221,10 +221,22 @@ have it" but "does their reasoning agree with ours, and if not, who is right".
 **Recovery after an interruption (research §4).** Our checkpoint says we have "no notion of any of
 the three" recovery criteria: resume the workflow, address the interjection, do not re-deliver what
 was heard. Kyllene has the third one *mechanically*: a per-reply voiced watermark, playback held
-rather than stopped, and a rejected trip resuming mid-word. That is the implementation our finding
-implies and we never built. They are silent on the first two — they resume the **reply**, not the
-**task** — which is exactly where our agentic angle is ahead, and worth keeping in view: nobody in
-this pair has built the recovery that matters for a long tool run.
+rather than stopped, and a rejected trip resuming mid-word.
+
+**Corrected 2026-11-13, after two independent reviews read the code.** The checkpoint is stale: we
+have `Overlap.Kind` classifying the response, `BargeCarry` pre-rolling 300 ms, `EchoFloor` adapting
+the floor, and `Resume` marking heard versus unheard (120 s TTL). So "we never built it" is wrong.
+What is true, and worse, is the ordering and the object: a barge cuts the audio and then posts
+`POST /v1/runs/{id}/stop` (`core/Stream.kt:870`), which **ends the run**; the gateway's
+`POST /v1/runs/{run_id}/steer` exists but is refused unless the run is still `running`
+(`gateway/platforms/api_server_runs.py:1399-1413`, whose comment says the status gate is
+deliberately what rejects stop-then-steer). So stop-then-steer is not a sequence that exists, there
+is no step left to resume, and §4's first criterion cannot be built without changing the order:
+**cut locally → classify → steer the live run → stop only on an explicit abort.**
+
+Kyllene pauses playback and resumes a **reply**; we stop a **run** and reconstruct recovery on the
+next turn. Neither client steers a **run** — the surface for `run.steered` already exists and
+`docs/RUNS-ROUTE.md` notes it has none. That gap is larger than anything else in this review.
 
 **TTS must begin before the reply is complete (D18).** Our decision says the endpointer must commit
 early and TTS must start before the reply finishes. Their chunk shaping — short first piece, then
@@ -234,10 +246,12 @@ without having written the principle down.
 
 **Overlap is a *class*, not a level (research §3).** Our checkpoint states the field's
 polarisation: "trigger-happy VAD" versus "unacceptable response delays", and concludes the missing
-dimension is the class of the sound. Kyllene's barge gate is **still a level gate** — adaptive,
-hysteretic, sustained — so on our own reading of the literature they are at the trigger-happy pole
-with better engineering. But two devices of theirs converge on §3 from a different direction and
-deserve to be read as evidence:
+dimension is the class of the sound. Kyllene's barge *cut* is **still a level gate** — adaptive,
+hysteretic, sustained — so on our own reading of the literature the cut sits at the trigger-happy
+pole with better engineering. *(Corrected 2026-11-13: so does ours, which is the point — the
+difference is that we classify the **response** afterwards, via `Overlap.Kind`, and they classify
+**self-echo** afterwards. Neither of us classifies the overlap before cutting.)* Two devices of
+theirs converge on §3 from a different direction and deserve to be read as evidence:
 
 - **transcript similarity** rejects a trip when the captured audio transcribes to what is being
   spoken. That is classification, but of *self-echo vs user*, not of *backchannel vs interruption*.
