@@ -6,6 +6,10 @@ plan got here. This is the plan. `docs/MILESTONES.md` holds what a version numbe
 gate contains, and what a label means; it does not hold a sequence, because two documents holding one
 sequence is how they came to disagree.
 
+**The order of gates, and what MVP is:** `docs/PLAN-MVP.md` (2026-11-13). It sequences the work and
+defines MVP; where this roadmap and that plan disagree, the plan wins and this document is amended in
+the same pull request.
+
 ## The foundation, identified first
 
 The series is built outward from what is already stable, so it is worth saying exactly what that is.
