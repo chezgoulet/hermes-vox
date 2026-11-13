@@ -162,17 +162,19 @@ call that still names one returns `ok:false, reason:"not_granted"`. The model ca
 cannot see; if it tries anyway, the refusal is a result it can read and repeat, not a transport
 error.
 
-**Ask.** The actions are advertised, and every use is a decision rather than a run. On this wire an
-Ask call returns `ok:false, reason:"approval-required"` and performs nothing. The approval card
-arrives with the capability lanes (#429 steps 2–4): the MCP call has no run id, so the phone cannot
-mint the gateway's card from here, and inventing a second approval surface inside the server is what
-#421 rules out. Until then Ask is a visible refusal — visible to the model (the action is offered)
-and to the owner (the refusal is in Recent actions).
+**Ask.** The actions are advertised, and the tier decides what Ask means. A **Tier 1 (reported)**
+group at Ask **runs**: turning a reported group on is the grant, the result is returned, and the
+use is recorded in Recent actions — there is no card to wait for. A Tier 0 or Tier 2 group at Ask
+returns `ok:false, reason:"approval-required"` and performs nothing. The approval card arrives with
+the capability lanes (#429 steps 2–4): the MCP call has no run id, so the phone cannot mint the
+gateway's card from here, and inventing a second approval surface inside the server is what #421
+rules out. Until then a Tier 0/2 Ask is a visible refusal — visible to the model (the action is
+offered) and to the owner (the refusal is in Recent actions).
 
 **Allow.** The action runs immediately and is reported. **Only Tier 0 may be Allow** — reversible and
-private. Tier 1 stops at Ask because the owner sees its result and should stay in the loop; Tier 2
-stops at Ask because every use is a card of its own. A stored Allow against a Tier 1/2 group is read
-back as Ask; a grant that cannot be given is not a grant.
+private. Tier 1 has no Allow because Ask already means "on": the owner sees its result and stays in
+the loop. Tier 2 has no Allow because every use is a card of its own. A stored Allow against a
+Tier 1/2 group is read back as Ask; a grant that cannot be given is not a grant.
 
 **There is no allow-all.** The one bulk shortcut the design permits is *Allow all instant actions*,
 and it touches Tier 0 groups alone. (The sheet does not need to show it for the promise to hold.)
@@ -218,7 +220,7 @@ The reason vocabulary is stable and small:
 | `reason` | meaning |
 |---|---|
 | `not_granted` | the capability group is Off; the action is not offered and was not performed |
-| `permission` | the phone does not hold a permission the action needs (Do Not Disturb only, today) |
+| `permission` | the phone does not hold a permission the action needs — Do Not Disturb's special access, or the calendar's `READ_CALENDAR` / `WRITE_CALENDAR` |
 | `unavailable` | the action was recognised and the platform refused or failed |
 | `expired` | no undo is registered for that id any more (it fired, was superseded, or was never this phone's) |
 | `invalid-arguments` | the arguments do not describe a runnable action |

@@ -54,7 +54,7 @@ performed the action, and a refusal never carries an `id`, a success fact or an 
 | `reason` | meaning |
 |---|---|
 | `not_granted` | the action's group is Off; the action is not offered and was not performed |
-| `approval-required` | the group is Ask, or the action is Tier 2; the owner's approval owns it and nothing was done |
+| `approval-required` | the group is Ask and its tier waits for a card (Tier 0 or Tier 2), or the action is Tier 2; nothing was done, and the owner's approval owns it |
 | `permission` | the phone does not hold a permission or special access the action needs |
 | `no_folder` | no folder has been granted with the system picker, so there is nothing to read inside |
 | `bad_path` | the name is a path, contains `..`, or resolves outside the folder the owner granted |
@@ -65,8 +65,10 @@ performed the action, and a refusal never carries an `id`, a success fact or an 
 | `expired` | no undo is registered for that id any more |
 | `unknown-action` | not a phone action; the detail lists what is offered right now |
 
-Every action in the tables below can also return `not_granted`, `approval-required` and
-`invalid-arguments`; the "refusals" column names only the ones **particular to that action**.
+Every action in the tables below can also return `not_granted` and `invalid-arguments`; a Tier 0 or
+Tier 2 action can also return `approval-required` while its group is at Ask. A Tier 1 (reported)
+action at Ask runs, because the owner has already turned the group on. The "refusals" column names
+only the ones **particular to that action**.
 
 ---
 
@@ -168,8 +170,8 @@ undoable where the row says so.
 | `note` | notes | `text` string, 1 – 500 characters | `id`, `text`, `reported_next_turn`, `undoable` | **yes** — deletes it; lives 24 hours, because the note outlives the turn | none: private app storage | `unavailable` |
 | `file_read` | files | `name` string (the file's name, not a path), optional `folder` `Downloads` (the default) or `Documents` | `name`, `folder`, `bytes`, `chars`, `text` | **no** — reading changes nothing, and a read cannot be undone because it did not change anything | **Storage Access Framework only.** The owner grants one folder through `ACTION_OPEN_DOCUMENT_TREE`, the grant is persisted, and the sheet names the folder it got. No storage permission is declared, and `MANAGE_EXTERNAL_STORAGE` is never used. Text only, capped (below) | `no_folder`, `bad_path`, `not_text`, `too_big`, `unavailable` |
 | `file_offer` | files | the same `name` and `folder` | `name`, `folder`, `mime`, `bytes`, `sha256`, `url`, `expires_at` | **no** — offering changes nothing on the phone | the same granted folder, then the existing file bridge ([FileOffer](../android/app/src/main/java/com/hermesvox/FileOffer.kt) / [FileStage](../android/app/src/main/java/com/hermesvox/FileStage.kt)) over the tailnet. The result is a capability URL, not a base64 blob | `no_folder`, `bad_path`, `too_big`, `unavailable` |
-| `agenda` | calendar | — | `count`, `events` — each `start`, `end`, `title`, `calendar`, and `null` where the provider will not say | **no** — reading changes nothing | `READ_CALENDAR`, a runtime permission asked when the group is turned on; [CalendarContract](https://developer.android.com/reference/android/provider/CalendarContract) only | `permission`, `unavailable` |
-| `event_create` | calendar | `title` string ≤ 200 characters, `start` local ISO-8601 `YYYY-MM-DDTHH:MM` (seconds optional), `duration_min` integer 1 – 1 440, optional `calendar` name | `id`, `title`, `start`, `end`, `duration_min`, `start_ms`, `end_ms`, `calendar`, `undoable` | **yes** — deletes the event it created; lives until the event starts, or ten minutes, whichever is longer | `WRITE_CALENDAR` (and `READ_CALENDAR`, to find a writable calendar), runtime permissions asked when the group is turned on; `CalendarContract` only | `permission`, `unavailable`, `invalid-arguments` |
+| `agenda` | calendar | — | `count`, `events` — each `start`, `end`, `title`, `calendar`, and `null` where the provider will not say | **no** — reading changes nothing | `READ_CALENDAR`, a runtime permission. The sheet asks for `READ_CALENDAR` and `WRITE_CALENDAR` together when the group is turned on, and either one missing is a `permission` refusal naming it; [CalendarContract](https://developer.android.com/reference/android/provider/CalendarContract) only | `permission`, `unavailable` |
+| `event_create` | calendar | `title` string ≤ 200 characters, `start` local ISO-8601 `YYYY-MM-DDTHH:MM` (seconds optional), `duration_min` integer 1 – 1 440, optional `calendar` name | `id`, `title`, `start`, `end`, `duration_min`, `start_ms`, `end_ms`, `calendar`, `undoable` | **yes** — deletes the event it created; lives until the event starts, or ten minutes, whichever is longer | `WRITE_CALENDAR` (and `READ_CALENDAR`, to find a writable calendar), runtime permissions asked together when the group is turned on; `CalendarContract` only | `permission`, `unavailable`, `invalid-arguments` |
 
 **Files, precisely.** The name is a **name, not a path**: `..`, an absolute path, a separator and a
 URI are refused `bad_path` before the platform is asked, and a document that resolves outside the
@@ -333,5 +335,5 @@ through.
 14. **Revoke mid-call.** Turn Media Off while the call is live: the next `tools/list` no longer
     lists `play`, and the next call is `not_granted` with no key dispatched.
 15. **The declared groups stay refused.** With Messages and calls at Ask, `message` returns
-    `approval-required` and nothing is sent; `file_read` does the same while Files is Off. No lane
-    may make these advertise before the phone can keep the promise.
+    `approval-required` and nothing is sent; `file_read` returns `not_granted` while Files is Off.
+    No lane may make these advertise before the phone can keep the promise.
