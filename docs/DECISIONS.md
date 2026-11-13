@@ -893,6 +893,13 @@ until it rings, dnd/volume until superseded or ten minutes, a note for a day.
 refusal carries a reason and no success fact. A claim in the mind's reply is therefore traceable to a
 result it was given, which is the false-action-claim guard applied to the phone's own claims first.
 
+**Amended 2026-11-05 (the handoff exception).** The invariant is exact for an action the phone
+itself performs. For a **handoff** — `message`, `dial`, `launch`, `open` — `ok:true` is the platform
+accepting the intent, not proof another app reached the front: Android may silently refuse a
+background activity start, and `dial` ends Vox's own call, which is also the MCP listener's
+lifetime, so its result can be lost. D36's dated amendment records both open edges; this note keeps
+the invariant from claiming a completion the handoff cannot see.
+
 **How it is set up (#421 step 5).** The owner is not handed a YAML block. The app composes one
 ordinary turn — server name, tailnet URL, bearer token, tool name, what the phone can and cannot do —
 and sends it through the existing session, so the agent edits its own configuration and the change is
