@@ -756,7 +756,7 @@ class PhoneEngine(
         log("event=phone-mcp action=$action ok=false reason=permission")
         return PhoneResult.refused(
             action, PhoneReason.PERMISSION,
-            "the phone does not hold $missing, so it cannot read the calendar; only the owner can " +
+            "the phone does not hold $missing, so it cannot use the calendar; only the owner can " +
                 "grant it in system settings (Phone tools → Calendar shows whether it is granted)",
         )
     }

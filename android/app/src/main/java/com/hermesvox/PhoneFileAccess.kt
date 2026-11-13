@@ -325,10 +325,12 @@ object PhoneFileAccess {
     private fun primaryPath(documentId: String): File? {
         val prefix = "primary:"
         if (!documentId.startsWith(prefix)) return null
-        val rest = documentId.removePrefix(prefix)
-        if (rest.isEmpty()) return null
         return try {
-            File(Environment.getExternalStorageDirectory(), rest)
+            val base = Environment.getExternalStorageDirectory()
+            val rest = documentId.removePrefix(prefix).trimStart('/')
+            // A tree granted at the volume root has an empty rest: the root itself is the tree,
+            // so a symlink at the top of shared storage is still canonicalised and refused.
+            if (rest.isEmpty()) base else File(base, rest)
         } catch (_: Throwable) {
             null
         }
