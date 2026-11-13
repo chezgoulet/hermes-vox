@@ -92,182 +92,148 @@ From `docs/GOVERNANCE.md`, not negotiable per release:
   verification; a reporter's confirmation is welcome and never a gate.
 - **Every release is small enough to finish.** A second theme becomes the next release.
 
-## The series
+## The series — rebuilt 2026-11-13
 
-**A release exists to give a user something they can feel.** So the unit of a release is not a gate and
-not a set — it is **one sentence a user could say after updating**. Work with no user-facing claim
-does not get a version number: it rides inside the release whose claim needs it. That is why the
-instrument has no release of its own; the release that claims *faster* is the one that has to measure
-it.
+**The unit of a release is one sentence a user could say after updating.** Work with no user-facing
+claim does not get a version number; it rides inside the release whose claim needs it. And **there are
+no time estimates in this document** — ordering is by readiness, dependency and effort class only.
+With agentic execution a duration is a guess wearing a number's clothes, and a wrong guess becomes a
+promise.
 
-**What changed on 2026-11-13, twice.** First re-cut put the gates on the calendar and produced nine
-releases, two of which (repo truth, the instrument) gave a user nothing. Second cut, below, folds
-those in, splits the one risky item that could block a whole release, and states the claim each
-release keeps.
+### The five rules, in priority order
 
-| | The claim | Work | Est. |
+1. **Testing is front-loaded.** The instruments that prove a promotion come before the promotions;
+   nothing leaves the gate on evidence that does not exist.
+2. **Built things first.** What already exists is promoted, measured and corrected before anything is
+   built. **Nothing ready is held back** to keep a milestone tidy.
+3. **Then least effort to most.**
+4. **No durations.** Effort is a class.
+5. **Localisation is a standard, not a release.** Adopted now, applied to every build, and the series
+   ends by proving readiness so that 0.10 is translation rather than archaeology.
+
+**Effort classes** (relative size, never duration): **XS** one edit, no design · **S** contained
+change with a test · **M** a component or behaviour change with a design note · **L** architectural,
+cross-file, a decision and a device pass · **XL** a codebase sweep that ratchets down rather than
+finishes in one go.
+
+### M0 — the gate everything is judged by
+
+**No user-visible change. Ships nothing if the instruments fail.** The only milestone that must
+precede all others, because every later exit criterion is one of these lines.
+
+| Item | Effort | Work |
+|---|---|---|
+| Extend `event=turn` with `lastSound`, `segs`, `gapP95`, `route`, and `firstToken→firstSound` | S | finish |
+| `app-first-sound` and `app-gap` rows in the comparator | S | build |
+| **Success sampling** (`#596`): every fifth call and first-after-install, ten kept, one-tap "send this — it went well" | S | build |
+| **Recorded-utterance corpus** replayed through the real pipeline | M | build |
+| Thirty-minute soak harness | S | build |
+| Repo truth: one `DECISIONS.md`, an archive for the historical files, DOC-TRUTH on current files only, a file count the gate enforces | S | build |
+| Correct the four false statements the audit found in this document | XS | fix |
+
+**Exit:** a release document can quote an `app-first-sound` distribution with its build and n; ten
+sampled real calls from three installs; a recorded conversation replays reproducibly; the soak runs
+and reports; `docs/` is ≤60 current files plus an archive.
+
+**Needs the owner:** ten to twenty spoken utterances recorded on a handset, with consent. Without
+them, interruption and echo stay judged by ear.
+
+### M1 — promote what already works
+
+**Each row is a promotion with a pass, not a build, and any row that passes ships immediately** — the
+milestone does not need to empty before a release is cut. Order is by effort.
+
+| Item | What already exists | Effort | Work |
 |---|---|---|---|
-| 0.9.2 | *"It sounds better and starts sooner."* | cadence + Supertonic 3 | 5 |
-| 0.9.3 | *"It answers faster, without saying anything twice."* | provisional endpoint + amend | 3.5 |
-| 0.9.4 | *"I can interrupt it, and the work survives."* | interruption path | 8.5 |
-| 0.9.5 | *"It can do one thing for me — after asking."* | one action + consent | 8.5 |
-| 0.9.6 | *"It says something while it works."* | the being | 7.5 |
-| 0.9.7 | *"It keeps up with me."* | hearing + turn-taking | 7 |
-| 0.9.8 | *"It's ready for someone else."* | first run, freeze, stability | 8 |
-| 0.10 | *"It speaks French."* | localisation | 9 |
+| Approvals by touch and voice, timeout to *no* | two-state consent, 120 s timeout, tap and voice, audited | XS | promote |
+| **Digital assistant** graduates | the role, route and settings row are built | XS | promote |
+| Supertonic 3 bundle (`#589`) | ruled in D48; absent from the catalogue | XS | build |
+| Semantic endpointing default **off**, with the test that pins `true` updated | the code is live; the document was wrong | XS | fix |
+| **Wake word deferred indefinitely** — its panel row and enrolment screen removed so nothing advertises a feature that listens to nothing | `InertWakeWordEngine`; nothing listens | XS | remove |
+| `#404` runs route and `#281` operations line | both shipped and on the default path | XS | promote |
+| Retest batch `#538`, `#496`, `#373`, `#374` | fixed in code with catchers; retests are cards | XS | measure |
+| Phone tools: **27 actions across 13 groups** already implemented | all default off, per-group grants | S | promote |
+| Turn-taking: acknowledgements, backchannels, resume | `Backchannel`, `Overlap`, `Resume` built and gated | S | promote |
+| Continuous capture graduates on the **capture** property | built, gated; the endpointing claim is empty | M | promote |
+| Presence as the being | a **13-stem catalogue with its own selector and isolated player already ships**; the 2.6 GB renderer does not earn its cost | M | promote |
 
-Roughly 57–62 sessions, unchanged. Eight human sittings instead of seven or nine, each judging one
-claim.
+**Exit per item:** a pass recorded, its bar quoted, its gate row removed. **A set that fails its pass
+stays gated and gets a card — that is a result, not a failure.**
 
-### 0.9.2 — "It sounds better and starts sooner"
+### M2 — small builds that unblock quality
 
-**In:** chunk shaping with a decoupled player (first piece 20–30 characters, then growth to three
-times the previous actual length, one clip ahead) — this is the prosody fix, and it is why a reply
-stops resetting its intonation every two seconds; per-engine speech settings; the **Supertonic 3**
-bundle (`#589`) verified on the bench phone first, which is the "stops swallowing words" half;
-semantic endpointing off by default with its dead `DEFAULT_ON`/`KEY` constants deleted;
-`#569`'s arms as the input.
+| Item | Effort | Work |
+|---|---|---|
+| Error separation: refused key vs transport vs gateway, spoken and shown | S | build |
+| Locked-device refusal for **gateway** approvals | S | build |
+| `run.steered` surface — the event arrives and is dropped | S | build |
+| Clarify surface — `clarify.request` is silently ignored mid-run | S | build |
+| Persist the last N turns, read-only, marked unchecked | S | build |
+| Per-engine speech settings | S | build |
+| `#202` triage of the nineteen log-flagged candidates | XS | measure |
 
-**Rides along, no claim:** the **per-turn timeline** (`event=tl`: speech-end, sent, first token, first
-sound, last sound, segments, gap p95) — without it the claim cannot be checked, and it is an hour's
-work; the two comparator rows it feeds (`app-first-sound` and `app-gap` gated, `brain-first-token`
-reported); the **repo tidying** (archive the historical documents, one `DECISIONS.md`, DOC-TRUTH on
-current files only); **Wake word removed** from the panel (`#45` — it records enrolment and listens to
-nothing); `#202`'s agent-only triage of the nineteen log-flagged candidates.
+### M3 — how a reply is spoken
 
-**Bar:** `app-first-sound` before and after on the same corpus and device, with a verdict; engine
-invocations per reply down and quoted; no reply re-read after an amend; twelve paths unchanged;
-Supertonic's word loss on the bench corpus at the v3 rate, quoted.
+| Item | Effort | Work |
+|---|---|---|
+| Chunk shaping + synthesis ahead: first piece 20–30 chars, growth to 3× the previous actual, one clip rendered while the current plays, player decoupled | M | build |
+| `#569` recogniser A/B, four arms, gate off | M | measure |
 
-**Human run asks:** does it sound smoother, and does it start sooner?
+### M4 — interruption that keeps the work
 
-### 0.9.3 — "It answers faster, without saying anything twice"
+**A D45 major: it changes what a barge does for every user.** A barge currently posts
+`/v1/runs/{id}/stop`, and a stopped run cannot be steered, so the work cannot be resumed by
+construction.
 
-**In:** `PROVISIONAL` endpointing that **acts**, with the amend path that extends and re-sends if
-speech resumes inside the window. Nothing else. This is one item on purpose: it is a **D45 major**
-(it changes when every user's turn is sent) and its failure mode is a double-spoken reply, so it gets
-a release where it cannot block anything, and a bar narrow enough to fail honestly.
+| Item | Effort | Work |
+|---|---|---|
+| Steer instead of stop: cut locally, classify, steer the live run, stop only on an explicit abort | L | build |
+| Amend path: commit on `PROVISIONAL`, extend and re-send if speech resumes | L | build |
+| Transcript-similarity echo rejection, and true pause-not-stop | M | build |
 
-**Bar:** time-to-commit down on the corpus; zero double-spoken replies across the replay run; the
-amend path proven by a recorded interruption mid-utterance; `app-gap` unchanged.
+### M5 — localisation readiness verified
 
-**Human run asks:** does it feel quicker to answer — and did it ever say the same thing twice?
+**Not translation — proof that translation can start.**
 
-### 0.9.4 — "I can interrupt it, and the work survives"
+**The standard, adopted now:** every user-visible string in a resource, no literals in Kotlin,
+layouts or toasts · no sentence built by concatenation — format arguments and plurals · numbers,
+dates, durations and units through locale-aware APIs, logs pinned to `Locale.ROOT` · no layout that
+only fits English · a **pseudo-locale build in the gate**.
 
-**In:** the order — cut audio locally, classify with `Overlap`, then decide; **steer the live run**
-instead of posting `/v1/runs/{id}/stop` (a stopped run cannot be steered, so there is no step to
-resume); a surface for `run.steered`; stop only on an explicit abort or hush, or when a steer is
-unacknowledged within one reply; transcript-similarity rejection of self-echo; pause-not-stop playback
-so a false trip resumes mid-word; the adaptive bleed floor and a pre-roll long enough to keep the
-first syllable. **D45 major** — it changes what a barge does for everyone.
+**The standing correction policy:** any file touched for any reason is brought up to that standard in
+the same change. Not a sweep, not a lane, not a promise for later — a rule about the code you are
+already in.
 
-**Also here, because this release is what needs them:** the **recorded-utterance replay corpus** and
-**success sampling** (`#596`) — barge behaviour cannot be judged by ear alone, and the corpus is what
-makes it a measurement.
+| Item | Effort | Work |
+|---|---|---|
+| Literal sweep — ~840 Kotlin sentence literals, 234 layout literals, a 27-line `strings.xml` | XL | build |
+| Plurals and gender rules | S | build |
+| Right-to-left pass | M | build |
+| Voice-language mismatch warning (warn, never block) | S | build |
+| Speech recognition follows the UI locale, with an override | S | build |
+| Per-locale gate coverage, and a pseudo-locale run of the twelve paths | M | build |
 
-**Bar:** on the corpus — a backchannel does not cancel the reply; an interruption steers and is
-acknowledged; a deliberate abort stops; no double speech after a resume; `app-gap` unchanged.
+**Exit:** zero literals outside resources as measured by the gate; twelve paths green under a
+pseudo-locale; RTL unclipped; one language's strings ready to hand over.
 
-**Human run asks:** interrupt it mid-answer, three ways — a cough, an "mm-hm", and a real change of
-mind — and say which of the three behaved correctly.
+## 0.10 — translation
 
-### 0.9.5 — "It can do one thing for me — after asking"
+Packs beyond French, plural and gender, RTL, the contract's first translator feedback, and `#229`
+(which needs a non-English answer to graduate). **No behaviour change on the default path.** If
+something needs one, it waits for 0.11.
 
-**In:** `#578` first (a setup sheet may not read *Connected* while the registered entry points
-elsewhere); Phone tools **tier 1 only** — the timer, as the single demonstrated action, with the
-remaining tiers not built rather than gated; `#376` approvals answered by touch and by voice, timing
-out to *no*, with the **locked-device refusal verified for gateway approvals**; the **clarify
-surface** (`clarify.request` currently arrives mid-run and is ignored); the last N turns persisted
-read-only, marked unchecked.
+## The owner's reserved right
 
-**Also here, one sitting:** the device passes that are floor work but not instrument work — `#404`'s
-runs route, `#281`'s operations line, and the retest batch `#538`, `#496`, `#373`, `#374`.
+**Any feature may be altered, re-scoped or deferred indefinitely by the owner, at any point, until he
+deems it complete.** A deferral is a scheduling decision, not a failure, and it is not recorded as
+one. Wake word is deferred indefinitely on those terms: it stays out of the sequence and off the
+panel until there is time to make a detector that works, and its return is the owner's call alone.
 
-**Bar:** a timer set by voice end to end with its approval line quoted; a refusal honoured; a clarify
-answered; a locked-device refusal; all inside one recorded session on the default path.
+## Not in this roadmap
 
-**Human run asks:** set a timer by voice, refuse one, and lock the phone and try again.
-
-### 0.9.6 — "It says something while it works"
-
-**Sets out:** Presence.
-
-**First, the design review** — `#562` folded into it rather than run beside it. Five answers in
-writing before code: which lines, how many; what triggers each (an event, never a timer); whose voice;
-what happens when the catalogue has no line; how the beat appears in `app-first-sound`.
-
-**In:** the **catalogue** as MVP-Presence — roughly two hundred authored stems per profile, rendered
-once on the host from `VOX.md`, selected by rules and the gateway's own operations events — with the
-2.6 GB renderer kept as an opt-in experiment rather than the default; backchannels; `#217`'s bar
-re-pointed at the catalogue; the memory and string claims corrected wherever they describe the model.
-
-**Bar:** a measured beat inside the app-owned budget; `#217`'s bar passing with the catalogue;
-nothing repeats; nothing lands after the first text.
-
-**Human run asks:** does the being feel present while it works — and does it ever get in the way?
-
-### 0.9.7 — "It keeps up with me"
-
-**Sets out:** Continuous listening and Turn-taking, together, on **one claim** — the pair serves a
-single sentence a user can say, and the pass covers both. *(The earlier rule said a release never
-graduates two sets; it is amended here to one **claim** per release, because these two are substrate
-and behaviour of the same thing: acknowledgements cannot exist without a continuous lane.)*
-
-**In:** continuous capture graduates on the **capture** property — one recorder per call, no seam, the
-first word after a reply not lost — and not on the endpointing claim, which its own corpus shows is
-worth nothing; `#228`, `#405`'s re-measured budgets, `#326`; the D38 amendment stands (continuous
-listening graduates alone, not tied to Presence). Then turn-taking against a bar written for it:
-acknowledgements per long utterance, false-yield rate, resume-without-repeat. Then the
-**thirty-minute soak**.
-
-**Bar:** `event=capture-continuous on=true` on every call; the three turn-taking rows with sample
-sizes; thirty minutes with no lost turn, no repeated speech, no stuck gate; budgets re-measured off
-charge.
-
-**Human run asks:** talk at it for half an hour, including interruptions and long pauses, and say
-where it lost the thread.
-
-### 0.9.8 — "It's ready for someone else"
-
-**No new features; no set graduates.** The panel is empty.
-
-**In:** `#230` first run (gateway, microphone, models, a first call, honest when a step cannot be
-completed); the copy pass, which by now is the last strings only; `#388` the speech-rate slider;
-`#514` per-profile mTLS. Then **fix-only** to a numeric definition of stable:
-
-- twelve regression paths green on the candidate;
-- every `APP` latency row inside its bar on **three consecutive cuts**;
-- a thirty-minute soak with no lost turn;
-- no crash in any recorded session;
-- every open issue closed with its evidence, or explicitly *pending* with a card (D47).
-
-**Human run asks:** hand it to the stranger, and say whether they got through the first call unaided.
-
-### Deferred, stated once
-
-**Digital assistant** — launcher integration, not a voice capability, unverifiable without the owner's
-handset; it leaves the series and the panel, and returns as a settings row whenever it is wanted.
-**Phone tools above tier 1**, **any new alpha set**, **push notifications with no call open** (the only
-feature that would justify a dashboard credential) and **a second platform** — each returns only if
-every claim above already holds.
-
-## 0.10 — "It speaks French"
-
-**The constraint that makes this release worth having:** it adds **no behaviour to the default path**.
-It is the last release of the series and the first allowed to be boring.
-
-**In:** language packs beyond French; plural and gender handling where a language needs it; a
-right-to-left pass; the voice-language mismatch warning PierreCsn asked for (a warning, never a
-block); speech recognition following the UI locale by default with an explicit override; per-locale
-coverage in the gate; `#229` semantic endpointing, which can only graduate with a non-English answer;
-and whatever the first translators find wrong with the contract, which is the point of shipping it to
-them.
-
-**Not in it:** any new screen, any rewritten sentence, any new setting, any change to interruption,
-endpointing or the default voice. If it needs one, it waits for 0.11.
-
-**Human run asks:** use it in French for a day, and say where it broke character.
+Push notifications with no call open (the only feature that would justify a dashboard credential) ·
+a second platform · any new alpha set · word-level highlighting · any dashboard transport work. Each
+returns only if everything above is done and the owner asks for it.
 
 ## The freeze, stated precisely
 

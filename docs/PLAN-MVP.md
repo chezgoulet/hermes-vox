@@ -1,5 +1,11 @@
 # Plan of attack — to the best version of this app
 
+> **Superseded in part, 2026-11-13.** The sequence and the effort convention now live in
+> `ROADMAP.md` § *The series — rebuilt 2026-11-13*: six milestones, effort **classes**, and no
+> durations. What stands here is the reasoning — the MVP definition, the measurement principle that
+> isolates the brain from the app, and the Presence design questions. Read this for *why*, the roadmap
+> for *what next*.
+
 Written 2026-11-13, after the Kyllene review, two independent second opinions, and the owner's
 direction on what the project is actually for. This replaces `PLAN-1.0.md` and `PLAN-2.0.md` as the
 plan of record beside `ROADMAP.md`; where the two disagree, this document wins and the roadmap is
