@@ -475,6 +475,7 @@ confirmation. The card expires after two minutes (android/app/src/main/java/com/
 |---|---|---|---|---|
 | Theme | `theme` | `system` | System / Dark / Light | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `label("theme", "system") + " · " + label("layout_mode", "presence") + " · " +`)`) |
 | Screen layout | `layout_mode` | `presence` | "Being" (avatar fills the screen) or "Transcript" | (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `label("theme", "system") + " · " + label("layout_mode", "presence") + " · " +`) |
+| Command icon | `command_icon` | `steve` | The glyph on the commands entry: Steve (⌘), Bill (`CMD`), Linus (`>_`), Hermes (a caduceus) or Clanker (our robot). Each option is drawn live in the chooser, so it is chosen by looking; the entry still says "Commands" | (android/app/src/main/java/com/hermesvox/CommandGlyph.kt `const val PREF = "command_icon"`) |
 | Keep screen on during calls | `keep_screen_on` | true | A window flag while a call is open; no wake lock | (android/app/src/main/java/com/hermesvox/ScreenAwake.kt `KEEP_SCREEN_ON_DEFAULT = true`) |
 | Visual category | `visual_category` | `lumen` | Re-colours/re-lights/re-paces the being in every state | (android/app/src/main/java/com/hermesvox/VisualStyle.kt `DEFAULT = "lumen"`) |
 | Cycle all categories | `visual_cycle_all` | false | Rotates through every visual family while idle | (android/app/src/main/java/com/hermesvox/VisualStyle.kt `DEFAULT_CYCLE_ALL = false`) |
@@ -650,11 +651,24 @@ over") (android/app/src/main/java/com/hermesvox/CommandCatalog.kt `fun search`),
 ends "tap to reconnect" and does it; on a caller's first three calls, twenty silent seconds bring
 the hint "Ask anything — or say "what can you do?"" (android/app/src/main/java/com/hermesvox/Discovery.kt `const val STUCK_AFTER_MS = 20_000L`).
 
-### Share with agent (the `⌘` entry)
+### Share with agent (the commands entry)
 
-The main action row has the call glyph and **one** commands entry, `⌘` (U+2318). It is drawn
-as a local vector path, so it never depends on a system font shipping the glyph, and its label
-is still "Commands". Typing `/` on the main screen opens the same sheet
+The main action row has the call glyph and **one** commands entry. Its glyph is a choice
+in Settings → Appearance — Steve's `⌘` (U+2318) by default, or Bill (`CMD`), Linus
+(`>_`), Hermes (a caduceus) or Clanker (our robot). Every one is our own vector geometry
+on a 24 dp grid, painted in the theme's ink, so it never depends on a system font
+shipping a glyph and it reads on both grounds
+(android/app/src/main/java/com/hermesvox/CommandGlyph.kt `object CommandGlyph`). The
+pref is read in one place (android/app/src/main/java/com/hermesvox/CommandGlyph.kt `fun current(context: Context): Icon`),
+an install that has never chosen one keeps the glyph that shipped before the choice
+existed (android/app/src/main/java/com/hermesvox/CommandGlyph.kt `val DEFAULT = Icon.STEVE`),
+and the entry's label is still "Commands" whatever the drawing is called
+(android/app/src/main/java/com/hermesvox/CommandGlyph.kt `fun contentDescription(icon: Icon): String = LABEL`).
+The commands sheet's header carries the same drawing
+(android/app/src/main/java/com/hermesvox/CommandsSheet.kt `lead = CommandMark`). Clanker
+is drawn from scratch — a rounded outline head, two dot eyes, a top antenna and a small
+smile — with no attribution needed; the other four are geometric marks, not borrowed
+assets. Typing `/` on the main screen opens the same sheet
 (android/app/src/main/java/com/hermesvox/MainActivity.kt `fun dispatchKeyEvent`).
 
 The first row inside that sheet is **Share with agent**. It is an artifact action, not a slash
