@@ -279,6 +279,7 @@ class VoiceController(private val context: Context, private val session: HermesS
         { glue, source -> if (erPresenceOn) speakGlue(glue, source = source) },
         { presenceDensity().fillerCap },
         { presenceDensity() },
+        { systemPromptLanguage() },
     ).also { p ->
         p.clipContext = context
         p.voiceMode = prefString("er_presence_voice", "sounds")
@@ -557,6 +558,8 @@ class VoiceController(private val context: Context, private val session: HermesS
     @Volatile private var erPresenceOn = true
     private fun prefsGetBoolean(k: String, d: Boolean) =
         context.getSharedPreferences("hv", Context.MODE_PRIVATE).getBoolean(k, d)
+    private fun prefsGetString(k: String, d: String) =
+        context.getSharedPreferences("hv", Context.MODE_PRIVATE).getString(k, d) ?: d
     // ER Phase 5: interrupting-speech capture — frames gathered by the barge
     // drain while the mind is generating (no playback running). Transcribed
     // post-barge to classify cancel-vs-hold (the fire-and-hold read).
@@ -1756,7 +1759,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 }
                 PhoneApproval.Voice.Reask -> {
                     VoxLog.d("event=phone-approval voice decision=reask")
-                    main.post { speakGlue(ApprovalNudge.LINE, source = SOURCE_APPROVAL_PROMPT) }
+                    main.post { speakGlue(ApprovalNudge.line(systemPromptLanguage()), source = SOURCE_APPROVAL_PROMPT) }
                     true
                 }
                 PhoneApproval.Voice.Unheard -> true
@@ -1811,13 +1814,18 @@ class VoiceController(private val context: Context, private val session: HermesS
         waitCardUp = false
         VoxLog.d("event=wait-prompt answer=${answer.name.lowercase()} source=$source " +
             "extensionMs=${if (answer == WaitPrompt.Answer.KEEP) extensionMs else 0L}")
-        val card = WaitPromptCard()
+        val lang = systemPromptLanguage()
+        val card = WaitPromptCard(
+            title = WaitPrompt.title(lang),
+            question = WaitPrompt.question(lang),
+            lang = lang,
+        )
         main.post {
             listener?.onWaitPromptResolved(
                 card,
                 if (answer == WaitPrompt.Answer.KEEP) WaitPrompt.Outcome.KEEP else WaitPrompt.Outcome.STOP,
             )
-            if (answer == WaitPrompt.Answer.KEEP) speakGlue(WaitPrompt.LINE_KEPT, source = SOURCE_WAIT)
+            if (answer == WaitPrompt.Answer.KEEP) speakGlue(WaitPrompt.lineKept(lang), source = SOURCE_WAIT)
         }
     }
 
@@ -1835,10 +1843,16 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (waitCardUp) return
         waitCardUp = true
         VoxLog.d("event=wait-prompt show gen=$gen windowMs=${WaitPrompt.WINDOW_MS}")
-        listener?.onWaitPrompt(WaitPromptCard())
+        val lang = systemPromptLanguage()
+        val card = WaitPromptCard(
+            title = WaitPrompt.title(lang),
+            question = WaitPrompt.question(lang),
+            lang = lang,
+        )
+        listener?.onWaitPrompt(card)
         // One short line, in the being's own voice. It is glue: the mind's reply has not
         // started, and a caller who talks over it barges the turn by the existing rules.
-        speakGlue(WaitPrompt.QUESTION, source = SOURCE_WAIT)
+        speakGlue(WaitPrompt.question(lang), source = SOURCE_WAIT)
     }
 
     /** Dismisses the card without answering it. Thread-safe (the worker may call it). */
@@ -1846,7 +1860,12 @@ class VoiceController(private val context: Context, private val session: HermesS
         if (!waitCardUp) return
         waitCardUp = false
         VoxLog.d("event=wait-prompt dismissed outcome=${outcome.name.lowercase()}")
-        val card = WaitPromptCard()
+        val lang = systemPromptLanguage()
+        val card = WaitPromptCard(
+            title = WaitPrompt.title(lang),
+            question = WaitPrompt.question(lang),
+            lang = lang,
+        )
         main.post { listener?.onWaitPromptResolved(card, outcome) }
     }
 
@@ -1901,7 +1920,8 @@ class VoiceController(private val context: Context, private val session: HermesS
             when (approvalNudge.onNoAnswer(key, busy)) {
                 ApprovalNudge.Outcome.SPEAK -> {
                     VoxLog.d(ApprovalNudge.logLine(key))
-                    speakGlue(ApprovalNudge.LINE, source = SOURCE_APPROVAL_PROMPT)
+                    val prompt = if (systemPromptLanguage() == "fr") ApprovalNudge.LINE_FR else ApprovalNudge.LINE
+                    speakGlue(prompt, source = SOURCE_APPROVAL_PROMPT)
                 }
                 ApprovalNudge.Outcome.BUSY ->
                     VoxLog.d("event=approval-prompt-skip request=$key reason=voice-busy")
@@ -2258,7 +2278,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                             "text=${if (logTranscripts()) said.take(80) else "<hidden>"}"
                     )
                     if (answer is PhoneApproval.Voice.Reask) {
-                        main.post { speakGlue(ApprovalNudge.LINE, source = SOURCE_APPROVAL_PROMPT) }
+                        main.post { speakGlue(ApprovalNudge.line(systemPromptLanguage()), source = SOURCE_APPROVAL_PROMPT) }
                     }
                     return@execSubmit
                 }
@@ -2787,7 +2807,8 @@ class VoiceController(private val context: Context, private val session: HermesS
                             val line = TurnWait.checkIn(tick - t0, checkInsSaid, firstTextLatch,
                                 presenceSpeaks = voiceTurn && erPresenceOn,
                                 approvalWaiting = turnApprovalWaiting(),
-                                callerQuietMs = tick - callerVoiceAt)
+                                callerQuietMs = tick - callerVoiceAt,
+                                lang = systemPromptLanguage())
                             if (line != null) {
                                 checkInsSaid++
                                 VoxLog.d("event=wait-line gen=$gen n=$checkInsSaid waitedMs=${tick - t0}")
@@ -3145,6 +3166,22 @@ class VoiceController(private val context: Context, private val session: HermesS
     }
 
     /**
+     * Resolves the natural language for spoken system prompts (TurnRepair, WaitPrompt, ApprovalNudge).
+     * Prefers the active TTS voice's acoustic language (fr for Piper Siwis/Tom/UPMC, en for Lessac/Supertonic)
+     * to guarantee clean phonemisation, falls back to the user's STT language preference or device locale.
+     */
+    internal fun systemPromptLanguage(): String {
+        val voiceLang = (tts as? SherpaTts)?.voice?.language
+        if (!voiceLang.isNullOrEmpty()) return voiceLang
+        val sttLang = prefsGetString("stt_language", "")
+        if (sttLang.startsWith("fr", ignoreCase = true)) return "fr"
+        if (sttLang.startsWith("en", ignoreCase = true)) return "en"
+        val devLang = java.util.Locale.getDefault().language
+        if (devLang.equals("fr", ignoreCase = true)) return "fr"
+        return "en"
+    }
+
+    /**
      * F9 (2026-11-04 review): in a voice call every turn ends audibly.
      *
      * An empty reply, a lost stream or a failed turn used to end with `onState("idle")` — no
@@ -3162,7 +3199,7 @@ class VoiceController(private val context: Context, private val session: HermesS
                 voiceOn = shouldSpeak(), sameTurn = gen == turnGen)) return false
         val workStarted = turnToolCalls > 0
         VoxLog.er("event=repair reason=$reason gen=$gen workStarted=$workStarted")
-        speak(TurnRepair.line(reason, workStarted), gen)
+        speak(TurnRepair.line(reason, workStarted, systemPromptLanguage()), gen)
         return true
     }
 

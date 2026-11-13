@@ -28,9 +28,11 @@ object WaitPrompt {
 
     /** The card heading. Deliberately not "approval", "consent" or "confirm". */
     const val TITLE = "STILL WORKING"
+    const val TITLE_FR = "TRAITEMENT EN COURS"
 
     /** One short line, spoken in the being's own voice and shown as the card body. */
     const val QUESTION = "This is taking a while — keep waiting, or stop?"
+    const val QUESTION_FR = "Cela prend un peu de temps — continuer d'attendre ou arrêter ?"
 
     /** The card's answer window. Silence is never a yes; when it closes, the turn stops. */
     const val WINDOW_MS = 10_000L
@@ -39,19 +41,34 @@ object WaitPrompt {
     const val DEFAULT_EXTENSION_MS = 120_000L
 
     const val LABEL_KEEP = "KEEP WAITING"
+    const val LABEL_KEEP_FR = "CONTINUER"
     const val LABEL_STOP = "STOP"
+    const val LABEL_STOP_FR = "ARRÊTER"
 
     /** Spoken after a "keep waiting" answer. */
     const val LINE_KEPT = "Okay — I'll keep waiting."
+    const val LINE_KEPT_FR = "D'accord — je continue d'attendre."
 
     /** The caller chose to stop. */
     const val LINE_STOPPED = "Stopped waiting."
+    const val LINE_STOPPED_FR = "Attente interrompue."
 
     /** The card's window closed without an answer. */
     const val LINE_NO_ANSWER = "I didn't hear an answer, so I stopped waiting."
+    const val LINE_NO_ANSWER_FR = "Je n'ai pas entendu de réponse, j'ai donc arrêté d'attendre."
 
     /** The granted extension ended with the stream still silent. */
     const val LINE_EXTENDED = "The extra time ran out with no answer, so I stopped waiting."
+    const val LINE_EXTENDED_FR = "Le délai supplémentaire s'est écoulé sans réponse, j'ai donc arrêté d'attendre."
+
+    fun title(lang: String = "en"): String = if (lang == "fr") TITLE_FR else TITLE
+    fun question(lang: String = "en"): String = if (lang == "fr") QUESTION_FR else QUESTION
+    fun lineKept(lang: String = "en"): String = if (lang == "fr") LINE_KEPT_FR else LINE_KEPT
+    fun lineStopped(lang: String = "en"): String = if (lang == "fr") LINE_STOPPED_FR else LINE_STOPPED
+    fun lineNoAnswer(lang: String = "en"): String = if (lang == "fr") LINE_NO_ANSWER_FR else LINE_NO_ANSWER
+    fun lineExtended(lang: String = "en"): String = if (lang == "fr") LINE_EXTENDED_FR else LINE_EXTENDED
+    fun labelKeep(lang: String = "en"): String = if (lang == "fr") LABEL_KEEP_FR else LABEL_KEEP
+    fun labelStop(lang: String = "en"): String = if (lang == "fr") LABEL_STOP_FR else LABEL_STOP
 
     enum class Answer { KEEP, STOP }
 
@@ -90,6 +107,10 @@ object WaitPrompt {
         "let's wait", "lets wait", "wait for it", "go on",
         "yes", "yes please", "yes keep waiting", "yes keep going", "yes wait",
         "i'll keep waiting", "ill keep waiting",
+        // French keep waiting vocabulary
+        "continuer", "continue", "on attend", "attends", "attendre", "attendez",
+        "patiente", "patienter", "garde", "on continue", "oui", "oui continue",
+        "oui attends", "oui patiente", "d'accord", "d accord", "poursuis", "poursuivre",
     )
 
     /**
@@ -245,12 +266,13 @@ class WaitPromptCard(
     val title: String = WaitPrompt.TITLE,
     val question: String = WaitPrompt.QUESTION,
     val timeoutMs: Long = WaitPrompt.WINDOW_MS,
+    val lang: String = "en",
 ) {
     /** Exactly the two answers this card can hear, in reading order. */
     val answers: List<WaitPrompt.Answer> get() = listOf(WaitPrompt.Answer.KEEP, WaitPrompt.Answer.STOP)
 
     fun label(answer: WaitPrompt.Answer): String = when (answer) {
-        WaitPrompt.Answer.KEEP -> WaitPrompt.LABEL_KEEP
-        WaitPrompt.Answer.STOP -> WaitPrompt.LABEL_STOP
+        WaitPrompt.Answer.KEEP -> if (lang == "fr") WaitPrompt.LABEL_KEEP_FR else WaitPrompt.LABEL_KEEP
+        WaitPrompt.Answer.STOP -> if (lang == "fr") WaitPrompt.LABEL_STOP_FR else WaitPrompt.LABEL_STOP
     }
 }

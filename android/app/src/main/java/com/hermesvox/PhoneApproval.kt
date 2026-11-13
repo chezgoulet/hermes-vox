@@ -97,14 +97,26 @@ object PhoneApproval {
         }
 
         /** The exact line on the card, in the owner's language. */
-        val line: String get() = when {
-            phrase.isNotEmpty() -> "Your agent wants to $phrase. Approve?"
-            action == FILE_ACTION ->
-                "Your agent wants to read $label" +
-                    (if (detail.isEmpty()) "" else " ($detail)") + ". Approve?"
-            action == ACTION -> "Your agent wants to remove $label. Approve?"
-            else -> "Your agent wants to $action $label. Approve?"
+        fun line(lang: String = "en"): String = when {
+            lang == "fr" -> when {
+                phrase.isNotEmpty() -> "Votre agent souhaite $phrase. Approuver ?"
+                action == FILE_ACTION ->
+                    "Votre agent souhaite lire $label" +
+                        (if (detail.isEmpty()) "" else " ($detail)") + ". Approuver ?"
+                action == ACTION -> "Votre agent souhaite supprimer $label. Approuver ?"
+                else -> "Votre agent souhaite $action $label. Approuver ?"
+            }
+            else -> when {
+                phrase.isNotEmpty() -> "Your agent wants to $phrase. Approve?"
+                action == FILE_ACTION ->
+                    "Your agent wants to read $label" +
+                        (if (detail.isEmpty()) "" else " ($detail)") + ". Approve?"
+                action == ACTION -> "Your agent wants to remove $label. Approve?"
+                else -> "Your agent wants to $action $label. Approve?"
+            }
         }
+
+        val line: String get() = line("en")
 
         /** The card model the existing approval surface already renders and answers. */
         fun prompt(): ApprovalPrompt = ApprovalPrompt(

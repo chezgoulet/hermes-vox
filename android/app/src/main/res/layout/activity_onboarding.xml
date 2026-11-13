@@ -80,7 +80,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 style="@style/TextVox.Tag"
-                android:text="HOW THIS WORKS" />
+                android:text="@string/onboard_how_works" />
 
             <!-- What the being is -->
             <TextView
@@ -89,7 +89,7 @@
                 android:layout_marginTop="10dp"
                 android:gravity="center"
                 android:lineSpacingExtra="3dp"
-                android:text="Hermes is your AI agent — an entity that lives on your own gateway. Vox gives it a body: a presence that listens, thinks and speaks back. You talk to it like a person, not a chatbot page."
+                android:text="@string/onboard_how_works_desc"
                 android:textColor="@color/hv_text"
                 android:textSize="15sp" />
 
@@ -100,7 +100,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="14dp"
                 style="@style/TextVox.Label"
-                android:text="WHAT YOU ARE SETTING UP" />
+                android:text="@string/onboard_setup_title" />
 
             <TextView
                 android:id="@+id/ob_three_line"
@@ -119,7 +119,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="14dp"
                 style="@style/TextVox.Label"
-                android:text="PRESENCE — ALPHA, OFF UNTIL YOU TURN IT ON" />
+                android:text="@string/onboard_presence_title" />
 
             <TextView
                 android:id="@+id/ob_presence_line"
@@ -137,7 +137,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:gravity="center"
-                android:text="Mic vs push-to-talk: Vox is hands-free — you just talk. There is no PTT button to hold."
+                android:text="@string/onboard_mic_note"
                 android:textColor="@color/hv_text_dim"
                 android:textSize="13sp" />
 
@@ -148,7 +148,7 @@
                 android:layout_marginTop="18dp"
                 android:background="@drawable/bg_button_primary"
                 android:elevation="4dp"
-                android:text="Got it — connect"
+                android:text="@string/onboard_got_it"
                 android:textColor="@color/hv_bg"
                 android:textSize="16sp" />
 
@@ -158,7 +158,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
                 style="@style/TextVox.Label"
-                android:text="Skip for now"
+                android:text="@string/onboard_skip"
                 android:minHeight="48dp"
                 android:minWidth="48dp"
                 android:gravity="center"

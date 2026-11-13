@@ -36,7 +36,7 @@
             app:autoSizeMinTextSize="18sp"
             app:autoSizeMaxTextSize="30sp"
             android:accessibilityHeading="true"
-            android:text="Settings" />
+            android:text="@string/settings_title" />
     </LinearLayout>
 
     <ScrollView
@@ -73,7 +73,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Entity &amp; Connection"
+                        android:text="@string/settings_entity_conn"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:id="@+id/set_entity_grpval"
@@ -111,7 +111,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Voice models"
+                        android:text="@string/settings_voice_assets"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:id="@+id/set_models_grpval"
@@ -179,13 +179,13 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Alpha features"
+                            android:text="@string/settings_alpha_features"
                             style="@style/HvRowTitle" />
                         <TextView
                             android:id="@+id/set_alpha_grpval"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Off · unfinished features stay out of the way"
+                            android:text="@string/settings_alpha_sub"
                             style="@style/HvRowValue" />
                     </LinearLayout>
                     <androidx.appcompat.widget.SwitchCompat
@@ -229,7 +229,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Phone Tools"
+                        android:text="@string/settings_phone_tools"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:id="@+id/set_phone_grpval"
@@ -239,7 +239,7 @@
                         style="@style/HvRowValue" />
                 </LinearLayout>
 
-                <!-- #45: wake-word enrolment. Opens WakeEnrolActivity; behind the Alpha
+                <!-- #45: Wake word (preview) enrolment. Opens WakeEnrolActivity; behind the Alpha
                      gate, so with it off the row is dimmed and cannot open. Value set by
                      refreshGrpVals(). -->
                 <LinearLayout
@@ -251,7 +251,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Wake word (preview)"
+                        android:text="@string/settings_wake_word"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:id="@+id/set_wake_grpval"
@@ -293,7 +293,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="About &amp; Diagnostics"
+                        android:text="@string/settings_about_diag"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:id="@+id/set_about_grpval"
@@ -785,7 +785,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Spoken language"
+                        android:text="@string/settings_spoken_language"
                         style="@style/HvRowTitle" />
                     <TextView
                         android:id="@+id/set_stt_language_val"
