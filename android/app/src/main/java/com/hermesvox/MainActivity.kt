@@ -2576,7 +2576,7 @@ open class MainActivity : AppCompatActivity() {
     /**
      * #370: a typed `/` opens the commands sheet wherever this activity has the keyboard.
      * The dialogs are separate windows, so a slash typed in the sheet's own search box never
-     * reaches this method; on the main screen it is the same entry as the ⌘ button.
+     * reaches this method; on the main screen it is the same entry as the commands button.
      */
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
         if (event.action == android.view.KeyEvent.ACTION_UP &&
