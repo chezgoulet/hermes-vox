@@ -267,10 +267,15 @@ The reason vocabulary is stable and small:
 | `approval-required` | the group is Ask: nothing was done, and a card with `approval_id` and `expires_at` is waiting for the owner |
 
 **The invariant**: `ok: true` is only ever rendered after the platform said it performed the action,
-and a refusal carries no `id`, no `state`, no success fact. So the mind's claim "I set a timer" is
-traceable to a result it was actually given — which is the false-action-claim guard's premise applied
-to the phone's own claims first. Results never use the key `error`: the gateway classifies a result
-whose text contains one as a server application error, and a refusal is not a server failure.
+and a refusal carries no `id`, no `state`, no success fact. The **handoff** actions are the stated
+exception: for `message`, `dial`, `launch` and `open`, `ok:true` means the platform accepted the
+intent, not proof another app came forward. Android may silently refuse a background activity start
+(it does not throw, so the tool cannot see the refusal), and `dial` ends Vox's own call — which is
+also the MCP listener's lifetime — so its result may not reach the mind. So the mind's claim "I set a
+timer" is traceable to a result it was actually given — which is the false-action-claim guard's
+premise applied to the phone's own claims first. Results never use the key `error`: the gateway
+classifies a result whose text contains one as a server application error, and a refusal is not a
+server failure.
 
 ### Undo lifetimes
 
