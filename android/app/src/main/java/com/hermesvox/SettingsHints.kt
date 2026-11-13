@@ -23,6 +23,9 @@ object SettingsHints {
         "row_being_advanced",    // the disclosure chip itself
         "row_presence_advanced", // the disclosure chip itself
         "row_visual_cycle_all",  // carries its own description line
+        // #417: says what it does and what it does not carry, in the row, because the person
+        // turning it on is about to paste the result in public.
+        "row_diagsummary",
     )
 
     val HINTS: Map<String, String> = linkedMapOf(

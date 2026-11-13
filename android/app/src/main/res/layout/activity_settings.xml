@@ -2368,6 +2368,38 @@
                         android:layout_height="wrap_content" />
                 </LinearLayout>
 
+                <!-- #417: the diagnostic summary's switch. Its description says what it does
+                     and what it does not carry, because the person turning it on is about to
+                     paste the result in public. -->
+                <LinearLayout
+                    android:id="@+id/row_diagsummary"
+                    style="@style/HvRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Diagnostic summary"
+                            style="@style/HvRowTitle" />
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Adds a command that copies a report block for a bug report; contains no conversations"
+                            style="@style/HvRowValue" />
+                    </LinearLayout>
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/set_diagsummary"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:contentDescription="Diagnostic summary" />
+                </LinearLayout>
+
                 <LinearLayout
                     style="@style/HvRow"
                     android:layout_width="match_parent"

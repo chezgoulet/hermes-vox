@@ -985,6 +985,11 @@ class SettingsActivity : AppCompatActivity() {
         val dbl = findViewById<SwitchCompat>(R.id.set_debuglog)
         dbl.isChecked = prefs.getBoolean("debug_log", false)
         dbl.setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("debug_log", on).apply(); VoxLog.setDebugFile(on) }
+        // #417: the diagnostic summary's switch — the gate /diagnostics follows, off by default.
+        // Nothing else writes it, so the person's tap is the only consent it needs.
+        val diag = findViewById<SwitchCompat>(R.id.set_diagsummary)
+        diag.isChecked = DiagnosticSummary.enabled(prefs)
+        diag.setOnCheckedChangeListener { _, on -> DiagnosticSummary.set(prefs, on) }
         // Memory-budget A/B (docs/BASELINE.md, "Memory"): DEV ONLY, and reachable only by a
         // long-press on the debug-log row in the developer section. Both settings default to
         // the shipped behaviour (8192-token cache, engine kept), so a phone that never opens
@@ -2351,6 +2356,9 @@ class SettingsActivity : AppCompatActivity() {
                 .putBoolean("dev_console", false)
                 .putBoolean("log_transcripts", false)
                 .putBoolean("debug_log", false)
+                // #417: the diagnostic summary belongs to this group too, so a restore that
+                // left its command on the sheet would not be a restore.
+                .putBoolean(DiagnosticSummary.PREF, DiagnosticSummary.DEFAULT_ON)
         }
         e.apply()
         when (group) {
@@ -2362,7 +2370,7 @@ class SettingsActivity : AppCompatActivity() {
             GROUP_TTS -> { bindFlows(); bindSoundCues() }   // 0.6.5 speak toggle; the cue rows live here now
             GROUP_PRESENCE -> { refreshFlowVals(); bindErControls(); refreshGrpVals() }
             GROUP_ENTITY -> { refreshEntityVal(); refreshFlowVals(); bindErControls() }
-            GROUP_ABOUT -> { refreshFlowVals(); VoxLog.setDebugFile(false) }
+            GROUP_ABOUT -> { bindFlows(); VoxLog.setDebugFile(false) }
             else -> refreshFlowVals()
         }
     }
