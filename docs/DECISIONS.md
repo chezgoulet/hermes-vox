@@ -1103,10 +1103,12 @@ separate" argument in D34.**
 **The decision.** Every voice turn goes to the mind. The phone keeps no local grammar that matches
 the caller's words, and no turn ends on the phone before the mind is asked. When the mind wants the
 phone it calls the existing MCP `phone` tool, with the grant and the card that path already
-enforces. `LocalActionGrammar`, the interception in `runStreamedTurn`, and the local turn-gate
-plumbing that existed only to release a locally-taken turn are deleted. `LocalActions` and its
-registry stay: they are the phone's engine and the memory the sheet and a follow-up read.
-`LocalActions.run` stays as the owner-initiated entry point to that engine; no voice turn calls it.
+enforces. `LocalActionGrammar` and its parser tests, the interception in `runStreamedTurn`, and
+`takeLocalAction` are deleted; ErHandoff's `local-action` receipt goes with them. The turn gate
+itself stays, because every path releases the same gate — nothing in it existed only for the local
+lane. `LocalActions` and its registry stay: they are the phone's engine and the memory the sheet and
+a follow-up read. `LocalActions.run` stays as the owner-initiated entry point to that engine; no
+voice turn calls it.
 
 **Why.** A second initiation path is a second actor. The owner was talking to one of them and not
 the other: "set a timer" matched a phone regex and never reached the mind, whether Presence was on
