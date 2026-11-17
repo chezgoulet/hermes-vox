@@ -43,7 +43,7 @@ The trade, written down so nobody discovers it later:
   plan and not a promise — a rule for the day it happens: nobody is asked to move
   into an empty room.
 
-The name is still **"Sorcelot Community"** pending a domain, organisation and
+The name is still **"Franco Perdu Community"** pending a domain, organisation and
 trademark check. If that check fails, the server is renamed before any invite goes
 out.
 
@@ -158,7 +158,7 @@ they arrived on GitHub. Four numbers, one page, published with the release notes
 
 ## The name
 
-**"Sorcelot Community"** was proposed by the owner and is not yet checked: it needs a
+**"Franco Perdu Community"** was proposed by the owner and is not yet checked: it needs a
 domain, an organisation and a trademark search before it appears in public copy, and
 the umbrella is meant to cover more than this project. Do not publish it until that
 check is done — on Discord the server name is public the moment the first invite is
@@ -176,5 +176,5 @@ project's job; keeping the platform is not. That trade was made knowingly on
 
 1. **The moderator** — one named person beside the owner.
 2. **The code of conduct** — adopted as written, or amended.
-3. **The name** — Sorcelot Community after the check, or still open.
+3. **The name** — Franco Perdu Community after the check, or still open.
 4. **Whether "open at day 30" is a rule or a target.**
