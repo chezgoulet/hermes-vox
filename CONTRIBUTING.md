@@ -45,9 +45,11 @@ Two long-lived branches:
   step-by-step version of that cut.
 
 Every push to `testing` builds a **testing release**: the rolling pre-release of active
-development, tagged `nightly-<date>-<time>-<sha>` with the signed APK attached
-(`.github/workflows/nightly.yml`). It never becomes the repository's latest
-release, and a red gate publishes nothing.
+development, tagged `nightly-<date>-<time>-<sha>` with the signed APK attached. It is
+built unsigned by `.github/workflows/nightly-unsigned-build.yml` (no secrets in that
+job) and signed by `.github/workflows/nightly-sign.yml`, which runs from `main` so a
+push to `testing` cannot reach the signing key. It never becomes the repository's
+latest release, and a red gate publishes nothing.
 
 A hotfix for a broken release branches from `main`, merges there, and is
 cherry-picked back to `testing`.

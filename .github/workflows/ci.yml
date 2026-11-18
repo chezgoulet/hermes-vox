@@ -4,7 +4,7 @@ name: ci
 # them) runs the Android build + unit tests (the Kotlin voice core and its
 # stream parity harness included). It needs no secrets: the sherpa-onnx runtime
 # comes from the public upstream release (SHA-256 pinned in scripts/fetch-runtime.sh) and the APK is a debug
-# build, so it runs for forks too. Signing and publishing stay in nightly.yml.
+# build, so it runs for forks too. Signing and publishing stay in nightly-sign.yml.
 
 on:
   pull_request:

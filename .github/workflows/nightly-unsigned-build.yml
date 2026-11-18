@@ -1,0 +1,143 @@
+name: nightly-unsigned-build
+
+# Hermes Vox testing release (`nightly-…` tag), part one of two: an UNSIGNED build per
+# merge into `testing`.
+#
+# Why this file has no secrets
+# ----------------------------
+# It used to. The old single `nightly.yml` decrypted the release keystore in the same
+# job that compiled code a push had just landed — so whoever could write to `testing`
+# could run arbitrary code in a job holding the key that signs every release, and that
+# key cannot be rotated without breaking updates for every installed phone.
+#
+# The fix is not a second key (a different signing identity would break moving between
+# the nightly and release tracks in Obtainium, and breaks a downgrade). It is to stop
+# building and signing in the same job:
+#
+#   this file   — runs the pushed code. NO secrets. Produces an unsigned APK artifact.
+#   nightly-sign.yml — holds the keystore. Runs from the DEFAULT branch on `workflow_run`,
+#                      executes no repository code, and only signs an artifact it is
+#                      handed. See that file's header for why a push cannot edit it.
+#
+# Nothing here is privileged, so everything here can be as convenient as it was before:
+# the Gradle/Actions caches stay, the prebuilt sherpa runtime is fetched by the script
+# that already verifies its own SHA-256 (scripts/fetch-runtime.sh — the same call ci.yml
+# makes, and the documented development path), and no age-decrypted copy is needed.
+#
+# Git flow (unchanged): main — deployable always, releases cut from main ONLY.
+# testing — integration; every push/merge produces a nightly, published as a prerelease
+# tagged nightly-YYYYMMDD-HHMMSS-<short sha>, installable via Obtainium.
+# Releases stay hand-cut per docs/RELEASE-PROCESS.md.
+
+on:
+  push:
+    branches: [testing]
+
+# Read-only: this job cannot publish, cannot tag, cannot push. The signing workflow has
+# the write token; this one has none, so a poisoned commit here inherits nothing.
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-build-testing
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.4.0
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # The pinned upstream AAR, verified against the SHA-256 baked into the script. No
+      # secret, no age: this is the same runtime path CI and the gate use. Releases and
+      # the F-Droid rebuild still build sherpa-onnx from source (#165).
+      - name: Fetch the pinned speech runtime (verified)
+        run: bash scripts/fetch-runtime.sh
+
+      - name: Gradle cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.2.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('android/app/build.gradle') }}
+          restore-keys: gradle-
+
+      # A nightly and a release can carry the SAME versionCode, so without this the phone
+      # cannot tell you which build it is running. The label changes and nothing else:
+      # versionCode is untouched, which is what installability depends on.
+      - name: Stamp the build identity
+        run: |
+          SHORT=$(git rev-parse --short HEAD)
+          VERSION=$(grep -m1 'versionName' android/app/build.gradle | sed 's/.*"\(.*\)".*/\1/')
+          case "$VERSION" in *-nightly-*) echo "already stamped: $VERSION"; exit 1 ;; esac
+          sed -i "s/versionName \"$VERSION\"/versionName \"$VERSION-nightly-$SHORT\"/" android/app/build.gradle
+          grep -q "versionName \"$VERSION-nightly-$SHORT\"" android/app/build.gradle
+          echo "nightly label: $VERSION-nightly-$SHORT (versionCode untouched: $(grep -m1 versionCode android/app/build.gradle | awk '{print $2}'))"
+
+      # -Phermesvox.unsigned builds the release variant with NO signingConfig — the same
+      # property scripts/repro-check.sh uses. Everything else about the release variant
+      # (minify, shrinkResources off, ndk ABI filters) is unchanged, so the signed result
+      # is the artifact the release path would have produced.
+      - name: Build the unsigned release APK + unit tests
+        working-directory: android
+        run: ./gradlew --no-daemon -q -Phermesvox.unsigned assembleRelease testReleaseUnitTest
+
+      - name: Test roll-up (fail the build on any failure)
+        working-directory: android
+        run: |
+          python3 - << 'EOF'
+          import glob, xml.etree.ElementTree as ET, sys
+          t=f=e=0
+          for p in glob.glob("app/build/test-results/testReleaseUnitTest/*.xml"):
+              r = ET.parse(p).getroot()
+              t += int(r.get("tests",0)); f += int(r.get("failures",0)); e += int(r.get("errors",0))
+          print(f"tests={t} failures={f} errors={e}")
+          sys.exit(1) if (f or e) else print("GATE GREEN")
+          EOF
+
+      # The artifact handed to the signer must be UNSIGNED, and it must be this app. Both
+      # are asserted here, where the consequences are a failed build rather than a bad
+      # signature: the signer re-checks them anyway, because it trusts nothing it downloads.
+      - name: Stage the artifact and assert it is unsigned
+        id: stage
+        run: |
+          set -euo pipefail
+          APK=$(ls android/app/build/outputs/apk/release/*.apk | head -1)
+          test -n "$APK"
+          BT=$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* | sort -V | tail -1)
+          PKG=$("$BT/aapt2" dump badging "$APK" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -1)
+          VERSION=$("$BT/aapt2" dump badging "$APK" | sed -n "s/^package:.*versionName='\([^']*\)'.*/\1/p" | head -1)
+          echo "package=$PKG versionName=$VERSION"
+          test "$PKG" = "com.hermesvox" || { echo "::error::unexpected package: $PKG"; exit 1; }
+          case "$VERSION" in
+            *-nightly-*) : ;;
+            *) echo "::error::nightly stamp missing from versionName: $VERSION"; exit 1 ;;
+          esac
+          if "$BT/apksigner" verify "$APK" >/dev/null 2>&1; then
+            echo "::error::the APK is already signed — this job must produce an unsigned artifact"; exit 1
+          fi
+          echo "unsigned: confirmed"
+          # Workspace root (this step has no working-directory), which is also what the
+          # upload below names.
+          mkdir -p dist
+          cp "$APK" "dist/hermes-vox-${VERSION}.apk"
+          ls -la dist
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the unsigned APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.0
+        with:
+          name: nightly-unsigned-apk
+          path: dist/*.apk
+          # The signer runs within minutes of this finishing. Three days is slack for a
+          # fix-and-redispatch, not storage for an archive nobody reads.
+          retention-days: 3
+          if-no-files-found: error
