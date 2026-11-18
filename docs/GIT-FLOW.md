@@ -12,9 +12,14 @@ the maintainer's flow, verbatim in intent:
 
 ## Nightlies (the new piece)
 
-A GitHub Action (`.github/workflows/nightly.yml`) fires on every push to
-`testing` and publishes a **prerelease** tagged `nightly-YYYYMMDD-HHMMSS-<sha>`
-with the signed APK attached. Rules:
+A GitHub Action fires on every push to `testing` and publishes a **prerelease**
+tagged `nightly-YYYYMMDD-HHMMSS-<sha>` with the signed APK attached. It is two
+workflows on purpose: `.github/workflows/nightly-unsigned-build.yml` runs the pushed
+code with no secrets and uploads an unsigned APK, and `.github/workflows/nightly-sign.yml`
+signs it. The signer is triggered by `workflow_run`, which GitHub resolves against the
+**default branch**, so a push to `testing` — or an agent with write to it — cannot reach
+the release signing key, and the key cannot be rotated without breaking every install.
+Rules:
 
 - Nightlies are `prerelease: true` and `make_latest: false` — they NEVER
   become the repo's "Latest" release; the release track from `main` stays

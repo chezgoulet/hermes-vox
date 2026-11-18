@@ -1007,9 +1007,9 @@ add it with a reference; if it contradicts a row here, the code wins.
 
 **Two `late` sites, two meanings.** `event=er-soul-drop reason=late` is a *turn or beat* render
 that lost the race to the mind's first text — the documented common case, and not the working
-lane (docs/PRESENCE-LATE-DIAGNOSIS.md ``Diagnosis for the 2026-10-20 field sessions (17 `er-soul-drop reason=late`, 0 guard``). `event=er-presence skip
+lane (docs/archive/PRESENCE-LATE-DIAGNOSIS.md ``Diagnosis for the 2026-10-20 field sessions (17 `er-soul-drop reason=late`, 0 guard``). `event=er-presence skip
 reason=late` is a *mid-run* line that arrived after the reply started; that one was addressed by
-pre-rendering the line before the slot opened (docs/PRESENCE-LATE-DIAGNOSIS.md ``## 1. There are two `late` sites, and the field's 17 are not the working lane``). When a
+pre-rendering the line before the slot opened (docs/archive/PRESENCE-LATE-DIAGNOSIS.md ``## 1. There are two `late` sites, and the field's 17 are not the working lane``). When a
 user says "it went quiet", look at `er-presence skip`; when they say "it didn't say anything
 before answering", look at `er-soul-drop`.
 
@@ -1115,7 +1115,7 @@ Silero VAD, Piper (en-US) and Whisper base.en: the offline voice needs all three
   the model card's note, not a download gate
   (android/app/src/main/java/com/hermesvox/ModelCatalog.kt `OpenRAIL-M`).
 - Everything else is permissively licensed upstream; the app itself is GPL-3.0 because
-  sherpa-onnx's TTS statically links espeak-ng (docs/RELEASE-0.9.0.md `- **GPL-3.0.** The app is GPL-3.0 because sherpa-onnx's TTS statically links`).
+  sherpa-onnx's TTS statically links espeak-ng (docs/archive/RELEASE-0.9.0.md `- **GPL-3.0.** The app is GPL-3.0 because sherpa-onnx's TTS statically links`).
 
 ### What cannot co-exist comfortably on a small device
 
@@ -1150,7 +1150,7 @@ log), then match the signature.
   fails fast with `event=stream-turn-failed` (android/app/src/main/java/com/hermesvox/VoiceController.kt `stream-turn-failed`).
 - **Cause:** turns ride Android's HTTP stack, so the declared network-security policy applies:
   cleartext is refused for every host except tailnet MagicDNS names
-  (docs/RELEASE-0.9.0.md `plain HTTP is refused`) (android/app/src/main/res/xml/network_security_config.xml `cleartextTrafficPermitted="false"`).
+  (docs/archive/RELEASE-0.9.0.md `plain HTTP is refused`) (android/app/src/main/res/xml/network_security_config.xml `cleartextTrafficPermitted="false"`).
 - **Do:** serve the gateway over HTTPS (`tailscale serve`, Caddy, or any TLS terminator) and
   enter the HTTPS URL. For a tailnet certificate, install the CA and use the HTTPS name
   (android/app/src/main/res/xml/network_security_config.xml `<certificates src="user"/>`). Do
@@ -1185,7 +1185,7 @@ log), then match the signature.
 - **Cause:** the interruption floor is derived from the reply's own echo; a much quieter
   voice (Supertonic measures ~6.5 dB quieter than Piper) leaves almost no echo bed,
   so the caller's voice alone must clear the floor, and the platform echo canceller ducks it
-  during playback (docs/RELEASE-0.9.0.md `measured from the reply's own echo`).
+  during playback (docs/archive/RELEASE-0.9.0.md `measured from the reply's own echo`).
 - **Do:** confirm the build includes the measured floor `EchoFloor`
   (android/app/src/main/java/com/hermesvox/EchoFloor.kt `0.030`), then lower Barge
   sensitivity a step and/or enable Level-only barge
@@ -1198,7 +1198,7 @@ log), then match the signature.
   (android/app/src/main/java/com/hermesvox/VoiceController.kt `gate-ceiling`).
 - **Cause:** the ceiling counts 60 s from the turn's **last sign of life** — a stream in flight,
   the reply speaking, or the voice worker running — with a ten-minute absolute backstop from
-  gate close (docs/RELEASE-0.9.0.md `60 seconds`). A turn that keeps working is never cut; one
+  gate close (docs/archive/RELEASE-0.9.0.md `60 seconds`). A turn that keeps working is never cut; one
   that stops doing anything is freed 60 s later.
 - **Do:** read `afterClose=` and `sinceAlive=` in the line. `sinceAlive` near 60 s means the
   turn really had stopped; `afterClose` near 600 s means the liveness flag never cleared
@@ -1211,7 +1211,7 @@ log), then match the signature.
   (android/app/src/main/java/com/hermesvox/VoiceController.kt `VoxLog.d("event=endpoint-extended ms=$elapsedMs")`).
 - **Cause:** the utterance clock starts at speech onset, not at mic-open, and past `vad_max_ms`
   the segment closes only on a real pause
-  (docs/RELEASE-0.9.0.md `utterance clock starts when you start speaking`). A clock that ran
+  (docs/archive/RELEASE-0.9.0.md `utterance clock starts when you start speaking`). A clock that ran
   from mic-open would close a sentence the caller was still in the middle of at the first
   >100 ms pause.
 - **Do:** if `endpoint-extended` arrives and the turn is still short, raise "Max speech per
@@ -1225,7 +1225,7 @@ log), then match the signature.
 - **Cause:** the greeting plays before any turn exists, so no turn gate is closed and the mic
   can transcribe the being's own voice. The app keeps the echo tail after a greeting out of
   the turn and stays quiet for the echo-guard window
-  (docs/RELEASE-0.9.0.md `own greeting`).
+  (docs/archive/RELEASE-0.9.0.md `own greeting`).
 - **Do:** if it recurs, raise the Echo guard
   (android/app/src/main/java/com/hermesvox/SettingsActivity.kt `val curEcho = prefs.getFloat("er_echo_skip_ms", 700f).toInt()`).
 
@@ -1240,7 +1240,7 @@ log), then match the signature.
   overrules the one-shot probe (android/app/src/main/java/com/hermesvox/ConnectionPhase.kt `reconcile`).
 - **Do:** trust the live turns, not the probe: the probe forgives a 400 on its stream leg and
   a live stream overrules a one-shot AUTH verdict
-  (docs/RELEASE-0.9.0.md `connection test tells the truth`).
+  (docs/archive/RELEASE-0.9.0.md `connection test tells the truth`).
 
 ### 8.9 Asides are dropped as `late`
 
@@ -1249,11 +1249,11 @@ log), then match the signature.
 - **Cause:** the line must be rendered before the slot opens. Rendering it after the slot comes
   due leaves a ~2.5 s render between "due" and "delivered", and the mind's first text lands
   inside it. Turn renders are dropped by design for the same reason (the 900 ms gate)
-  (docs/PRESENCE-LATE-DIAGNOSIS.md ``## 1. There are two `late` sites, and the field's 17 are not the working lane``).
+  (docs/archive/PRESENCE-LATE-DIAGNOSIS.md ``## 1. There are two `late` sites, and the field's 17 are not the working lane``).
 - **Do:** the working lane pre-renders, so a `skip reason=late` there means a slow render or a
   fast mind, not a missing feature. If turn renders are dropped, that is the documented trade,
   not a fault; slowing "Presence while working" reduces the number of slots, not the drops
-  (docs/PRESENCE-LATE-DIAGNOSIS.md `too slow, not too late`).
+  (docs/archive/PRESENCE-LATE-DIAGNOSIS.md `too slow, not too late`).
 
 ### 8.10 Presence is silent through a long tool call
 
@@ -1262,7 +1262,7 @@ log), then match the signature.
   (android/app/src/main/java/com/hermesvox/ErPresence.kt `reason=cap`).
 - **Cause:** the cadence has a per-run cap, so a long run can reach it: a 76-second tool call
   produced one line, one canned "let me think", then 71 seconds of silence
-  (docs/RELEASE-0.9.0.md `76-second tool call`).
+  (docs/archive/RELEASE-0.9.0.md `76-second tool call`).
 - **Do:** set Presence while working to Chatty for a higher cap and a shorter interval
   (android/app/src/main/java/com/hermesvox/PresenceCadence.kt `CHATTY("chatty", 10_000L, 12, 3),`). A silent
   run with no `er-presence` line at all is a different fault: check `event=er-presence skip`.
@@ -1278,8 +1278,8 @@ log), then match the signature.
   documented slow one — ~1.8 s to first token on CPU versus ~0.3 s on GPU
   (android/app/src/main/java/com/hermesvox/GemmaExpress.kt `1.8s`); there is also a recorded
   **intermittent** start hang on the same build
-  (docs/RELEASE-0.9.0.md `intermittent rather than fixed`). A double-load of the model is
-  ruled out (docs/RELEASE-0.6.3.md `Gemma double-load`).
+  (docs/archive/RELEASE-0.9.0.md `intermittent rather than fixed`). A double-load of the model is
+  ruled out (docs/archive/RELEASE-0.6.3.md `Gemma double-load`).
 - **Do:** treat it as "Presence unavailable" rather than "broken call"; the app is normal
   operation. Restarting the app once often clears the hang. There is no setting that fixes a GPU
   the engine cannot use.
@@ -1309,7 +1309,7 @@ log), then match the signature.
   (android/app/src/main/java/com/hermesvox/VoiceController.kt `@Volatile private var gapHoldLogged = false // one reveal-hold line per gap`).
 - **Cause:** the crawl is paced by the playback head. A gap in synthesis looks like "everything
   has been said" unless the crawl holds its last honest position, which is what the hold line
-  records (docs/RELEASE-0.9.0.md `spoken transcript keeps its place`).
+  records (docs/archive/RELEASE-0.9.0.md `spoken transcript keeps its place`).
 - **Do:** if only `reveal-hold` appears, nothing is wrong. `reveal-fallback` means the cursor
   was lost; include the surrounding `tts-` lines when reporting it.
 - **Except a short reply on 0.9.1 (#538).** A reply with under 4 s of audio whose `reveal-hold`

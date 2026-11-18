@@ -264,6 +264,23 @@ the phone to overrule it.
   with `apksigner verify --print-certs`: the certificate is the release certificate,
   never `androiddebugkey`. A release-signed build does not install over a debug-signed one;
   that move is a fresh install.
+- **The testing channel is built and signed by two different jobs, in two workflows.**
+  `nightly-unsigned-build.yml` runs the pushed code with `permissions: contents: read`
+  and no secrets at all, and uploads an unsigned APK. `nightly-sign.yml` holds
+  `KEYSTORE_AGE_KEY` and runs on `workflow_run`, which GitHub resolves against the
+  **default branch**, so a push to `testing` cannot change what runs in the job that has
+  the key. It checks nothing out, restores no cache, executes nothing from the artifact,
+  and refuses to publish unless the APK is `com.hermesvox`, nightly-stamped, unsigned on
+  arrival, and signed with the release certificate *by SHA-256* (`8be7feed…bb19`), so a
+  swapped keystore fails the build instead of shipping. One signing identity is kept on
+  purpose: a second key would break moving between the testing and release tracks in
+  Obtainium, and break a downgrade. What this does not fix: a bad commit that lands on
+  `testing` is still built and still signed, because the channel publishes automatically
+  — the release note carries the commit list so the remaining risk is checkable by eye.
+- **The real-gateway suite is manual.** It needs a live `API_SERVER_KEY` for an agent
+  with tools — a credential that can be *used*, not just stolen — so it runs from
+  `workflow_dispatch` (`live-gateway.yml`) against a throwaway profile, never from a job
+  a push can start.
 
 ## Reporting a vulnerability
 
