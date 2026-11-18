@@ -212,11 +212,16 @@ jobs:
           OUT=$("$BT/apksigner" verify --print-certs -v "$APK")
           printf '%s\n' "$OUT"
           EXPECT=8be7feed8a6135d3d2df8fd51598517dabd4b14ea16a1a02b00c10ea4dcbbb19
-          GOT=$(printf '%s' "$OUT" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)
+          # Match the FIELD, not the prefix that precedes it: apksigner's output shape
+          # changed between build-tools releases — ≤36 prints `Signer #1 certificate SHA-256
+          # digest:`, 37 prints `V3.0 Signer: certificate SHA-256 digest:` — and this runner
+          # image carries several build-tools versions and takes the newest. Reading the
+          # field means an image bump cannot fail a correct signature.
+          GOT=$(printf '%s\n' "$OUT" | grep -E 'certificate SHA-256 digest:' | head -1 | sed 's/.*certificate SHA-256 digest: //')
           test "$GOT" = "$EXPECT" || { echo "::error::signed with the wrong certificate ($GOT != $EXPECT)"; exit 1; }
-          # One signer, by counting certificate blocks (each signer prints several
-          # `Signer #N …` lines, so counting those lines counts 9 for one signer).
-          N=$(printf '%s' "$OUT" | grep -cE '^Signer #[0-9]+ certificate DN:' || true)
+          # One signer: count certificate blocks, not `Signer #` lines (each signer prints
+          # several of those, which counts 9 for one signer).
+          N=$(printf '%s\n' "$OUT" | grep -cE 'certificate DN:' || true)
           test "$N" = "1" || { echo "::error::expected exactly one signer, found $N"; exit 1; }
           echo "certificate: OK ($GOT)"
           ( cd dist && sha256sum "hermes-vox-${{ steps.vet.outputs.version }}.apk" > SHA256SUMS && cat SHA256SUMS )
