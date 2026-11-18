@@ -1,0 +1,276 @@
+name: nightly-sign
+
+# Hermes Vox NIGHTLY, part two of two: sign and publish what part one built.
+#
+# The point of this file
+# ----------------------
+# The release keystore lives here and nowhere else in the nightly path. This workflow
+# runs on `workflow_run`, which GitHub resolves against the DEFAULT branch (`main`) — not
+# against the commit that triggered the build; its GITHUB_SHA is the tip of `main`. So a
+# push to `testing` cannot alter what runs in this job, and a commit (or an agent) with
+# write to `testing` cannot reach the key.
+#
+# The cost of keeping ONE signing identity
+# ----------------------------------------
+# Nightlies and releases are signed with the same key deliberately: a second key would
+# make `com.hermesvox` a different app to Android, so moving between the tracks in
+# Obtainium — or downgrading — would need an uninstall. That convenience is why the key
+# must be unreachable rather than rotated: an Android signing key cannot be rotated
+# without breaking every installed phone.
+#
+# What this file deliberately does NOT do
+# ---------------------------------------
+#  * never checks out the repository, so nothing from the triggering commit is executed;
+#  * restores no cache, so cache poisoning is not available here (it is the classic way
+#    this trigger is abused);
+#  * runs nothing from the artifact. The APK is data. Every binary it executes belongs to
+#    the runner image (apksigner, aapt2, zipalign, age) or to a pinned action below.
+#
+# Residual risk, stated plainly: a malicious commit that lands on `testing` still gets
+# built, and still gets signed, because nightlies publish automatically. This file stops
+# the KEY being taken; it does not stop a bad artifact being signed. The remedy for that
+# is a human glance at the commit list this workflow writes into the release note.
+
+on:
+  workflow_run:
+    workflows: [nightly-unsigned-build]
+    types: [completed]
+
+# contents: write to publish the prerelease; actions: read to download the artifact from
+# the triggering run. Nothing else is granted.
+permissions:
+  contents: write
+  actions: read
+
+# Serialise: two signers racing would both ask "has this sha been published?" and both
+# answer no. Cancelling is wrong here — a published signature must not be interrupted —
+# so the second run waits its turn.
+concurrency:
+  group: nightly-sign
+  cancel-in-progress: false
+
+jobs:
+  # Secretless pre-flight, so a run that will never be published never touches the
+  # keystore at all.
+  check:
+    # A `workflow_run` fires whatever the conclusion, and a dispatched build would land
+    # here too. Both are refused here rather than in the privileged job.
+    if: >
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'testing' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.dedupe.outputs.skip }}
+      short: ${{ steps.dedupe.outputs.short }}
+    steps:
+      - name: Refuse a second signature for the same commit
+        id: dedupe
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          SHORT=${SHA:0:7}
+          # Nightly tags end in the short sha (nightly-YYYYMMDD-HHMMSS-<sha>), so this
+          # answers "has this commit already been published?" without a second API shape.
+          # Bounded to the last 100 releases: re-signing a much older commit would
+          # produce a new tag on an old build, not a duplicate of this run.
+          N=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+                --jq "[.[] | select(.tag_name | endswith(\"-$SHORT\"))] | length")
+          echo "commit=$SHA already-published=$N"
+          echo "short=$SHORT" >> "$GITHUB_OUTPUT"
+          if [ "$N" != "0" ]; then
+            echo "already signed and published: nothing to do"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  sign:
+    needs: check
+    if: needs.check.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    env:
+      SHORT: ${{ needs.check.outputs.short }}
+      SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      # No checkout. The workspace holds only what this job writes.
+      - name: Download the unsigned APK from the triggering run
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: nightly-unsigned-apk
+          path: unsigned
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # A release binary fetched by tag is a mutable dependency like any other, so the
+      # tarball is checksum-pinned as well as tag-pinned.
+      - name: Install age (pinned, checksum-verified)
+        run: |
+          set -euo pipefail
+          URL=https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-linux-amd64.tar.gz
+          SHA256=7df45a6cc87d4da11cc03a539a7470c15b1041ab2b396af088fe9990f7c79d50
+          curl -fsSL -o /tmp/age.tar.gz "$URL"
+          echo "$SHA256  /tmp/age.tar.gz" | sha256sum -c --quiet -
+          tar -xzf /tmp/age.tar.gz -C /tmp
+          sudo install -m 0755 /tmp/age/age /usr/local/bin/age
+          age --version
+
+      # The one secret on this path. The ciphertext comes from `main` over plain HTTPS
+      # (the repo is public and those two files are committed there); a swapped keystore
+      # is caught after signing by the certificate assertion below, so fetching the
+      # current file on `main` is safe — and it keeps this job free of any checkout.
+      - name: Restore the release keystore
+        env:
+          KEYSTORE_AGE_KEY: ${{ secrets.KEYSTORE_AGE_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "${KEYSTORE_AGE_KEY:-}" || { echo "::error::KEYSTORE_AGE_KEY is not set"; exit 1; }
+          KS="$RUNNER_TEMP/ks"
+          mkdir -p "$KS" && chmod 700 "$KS"
+          printf '%s' "$KEYSTORE_AGE_KEY" > "$KS/age.key" && chmod 600 "$KS/age.key"
+          BASE="https://raw.githubusercontent.com/$GITHUB_REPOSITORY/main"
+          curl -fsSL -o "$KS/release.keystore.age"    "$BASE/keystore/release.keystore.age"
+          curl -fsSL -o "$KS/keystore.properties.age" "$BASE/keystore/keystore.properties.age"
+          age -d -i "$KS/age.key" -o "$KS/release.keystore"    "$KS/release.keystore.age"
+          age -d -i "$KS/age.key" -o "$KS/keystore.properties" "$KS/keystore.properties.age"
+          chmod 600 "$KS/release.keystore" "$KS/keystore.properties"
+          rm -f "$KS/age.key"
+          echo "keystore: $(wc -c < "$KS/release.keystore") bytes"
+
+      # Every property of the artifact is re-derived here. Nothing downloaded is trusted:
+      # the package name, the nightly stamp and the absence of a signature are all read
+      # off the APK itself.
+      - name: Identify and vet the artifact
+        id: vet
+        run: |
+          set -euo pipefail
+          APK=$(ls unsigned/*.apk | head -1)
+          test -n "${APK:-}" || { echo "::error::no APK in the artifact"; exit 1; }
+          BT=$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* | sort -V | tail -1)
+          BADGE=$("$BT/aapt2" dump badging "$APK")
+          PKG=$(printf '%s' "$BADGE" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -1)
+          VERSION=$(printf '%s' "$BADGE" | sed -n "s/^package:.*versionName='\([^']*\)'.*/\1/p" | head -1)
+          echo "package=$PKG versionName=$VERSION"
+          test "$PKG" = "com.hermesvox" || { echo "::error::refusing to sign package $PKG"; exit 1; }
+          case "$VERSION" in
+            *-nightly-*) : ;;
+            *) echo "::error::refusing to sign an unstamped build: $VERSION"; exit 1 ;;
+          esac
+          if "$BT/apksigner" verify "$APK" >/dev/null 2>&1; then
+            echo "::error::the artifact is already signed; this signer only signs unsigned input"; exit 1
+          fi
+          # A zip that is not aligned is refused by some devices. Page alignment for
+          # uncompressed .so (the -p form) is a stricter, newer check than plain alignment:
+          # warn on that one, fail only on the plain form, so an AGP packaging change does
+          # not silently stop every nightly.
+          if "$BT/zipalign" -c -p 4 "$APK" > /tmp/align.log 2>&1; then
+            echo "zipalign: aligned, page-aligned"
+          elif "$BT/zipalign" -c 4 "$APK" > /tmp/align2.log 2>&1; then
+            echo "::warning::not page-aligned for uncompressed .so; plain alignment is fine"
+          else
+            echo "::error::artifact is not zipaligned (refused by some devices)"; tail -5 /tmp/align2.log; exit 1
+          fi
+          echo "apk=$APK"     >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Sign with the release key (v2 + v3, as the release path does)
+        run: |
+          set -euo pipefail
+          KS="$RUNNER_TEMP/ks"
+          BT=$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* | sort -V | tail -1)
+          prop() { sed -n "s/^$1=//p" "$KS/keystore.properties" | head -1; }
+          # build.gradle defaults the alias to `hermes-vox` when the properties file omits
+          # it, so the signer does the same rather than passing an empty --ks-key-alias.
+          ALIAS=$(prop keyAlias); [ -n "$ALIAS" ] || ALIAS=hermes-vox
+          STOREPASS=$(prop storePassword)
+          KEYPASS=$(prop keyPassword); [ -n "$KEYPASS" ] || KEYPASS=$STOREPASS
+          mkdir -p dist
+          "$BT/apksigner" sign \
+            --ks "$KS/release.keystore" \
+            --ks-pass "pass:$STOREPASS" \
+            --ks-key-alias "$ALIAS" \
+            --key-pass "pass:$KEYPASS" \
+            --v1-signing-enabled false \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out "dist/hermes-vox-${{ steps.vet.outputs.version }}.apk" \
+            "${{ steps.vet.outputs.apk }}"
+          echo "signed: dist/hermes-vox-${{ steps.vet.outputs.version }}.apk"
+
+      # The assertion that makes a swapped keystore harmless: the artifact must carry THE
+      # release certificate, by digest, not merely "a" certificate. 8be7feed… is the
+      # certificate on every published release (read from v0.9.1.4 out of the APK Signing
+      # Block), so a different key here fails the build instead of shipping.
+      - name: Verify the signature and pin the certificate
+        run: |
+          set -euo pipefail
+          APK="dist/hermes-vox-${{ steps.vet.outputs.version }}.apk"
+          BT=$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* | sort -V | tail -1)
+          OUT=$("$BT/apksigner" verify --print-certs -v "$APK")
+          printf '%s\n' "$OUT"
+          EXPECT=8be7feed8a6135d3d2df8fd51598517dabd4b14ea16a1a02b00c10ea4dcbbb19
+          GOT=$(printf '%s' "$OUT" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)
+          test "$GOT" = "$EXPECT" || { echo "::error::signed with the wrong certificate ($GOT != $EXPECT)"; exit 1; }
+          # One signer, by counting certificate blocks (each signer prints several
+          # `Signer #N …` lines, so counting those lines counts 9 for one signer).
+          N=$(printf '%s' "$OUT" | grep -cE '^Signer #[0-9]+ certificate DN:' || true)
+          test "$N" = "1" || { echo "::error::expected exactly one signer, found $N"; exit 1; }
+          echo "certificate: OK ($GOT)"
+          ( cd dist && sha256sum "hermes-vox-${{ steps.vet.outputs.version }}.apk" > SHA256SUMS && cat SHA256SUMS )
+
+      # The tag keeps the format the nightlies have always had, so nothing that reads
+      # release tags (Obtainium, the docs, a human) has to learn a new shape.
+      - name: Compute the nightly tag
+        id: tag
+        run: |
+          set -euo pipefail
+          echo "tag=nightly-$(date -u +%Y%m%d-%H%M%S)-${SHORT}" >> "$GITHUB_OUTPUT"
+
+      # What a human would look at, if they wanted to. Written into the release note so
+      # the "a bad build got signed" risk has something cheap to check against.
+      - name: Collect the commits this nightly carries
+        id: notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          {
+            echo "Automated nightly from \`testing\` @ ${SHA}."
+            echo ""
+            echo "Signed with the release certificate, so it installs over — and updates to —"
+            echo "any release or nightly build. Install via Obtainium (prereleases); NOT for"
+            echo "the release track."
+            echo ""
+            echo "**Commits**"
+            gh api "repos/$GITHUB_REPOSITORY/commits?sha=${SHA}&per_page=8" \
+              --jq '.[] | "- `" + .sha[0:7] + "` " + (.commit.message | split("\n")[0])'
+          } > "$RUNNER_TEMP/body.md"
+          cat "$RUNNER_TEMP/body.md"
+          echo "body=$RUNNER_TEMP/body.md" >> "$GITHUB_OUTPUT"
+
+      - name: Publish the nightly prerelease
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.4.2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          # Must name the built commit, or action-gh-release tags the default branch and
+          # the tag's name would describe a different commit than its ref.
+          target_commitish: ${{ env.SHA }}
+          name: Nightly ${{ env.SHORT }}
+          prerelease: true
+          make_latest: false          # NEVER becomes "Latest" — releases from main do
+          body_path: ${{ steps.notes.outputs.body }}
+          files: |
+            dist/hermes-vox-*.apk
+            dist/SHA256SUMS
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Always: the decrypted key material does not outlive the job, even on failure.
+      - name: Wipe the decrypted key material
+        if: always()
+        run: |
+          rm -rf "$RUNNER_TEMP/ks" || true
+          test ! -d "$RUNNER_TEMP/ks" && echo "key material removed"
