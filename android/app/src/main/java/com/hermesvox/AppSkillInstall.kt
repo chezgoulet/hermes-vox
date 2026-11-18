@@ -30,9 +30,13 @@ object AppSkillInstall {
     /** Set once the offer has been shown, whatever the answer was. Never offered twice. */
     const val PREF_OFFERED = "app_skill_offered"
 
-    /** The install command for this build and the profile the stored endpoint addresses. */
+    /**
+     * The command for this build and the profile the stored endpoint addresses — both lines:
+     * the digest check and then the install, in that order. A pasted command that skipped the
+     * check would install whatever the ref holds now, which is the thing the pin exists to stop.
+     */
     fun command(prefs: SharedPreferences, versionName: String): String =
-        AppSkill.command(versionName, AppSkill.profileOf(prefs.getString("url", "").orEmpty()))
+        AppSkill.pasteScript(versionName, AppSkill.profileOf(prefs.getString("url", "").orEmpty()))
 
     /** Echo the command into the clipboard — the path that needs no agent at all. */
     fun copy(activity: Activity, command: String) {
@@ -92,7 +96,7 @@ object AppSkillInstall {
         onDone: () -> Unit,
     ) {
         val profile = AppSkill.profileOf(prefs.getString("url", "").orEmpty())
-        val command = AppSkill.command(versionName, profile)
+        val command = AppSkill.pasteScript(versionName, profile)
         if (prefs.getBoolean(PREF_OFFERED, false)) { onDone(); return }
         AlertDialog.Builder(activity)
             .setTitle("Teach your agent this app?")
