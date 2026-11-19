@@ -39,9 +39,11 @@ question reads as `CUT-CHECK UNKNOWN` rather than as a pass.
       <this build>.json` — exit code `<0|1|3>`, verdict line `<quoted>`.
       **A 1 or a 3 is a red line, not a tick**: 1 is a crossed tolerance, 3 is a row the
       previous release measured and this one does not report.
-- [ ] **F5 — the thirty-minute soak.** One call left open for thirty minutes: peak RSS and
-      the lowest `MemAvailable` (`event=res-summary`), the thermal trace start → end, and
-      any dropped or failed turn. The release document gets the slope, not a single point.
+- [ ] **F5 — the thirty-minute soak.** `scripts/soak.sh <label>` with a call open: it samples
+      every thirty seconds and prints the verdict. Pass requires battery ≤ 4 %/h, no thermal-state
+      rise, peak PSS ≤ 1.5 GB and no memory slope over the window. Exit 3 (no call, charging, or a
+      window under thirty minutes) is a red like any other. The release document gets the slope,
+      not a single point.
 - [ ] **F8 — the ten-utterance verdict.** `scripts/verdict-f8.sh <build-label>`; the rows
       stay in `docs/verdicts/<build-label>.md`. The script records the numbers; whether the
       words were right is the human run's column.
