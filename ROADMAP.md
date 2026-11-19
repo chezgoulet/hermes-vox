@@ -1,312 +1,299 @@
-# Roadmap — the 0.9.x series
+# Hermes Vox — Roadmap
 
-**Set 2026-11-11.** This replaces the previous roadmap entirely. That document,
-`PLAN-0.9.1.md`, `PLAN-0.9.2.md`, `PLAN-0.9.x-to-1.0.md` and `PLAN-1.0.md` are records of how the
-plan got here. This is the plan. `docs/MILESTONES.md` holds what a version number means, what the alpha
-gate contains, and what a label means; it does not hold a sequence, because two documents holding one
-sequence is how they came to disagree.
+**Rebuilt 2026-11-19** after the owner's rulings on the three-lens review (D49–D54). It replaces the
+M0–M5 series of 2026-11-13. The old series is not deleted from history: it is in git, and the diff is
+in the pull request that landed this file.
 
-**The order of gates, and what MVP is:** `docs/PLAN-MVP.md` (2026-11-13). It sequences the work and
-defines MVP; where this roadmap and that plan disagree, the plan wins and this document is amended in
-the same pull request.
+Two things the owner asked for, and this document obeys them:
 
-## The foundation, identified first
+- **Promotions happen as part of the series, not after it.** Every release names the set it promotes
+  or the row it removes, and the alpha panel shrinks as the series goes.
+- **Polish rides along.** A rough edge found in use ships in the next cut. Polish is not a theme, does
+  not need a version, and is never deferred to keep a milestone tidy.
 
-The series is built outward from what is already stable, so it is worth saying exactly what that is.
+And one thing the review established, which changes the shape: **a gate is not a release.** A gate has
+an exit a script prints. A release has a sentence a user could say. The old series had two gates
+wearing version numbers. They are separated here.
 
-**The stable thing is the single-turn call.** One press, one question, one answer, in one voice. Every
-user path exercises it, both of its defects are closed with witnesses in 0.9.1.3, the readiness gate
-refuses to open a call until the mind, the ears and the voice report ready, and the twelve regression
-paths in `docs/REGRESSION.md` all run through it. Beside it, **profiles and sessions** are stable: they
-left the alpha gate on a device pass (D39) and have not regressed since.
+`docs/PLAN-MVP.md` holds the reasoning behind the MVP and the two app-owned latency rows. This document
+holds the order. Where the two disagree, this document wins and `PLAN-MVP.md` is amended in the same
+pull request.
 
-**What is not stable:** the hearing timing (a recogniser slower than real time on the field device),
-Presence's cost (2,588 MB, 5.6 s to load, lines of eleven to thirty-one characters), and anything that
-assumes continuous audio. Everything unfinished is either on top of the call or beside it. Nothing
-unfinished *is* the call.
+---
 
-So one ordering rule sits above the rest:
+## What MVP is, and the gap to it
 
-> **With the alpha gate off, every release is strictly better than the one before it and no less
-> stable.**
+**MVP is a call you would keep having, on the default path, with the alpha gate off.**
+(`docs/PLAN-MVP.md:45-46`.)
 
-That is testable — the twelve paths plus the instruments below — and it is what front-loading
-stability means in practice. A release that improves an alpha set while making the default path worse
-has failed, whatever else it did.
+Four promises make that sentence true. Measured against the code at `ecd7ffc3`:
 
-## The three moves, and the order they happen in
+| Promise | State on the default path | What closes it |
+|---|---|---|
+| One reply that starts within the bar and ends promptly | **partly met** | `app-first-sound` and `app-gap` judged per cut (G0.2), then R2 |
+| An interruption that keeps the work | **architecturally unmet** — a barge posts `/stop`, and a stopped run cannot be steered | R3 |
+| Durability: an hour of use does not degrade | **unmeasured** — no soak artefact exists | F5 (`scripts/soak.sh`), first real run |
+| A voice that is pleasant to be interrupted by | **behind the alpha switch** | P (Presence programme), R2 |
 
-*Re-ordered 2026-11-13 after two independent reviews. The old order promoted the two cheapest sets
-first and stabilised continuous listening before anything that speaks; both reviewers pointed out that
-this graduates features while the call is far from its own cadence target, and schedules the only
-perceptible component last.*
+**The gap is not a version number.** It closes when those four are true with the gate off, and each
+release says which promise it moved. Anything that does not move one of the four is polish, an
+instrument, or future work — and is labelled as such.
 
-1. **Measure before changing anything.** `#208` (behaviour matrix), `#209` (performance baseline), F4
-   (GPU contention), F5 (the thermal soak) and F8 (the ten-utterance verdict) are what tell *stable*
-   from *working*; they move into the cut checklist in the first release, and the first release also
-   adds the two rows that measure the **app's** share of the wait rather than the server's.
-2. **Make the call good before any set graduates.** Cadence (0.9.3) and interruption that keeps the
-   work (0.9.4) are the product; they ship before anything leaves the gate, because a set promoted on
-   a call that stalls is a set promoted on nothing.
-3. **Promote when the gate that needed the set lands.** Presence before turn-taking, because nothing
-   can take a turn before something is speaking; continuous capture on its capture property, not on an
-   endpointing claim its own corpus shows is empty. A promotion ritual that works matters more than
-   the order the panel empties.
-
-## How a set leaves the gate
-
-A set is **stabilised** by being measured with the instruments and judged against its own bar, and
-**promoted** by a device pass: the set is removed from `AlphaGate.FeatureSet`, its settings stop being
-dimmed, the app skill and the docs lose their "behind the gate" language, and the pass is recorded in
-the release document.
-
-**One set is the exception, and the reason is written down rather than discovered later.** Presence is
-rebuilt as a catalogue *in* the release that promotes it, which the rule above would normally forbid —
-a promotion that rebuilds is unproven by construction. The escape is that the rebuild is measured
-against `#217`'s bar *and* the app-owned beat row before promotion, so the proof and the rebuild are
-the same act and the evidence is a bar rather than a pass of the old implementation. The design review
-is that release's first act, so the release is written against the decision rather than the other way
-round. No other set gets this treatment.
-
-The panel shrinks as the series goes — **six sets today; four after 0.9.2** (Wake word and Digital
-assistant leave it: the first listens to nothing, the second is launcher integration rather than a
-voice capability, and both are documented as post-0.10 work rather than carried as alpha); **three
-after 0.9.5** (Phone tools — only tier 1 is implemented, so there is nothing above it left to gate);
-**two after 0.9.6**; **none after 0.9.7**. When it is empty there is no gate, because there is nothing
-behind it.
+---
 
 ## The rules every release obeys
 
 From `docs/GOVERNANCE.md`, not negotiable per release:
 
 - **No date.** A release ships when its gates are green. The series is an order, not a calendar.
-- **One theme.** A release is named for what it does, and work that does not serve the theme waits.
-  This is the rule that would have stopped 0.9.1 carrying a media change inside a profile fix.
+- **One theme, one sentence, one device pass.** A release is one sentence a user could say, and at most
+  one sitting on the phone. A second theme is the next release.
+- **Every release says what it promotes.** A promotion is a line in the release, with the bar that
+  justified it quoted. A set that fails its bar stays gated and gets a card — that is a result, not a
+  failure.
+- **Nothing graduates on an instrument that does not exist.** If the bar is not in the tree and
+  runnable, the promotion is not scheduled.
+- **A promotion changes no default** unless the release flips that default in the same change, or the
+  promotion is a major (D45) with a design note and a call.
 - **One human run** of the candidate before the tag, by someone other than the cutter wherever a
-  volunteer exists, with whose run it was recorded in the release document.
-- **Twelve regression paths**, the closed tracker, and the evidence rule: no claim in a release note
-  that was not measured on that build, and no number without the file and the count behind it.
+  volunteer exists, recorded in the release document.
+- **Twelve regression paths**, the closed tracker read by `scripts/check-cut.py`, and the evidence
+  rule: no claim in a note that was not measured on that build, and no number without the file, the
+  rule and the script behind it.
 - **No release waits on a person** (D47). What cannot be verified before the cut ships marked
-  *pending*, with a card queued for the next test walkthrough and the release document saying so.
-  The functional suite the steward runs against the phone, and the owner's walkthrough, are the
-  verification; a reporter's confirmation is welcome and never a gate.
-- **Every release is small enough to finish.** A second theme becomes the next release.
+  *pending*, with a card queued and the release note saying so.
 
-## The series — rebuilt 2026-11-13
-
-**The unit of a release is one sentence a user could say after updating.** Work with no user-facing
-claim does not get a version number; it rides inside the release whose claim needs it. And **there are
-no time estimates in this document** — ordering is by readiness, dependency and effort class only.
-With agentic execution a duration is a guess wearing a number's clothes, and a wrong guess becomes a
-promise.
-
-### The five rules, in priority order
-
-1. **Testing is front-loaded.** The instruments that prove a promotion come before the promotions;
-   nothing leaves the gate on evidence that does not exist.
-2. **Built things first.** What already exists is promoted, measured and corrected before anything is
-   built. **Nothing ready is held back** to keep a milestone tidy.
-3. **Then least effort to most.**
-4. **No durations.** Effort is a class.
-5. **Localisation is a standard, not a release.** Adopted now, applied to every build, and the series
-   ends by proving readiness so that 0.10 is translation rather than archaeology.
-
-**Effort classes** (relative size, never duration): **XS** one edit, no design · **S** contained
-change with a test · **M** a component or behaviour change with a design note · **L** architectural,
+**Effort classes** (relative size, never duration): **XS** one edit, no design · **S** contained change
+with a test · **M** a component or behaviour change with a design note · **L** architectural,
 cross-file, a decision and a device pass · **XL** a codebase sweep that ratchets down rather than
-finishes in one go.
+finishing in one go.
 
-### M0 — the gate everything is judged by
+---
 
-**No user-visible change. Ships nothing if the instruments fail.** The only milestone that must
-precede all others, because every later exit criterion is one of these lines.
+## The polish lane
 
-| Item | Effort | Work |
-|---|---|---|
-| Extend `event=turn` with `lastSound`, `segs`, `gapP95`, `route`, and `firstToken→firstSound` | S | finish |
-| `app-first-sound` and `app-gap` rows in the comparator | S | build |
-| **Success sampling** (`#596`): every fifth call and first-after-install, ten kept, one-tap "send this — it went well" | S | build |
-| **Recorded stimulus corpus** replayed through the real pipeline — fixed utterances in three environments (parked, driving, reflective room), stratified so every third run covers each. A stimulus set, **not a conversation** | M | build |
-| Thirty-minute soak harness | S | build |
-| Repo truth: one `DECISIONS.md`, an archive for the historical files, DOC-TRUTH on current files only, a file count the gate enforces | S | build |
-| Correct the four false statements the audit found in this document | XS | fix |
+Polish is **continuous and belongs to no milestone** (D31). A wording, a colour, a timing, a rough edge
+found in use is fixed when it is found and ships in the next cut, listed under *Also in this release* in
+the note. The lane is exempt from the one-theme rule for the same reason the extraction lane is: a rule
+that forced polish into a release would either delay the release or inflate the theme.
 
-**Exit:** a release document can quote an `app-first-sound` distribution with its build and n; ten
-sampled real calls from three installs; a recorded conversation replays reproducibly; the soak runs
-and reports; `docs/` is ≤60 current files plus an archive.
+Two constraints keep it honest: polish changes no claim and promotes nothing, and it still needs its
+catcher if it fixes a defect. A defect is never "polish".
 
-**What the bench asserts, and what it refuses to.** Three jobs only: regression mitigation (the turn
-completed, the transcript matched its sidecar, the tool fired, nothing dropped) · metrics under
-conditions (`app-first-sound`, gaps, recogniser time, memory, thermal, per environment) · and **tool
-calls**, which become fully deterministic by driving recorded audio into the app against the fake
-gateway that already ships — a timer call, an approval and a result asserted exactly, with no model in
-the loop. **It never asserts that a conversation was good**: barge correctness, turn-taking feel,
-resume-without-repeat and backchannel timing are human review, always.
+---
 
-**Needs the owner:** the same utterances recorded three ways — parked and silent, driving, and a
-reflective room — with consent. Parked is the control, driving is signal-to-noise and the VAD floor,
-reflective is reverberation and echo.
+## How a set leaves the gate
 
-### M1 — promote what already works
+A set is **stabilised** by being measured with the instruments and judged against its own bar, and
+**promoted** by a device pass: it is removed from `AlphaGate.FeatureSet`, its settings stop being
+dimmed, the app skill and the docs lose their "behind the gate" language, and the pass is recorded in
+the release document.
 
-**Each row is a promotion with a pass, not a build, and any row that passes ships immediately** — the
-milestone does not need to empty before a release is cut. Order is by effort.
+**The panel census, stated once.** Six sets today. **Four after R1** (Wake word removed, Digital
+assistant promoted). **Three after R3** (Turn-taking). **Two after R4** (Phone tools). The two that
+remain — **Presence** and **Continuous listening** — are decided by the two programmes below, not by a
+release number, and the panel empties when they are decided rather than at a fixed version.
+`docs/MILESTONES.md` is amended in the same pull request; its "three after 0.9.3 … none after 0.9.6"
+contradicted this document before this rebuild.
 
-| Item | What already exists | Effort | Work |
-|---|---|---|---|
-| Approvals by touch and voice, timeout to *no* | two-state consent, 120 s timeout, tap and voice, audited | XS | promote |
-| **Digital assistant** graduates | the role, route and settings row are built | XS | promote |
-| Supertonic 3 bundle (`#589`) | ruled in D48; absent from the catalogue | XS | build |
-| Semantic endpointing default **off**, with the test that pins `true` updated | the code is live; the document was wrong | XS | fix |
-| **Wake word deferred indefinitely** — its panel row and enrolment screen removed so nothing advertises a feature that listens to nothing | `InertWakeWordEngine`; nothing listens | XS | remove |
-| `#404` runs route and `#281` operations line | both shipped and on the default path | XS | promote |
-| Retest batch `#538`, `#496`, `#373`, `#374` | fixed in code with catchers; retests are cards | XS | measure |
-| Phone tools: **27 actions across 13 groups** already implemented | all default off, per-group grants | S | promote |
-| Turn-taking: acknowledgements, backchannels, resume | `Backchannel`, `Overlap`, `Resume` built and gated | S | promote |
-| Continuous capture graduates on the **capture** property | built, gated; the endpointing claim is empty | M | promote |
-| Presence as the being | a **13-stem catalogue with its own selector and isolated player already ships**; the 2.6 GB renderer does not earn its cost | M | promote |
+---
 
-**Exit per item:** a pass recorded, its bar quoted, its gate row removed. **A set that fails its pass
-stays gated and gets a card — that is a result, not a failure.**
+## G0 — the instruments, finished (a gate; no version, no release note)
 
-### M2 — small builds that unblock quality
+**No user-visible change. Nothing below it ships if the instruments fail.** The exit is four commands,
+and **none of them depends on the owner**.
 
-| Item | Effort | Work |
-|---|---|---|
-| Error separation: refused key vs transport vs gateway, spoken and shown | S | build |
-| Locked-device refusal for **gateway** approvals | S | build |
-| `run.steered` surface — the event arrives and is dropped | S | build |
-| Clarify surface — `clarify.request` is silently ignored mid-run | S | build |
-| Persist the last N turns, read-only, marked unchecked | S | build |
-| Per-engine speech settings | S | build |
-| `#202` triage of the nineteen log-flagged candidates | XS | measure |
+| # | Unit | Claim it earns | Exact evidence | Instrument | Effort | Depends on | Not included |
+|---|---|---|---|---|---|---|---|
+| G0.1 | `event=turn` gains `route`, `segs`, `lastSound` | The log can say which route a turn took and how many speech segments it played | One gate-off log line reading `… route=runs segs=<n> lastSound=<ms>`, field order pinned | `LatencyStatsTest` + `grep 'event=turn'` | S | — | `gapP95` as a raw field (derived in G0.2) |
+| G0.2 | `app-gap` row: p95 of the gap between consecutive speech segments | The app's stutter between phrases is a judged row, not an impression | `baseline-diff.py` prints an `appGap` row at n≥20 with a verdict, and its test fails on a synthetic regression in it | `baseline-report.py`, `baseline-diff.py`, `test_baseline_diff.py` | S | G0.1 | A new tolerance value (the table default holds until a corpus exists) |
+| G0.3 | Success sampler (`#596`): every fifth call and first-after-install, ten kept, stamped `build=` and `gate=` | The project keeps good runs, not only failures | A unit test rotates ten and evicts the eleventh; one real sample on the device carries its build and gate | new `SampleStoreTest` + one device call | S | — | Ten real calls from three installs (a card); **any upload — see D54** |
+| G0.4 | The docs count is enforced, not printed | "≤60 current files" is a gate, not a habit | `check-docs-tree.py` exits 1 above 60 and `gate.sh` runs it | `check-docs-tree.py` in `gate.sh` | XS | — | Further archiving |
+| G0.5 | A literal counter for the three families, in the gate | The localisation number is counted, not remembered | The script prints Kotlin sentence literals, layout `android:text` literals and `<string>` count, with its rule named | new `scripts/count-literals.py` | S | — | Fixing any literal; the "840" |
 
-### M3 — how a reply is spoken
+**G0 exit:** `bash scripts/gate.sh` prints `GATE-GREEN` and its output contains the docs count and the
+literal count; `baseline-diff.py` prints a verdict on both app-owned rows at n≥20; `soak.sh` reports;
+the sampler's test passes. **If any of the four is UNKNOWN, G0 is not closed**, and no release is cut
+until it is.
 
-| Item | Effort | Work |
-|---|---|---|
-| Chunk shaping + synthesis ahead: first piece 20–30 chars, growth to 3× the previous actual, one clip rendered while the current plays, player decoupled | M | build |
-| `#569` recogniser A/B, four arms, gate off | M | measure |
+---
 
-### M4 — interruption that keeps the work
+## R1 — 0.9.2 · *"Nothing on the alpha panel is a switch that does nothing."*
 
-**A D45 major: it changes what a barge does for every user.** A barge currently posts
-`/v1/runs/{id}/stop`, and a stopped run cannot be steered, so the work cannot be resumed by
-construction.
+**Theme:** the panel and its switches tell the truth. **Promotes:** Digital assistant. **Removes:** Wake
+word, its enrolment screen and its false opening sentence. **Also folds in** the three XS defects found
+in the review (D53).
 
-| Item | Effort | Work |
-|---|---|---|
-| Steer instead of stop: cut locally, classify, steer the live run, stop only on an explicit abort | L | build |
-| Amend path: commit on `PROVISIONAL`, extend and re-send if speech resumes | L | build |
-| Transcript-similarity echo rejection, and true pause-not-stop | M | build |
+| # | Unit | Claim it earns | Exact evidence | Instrument | Effort | Depends on | Not included |
+|---|---|---|---|---|---|---|---|
+| R1.1 | Wake word leaves: `WAKE_WORD` out of `FeatureSet`, `WakeEnrolActivity` deleted, its settings row gone, the "wakes the app hands-free" sentence deleted | There is no row that records your voice for a detector that does not exist | `FeatureSet` has five members; `grep -rn WakeEnrolActivity` → 0; a fresh-install screenshot shows five rows | `AlphaGateTest` + one device screenshot | XS | — | A detector (`#45`, future); keeping enrolment for later |
+| R1.2 | Digital assistant graduates: `DIGITAL_ASSISTANT` out of `FeatureSet`; the row reachable with the master off | The gesture works or it does not — it is not an alpha experiment | Enum has four members; the row opens the system assistant settings with the master off | `AlphaGateTest` + one device tap | XS | — | Proving the gesture on every OEM (a card) |
+| R1.3 | `SemanticEndpoint.DEFAULT_ON = false`, and the test that pins `true` updated | The shipped default matches the decision, on the one switch where they disagreed | `grep DEFAULT_ON SemanticEndpoint.kt` → `false`; the test asserts `false` | `SemanticEndpointTest` + one gate-on log | XS | — | Deleting semantic endpointing (`#229`, 0.10) |
+| R1.4 | `mm_warm.pcm` and `mhm_warm.pcm` exist, **or** the rotation names clips that do | An acknowledgement is audible two turns in three | `ls assets/clips` shows both, or `ErClips.kt` names three that exist; a test asserts every name in `clipFor` is on disk | new `ErClipsTest` | XS | — | New recordings beyond the three names |
+| R1.5 | `ErClips.play`'s result is checked by its caller | A missing clip is a logged failure, not silence | A test removes one asset and the caller reports `reason=clip-missing` | unit | XS | — | A fallback voice |
 
-**Exit — the mechanism from the log, the judgement from the owner.** The harness asserts only what is
-mechanical: a steer was sent rather than a stop, `run.steered` came back, the sequence carries no
-double-spoken reply, and the run is still alive afterwards. **Whether an interruption was understood
-correctly is a human sitting** — a cough, an "mm-hm" and a real change of mind — with no bench verdict
-attached to any of them.
+**Sentence after updating:** *"Nothing on the alpha panel is a switch that does nothing, and it answers
+me when it acknowledges."*
+**Release evidence:** three screenshots, five unit tests, twelve paths, one human run.
+**Not in this release:** phone tools, continuous listening, Presence.
 
-### M5 — localisation readiness verified
+---
 
-**Not translation — proof that translation can start.**
+## R2 — 0.9.3 · *"It starts talking sooner, and it stops dropping words mid-sentence."*
 
-**The standard, adopted now:** every user-visible string in a resource, no literals in Kotlin,
-layouts or toasts · no sentence built by concatenation — format arguments and plurals · numbers,
-dates, durations and units through locale-aware APIs, logs pinned to `Locale.ROOT` · no layout that
-only fits English · a **pseudo-locale build in the gate**.
+**Theme:** the app's own share of the turn. One media change, declared in the note's first paragraph per
+the cut template's own rule. **Promotes:** nothing.
 
-**The standing correction policy:** any file touched for any reason is brought up to that standard in
-the same change. Not a sweep, not a lane, not a promise for later — a rule about the code you are
-already in.
+| # | Unit | Claim it earns | Exact evidence | Instrument | Effort | Depends on | Not included |
+|---|---|---|---|---|---|---|---|
+| R2.1 | Supertonic 3 bundle (`#589`): `ModelSpec`, checksum, URL, label | The second voice no longer loses words at chunk seams | Words-lost on the ten committed sentences ≤ v1.6 and ≤ Piper; `verify-model-checksums.py` passes | `scripts/tts-fidelity.py` | XS | D48 | Changing the default voice (Piper stays recommended) |
+| R2.2 | Synthesis ahead: render clip N+1 while N plays, player decoupled | The first sound does not wait for the whole first sentence | `app-first-sound` p50/p95 before/after, same device, same ten utterances, with n and build | `baseline-report.py` + `verdict-f8.sh` | M | G0.2 | A new audio stack |
+| R2.3 | First-piece shaping: 20–30 chars, growing, **capped at 45** | The phrase boundary stops resetting prosody every two seconds | Chunk distribution printed (median, p95 chars); `app-gap` p95 down; `event=tts-retire full=true` still | `StreamTextChunkerTest` + G0 rows | S | G0.1, G0.2 | Any cap above 45 (needs a larger track, D48) |
 
-| Item | Effort | Work |
-|---|---|---|
-| Literal sweep — ~840 Kotlin sentence literals, 234 layout literals, a 27-line `strings.xml` | XL | build |
-| Plurals and gender rules | S | build |
-| Right-to-left pass | M | build |
-| Voice-language mismatch warning (warn, never block) | S | build |
-| Speech recognition follows the UI locale, with an override | S | build |
-| Per-locale gate coverage, and a pseudo-locale run of the twelve paths | M | build |
+**Sentence:** *"It starts talking sooner, and it stops dropping words mid-sentence."*
+**Release evidence:** two distributions with build and n; the words-lost table; twelve paths; both
+app-owned rows judged (exit 0, not 3).
 
-**Exit:** zero literals outside resources as measured by the gate; twelve paths green under a
-pseudo-locale; RTL unclipped; one language's strings ready to hand over.
+---
 
-## 0.10 — translation
+## R3 — 0.9.4 · *"If I talk over it, it stops talking and keeps the work."*
 
-Packs beyond French, plural and gender, RTL, the contract's first translator feedback, and `#229`
-(which needs a non-English answer to graduate). **No behaviour change on the default path.** If
-something needs one, it waits for 0.11.
+**Theme:** interruption. **Promotes:** Turn-taking — this is the release that exercises it. **Also
+builds** the recorded stimulus corpus, because barge and echo are its only readers.
 
-## The owner's reserved right
+| # | Unit | Claim it earns | Exact evidence | Instrument | Effort | Depends on | Not included |
+|---|---|---|---|---|---|---|---|
+| R3.0 | Recorded stimulus corpus + replay bench: fixed utterances in three environments, replayed into the real mic through the real pipeline | Barge and echo can be measured without a person in the room every time | The same replay produces the same `event=turn` rows twice; the corpus README names consent and each environment; the bench runs against synthetic audio before any human recording | new `scripts/replay-bench.sh` | M | G0.1 | Whether a conversation was *good*; driving recordings as a blocker (a card) |
+| R3.1 | Cut locally → classify → steer the live run, stop only on an explicit abort | A cough no longer ends the work | Log shows `POST /v1/runs/{id}/steer` and **no** `/stop` on a barge; the run is still `running`; `run.steered` received | replay bench + log assertions | L | R3.0; gateway `steer` | The amend path (R3.2); the feel of it (a card) |
+| R3.2 | Amend path: commit on `PROVISIONAL`, extend and re-send if speech resumes inside the window | An early endpoint costs a moment, not a turn | One `event=turn` per utterance, no second reply, no dropped phrase, in a replay that pauses mid-sentence | replay bench | L | R3.1 | Endpoint tuning |
+| R3.3 | Echo rejection by transcript similarity, and true pause-not-stop | A false trip costs nothing | A replay with TTS playing shows `reason=self-echo` rejections and no dropped reply | replay bench | M | R3.0 | Level-threshold changes |
+| R3.4 | `run.steered` gets a surface | When the agent takes new guidance, you can see it took it | The acknowledgement appears once on screen and once in the transcript | unit + device | S | R3.1 | A new screen |
+| R3.5 | Turn-taking graduates (promotion only) | Backchannel, barge classification and resume are normal app behaviour | `TURN_TAKING` out of `FeatureSet`; a replay shows a backchannel that does not cancel and a resume that does not repeat, with the master off | `AlphaGateTest` + replay + twelve paths | S | R3.1–R3.3 | Changing capture or endpoint defaults |
 
-**Any feature may be altered, re-scoped or deferred indefinitely by the owner, at any point, until he
-deems it complete.** A deferral is a scheduling decision, not a failure, and it is not recorded as
-one. Wake word is deferred indefinitely on those terms: it stays out of the sequence and off the
-panel until there is time to make a detector that works, and its return is the owner's call alone.
+**Sentence:** *"If I talk over it, it stops talking and keeps the work."*
+**Release evidence:** the replay run and its log assertions; whether it *felt* right is a card, and the
+note says **pending** in those words. **This release may not claim "interruption is understood" — only
+"the mechanism steers, and nothing is double-spoken".**
 
-## Not in this roadmap
+---
 
-Push notifications with no call open (the only feature that would justify a dashboard credential) ·
-a second platform · any new alpha set · word-level highlighting · any dashboard transport work. Each
-returns only if everything above is done and the owner asks for it.
+## R4 — 0.9.5 · *"I can set a timer by voice, and it reads it back before it does it."*
 
-## The freeze, stated precisely
+**Theme:** one real action with consent, on the default path. **Promotes:** Phone tools.
 
-From the `v0.9.8` tag, until a decision lifts it:
+| # | Unit | Claim it earns | Exact evidence | Instrument | Effort | Depends on | Not included |
+|---|---|---|---|---|---|---|---|
+| R4.1 | The House `vox` entry names this handset; phone tools passes: a timer set by voice, spoken back before it runs, and one refusal | The agent can act on the phone once, end to end | A timer set by voice; one refusal quoted; an audit line per action | `approval-harness.py` + device pass | S | `#578`'s host fix | Any group above Tier 1; any Allow-by-default |
+| R4.2 | Phone tools graduates (promotion only) | Granting a group is a setting, not an experiment | `PHONE_TOOLS` out of `FeatureSet`; a fresh install with the master off can reach the screen; every group still defaults Off | `AlphaGateTest` + screenshot | XS | R4.1 | Changing any group's default |
+| R4.3 | Locked-device refusal applies to **upstream** approvals, not just phone ones | A yes on the lock screen is not a yes | A locked phone answers an `approval.request` and gets `approval_locked`, spoken; one guard, called from both paths | unit + locked device | S | — | The timeout or the card's two words |
+| R4.4 | Clarify surface: one card, one spoken question, the answer continues the run | When the agent needs to ask, it asks instead of going quiet | A `clarify.request` mid-run produces one card and one spoken question; the answer resumes the same run | gateway fixture + device | M | R4.1 | New layout; a second surface |
 
-- **Frozen:** screen layout and navigation; the settings structure; the wording and placement of every
-  user-visible string.
-- **Not frozen:** colours and themes that add no strings; bug fixes that change no sentence;
-  translations; anything behind a string resource; and **behaviour tuning that adds no screen** — which
-  is why Presence's conversation work can run beside the freeze rather than in front of it if it is
-  still not ready at 0.9.6.
-- **The rule:** a change that adds or rewrites a user-visible sentence is a resource change or it is
-  refused. One late sentence is one sentence every translator revisits, and it is how a localisation
-  effort stalls.
+**Sentence:** *"I can set a timer by voice, and it reads it back before it does it."*
+**Release evidence:** one recorded session containing all four lines, quoted in the note.
 
-## After 0.10 — unnumbered on purpose
+---
 
-`PLAN-1.0.md`'s rule stands: **no issue carries `milestone/1.0`**, and the community decides the
-destination (`#268`). The candidate work sits in `milestone/future` and is not scheduled here: the phone
-as a surface (`#445`) with generated UI (`#444`), screen access (`#446`), local vision (`#448`), the MCP
-scene vocabulary (`#233`), the household and speaker ID (`#234`, `#46`), routing and push (`#232`),
-Android TV (`#442`), the Jean-Luc theme (`#443`), comprehensive phone control (`#429`), the wake-word
-detector (`#45`), and `#421` — the mind directing the phone with a veto — the largest single design item
-in the repository, which must not be smuggled into a release that is trying to freeze.
+## R5 — 0.9.6 · *"When something fails, it tells me which part failed."*
+
+**Theme:** the failure path speaks. Not a new capability. **Promotes:** nothing.
+
+| # | Unit | Claim it earns | Exact evidence | Instrument | Effort | Depends on | Not included |
+|---|---|---|---|---|---|---|---|
+| R5.1 | Error separation: a refused key, no transport and a gateway 5xx are three spoken sentences and three `reason=` values | You stop debugging settings that were never the cause | Three induced failures produce three distinct sentences and log reasons; a unit test pins the mapping | unit + `#376`'s arm | S | — | A retry policy; a dashboard |
+| R5.2 | Persist the last N turns read-only, marked unchecked | An answer that never arrived does not look like silence | After a failed turn the previous N are readable and marked; survives process death; never reused as context | unit + device | S | — | Any write-back; exporting off the device |
+| R5.3 | `#202` closed or re-scoped against **three** named lines in the merged field log | The report that spawned the whole regression set gets read | A table naming the three lines, the rule that counted them and the verdict | `field-log-turns.py --since-field` | XS | — | "Nineteen candidates" (no source) |
+
+**Sentence:** *"When something fails, it tells me which part failed."*
+**Release evidence:** the three induced failures, the N-turn surface, the `#202` table.
+
+---
+
+## P — the Presence programme (the differentiator, and its own order)
+
+Presence is the feature the owner named as the product's differentiator (D51). It is therefore not a
+promotion to be squeezed between releases and not something to retire by default: it gets a programme
+with its own decision gate, and it enters the series when its bar is met.
+
+**What is true today.** The renderer is a 2.6 GB model producing eleven to thirty-one character lines,
+measured at **2,646 MB idle PSS** and **27,505 ms to warm**, against a 220 MB idle budget and a 1.5 GB
+process ceiling (`docs/BUDGETS-0.9.1.md`). Every word it says costs that. The "13-stem catalogue" one
+document calls presence is the interjection library; the words still come from the renderer.
+
+| # | Unit | Claim it earns | Exact evidence | Instrument | Effort | Depends on | Not included |
+|---|---|---|---|---|---|---|---|
+| P.1 | The model decision (`#562`): bench a smaller renderer, or no model for most lines | The being speaks without a 2.6 GB resident cost | A written comparison of at least two options against the idle and process budgets, with the number each one lands on | presence bench scripts + `dumpsys meminfo` | M | — | Buying a model; training |
+| P.2 | Authored line catalogue: the lines it may say, how a line is chosen, what happens when the catalogue misses | The wait has a voice that was written, not sampled | The catalogue committed as data; a miss falls back to silence **and says so in the log**; every line traceable to its source | new `CatalogueTest` + one device call | L | P.1 | Improvisation; a second persona |
+| P.3 | Budget ceiling enforced: presence-on idle and peak PSS asserted per cut | Presence cannot quietly become the reason a phone swaps | `baseline-diff.py` carries the presence rows for gate-on runs; a cut over the ceiling fails | comparator + soak | S | P.1 | Changing the 220 MB budget |
+| P.4 | Measure against `#217`'s bar, then promote or record the failure | The being is judged by a bar, not by affection | `#217`'s bar quoted with the measured value; the promotion line names it; if it fails, the card and the reason | `#217` instrument | S | P.2, P.3 | A simultaneous redesign of turn-taking |
+
+**P exit:** either a promotion with `#217`'s bar quoted and the budget held, or a written retirement with
+the panel row removed. **What may not happen is what the old series proposed:** promoting the current
+implementation while calling it a rebuild, on a call the same document says is not yet good.
+
+---
+
+## C — continuous listening (a condition, not a release)
+
+Promotes when `#569` shows the recogniser keeping up on the field device (RTF at or below real time on a
+recorded run) **and** `#405`'s budgets are re-measured with it on. The release that promotes it sets
+`ContinuousCapture.DEFAULT_ON = false` in the same change. Claim: *"the mic stays open and the words
+still arrive on time."* The `#569` A/B (`scripts/stt-ab.sh`) is the instrument — it exists; it has not
+been run. For whoever runs it: `stt=` is the microphone being open, not the recogniser; read
+`sttDecodeMs` and `event=stt-rtf`.
+
+---
+
+## 0.10 — translation (after P and C are decided, and after G0 is closed)
+
+Gate, not a theme: packs beyond French, plural and gender rules, RTL, the contract's first translator
+feedback. **No behaviour change on the default path.** Its gate list: a pseudo-locale build runs the
+twelve paths; `count-literals.py` reports zero literals outside resources; RTL unclipped; one language's
+strings handed over.
+
+---
 
 ## Standing instruments — not release content
 
-`#208` (single-device), `#209`, F4, F5 and F8 run on every release and belong in the cut checklist. Both
-open issues carry `milestone/0.9.2` until they are checklist lines and then close: a milestone label on
-an instrument hides that it is not running, which is what happened to the last three, while an issue
-with no milestone breaks the rule that every open issue is in a release or in `future`.
+`#208` (single-device), `#209` (closed; the comparator now carries it), F4, F5 and F8 run on every
+release and belong in the cut checklist. An instrument with a milestone label hides that it is not
+running, which is what happened to the last three.
 
-`#279` is **not** a standing instrument. It needs a stranger, calendar and mail tools, and an approval —
-it is acceptance at 0.9.7, run once, with the result recorded.
+`#279` is **not** a standing instrument. It needs a stranger, calendar and mail tools, and an approval;
+it is acceptance at the freeze, run once, with the result recorded.
 
-## The standing extraction lane
+---
 
-String extraction is a **lane, not a theme**: it runs beside every release from 0.9.2 until the freeze,
-and it is exempt from the one-theme rule precisely because a rule that forces it into one release would
-make the freeze a big-bang. Each release extracts its own strings as it goes; 0.9.8 carries only the
-last of them, and 0.10 carries the coverage checks and the first language packs.
+## The extraction lane
+
+String extraction is a **lane, not a theme**: it runs beside every release from R1 until the freeze, and
+it is exempt from the one-theme rule precisely because a rule that forced it into one release would make
+the freeze a big-bang. Each release extracts its own strings as it goes; the freeze release carries the
+coverage checks.
+
+---
+
+## The freeze
+
+Begins at the tag the owner names. Terms: layout, navigation, settings structure and user-visible strings
+frozen; bug fixes, themes, translations and behaviour tuning that adds no screen are not.
+
+---
 
 ## How a contributor plugs in
 
 - **Every open issue is in a release or in `future`, and `future` says why.** An issue with neither is a
   bug in the tracker, not a backlog.
-- **A release's issues are its scope.** Work outside the current theme belongs on the next one; say so
-  on the issue rather than opening a pull request, and the answer is often "next".
-- **Lanes:** hearing (recogniser, capture), conversation (Presence, turn-taking, the aside), surfaces
-  (approvals, operations, first run), translation. A lane has no owner; it has a reviewer, and that is
-  whoever last landed a change in it.
-- **Definition of done, for any issue:** the change, the catcher that would have caught its defect, and
-  the evidence line that shows it worked on a device if it touches one.
-- **`good first issue` means a real one.** `#388` is the current example: a preference, a slider and a
-  settings row, bounded and reviewable.
+- **A release's issues are its scope.** Work outside the theme belongs on the next one; say so on the
+  issue rather than opening a pull request.
+- **Lanes:** hearing, conversation, surfaces, translation. A lane has no owner; it has a reviewer, and
+  that is whoever last landed a change in it.
+- **Definition of done:** the change, the catcher that would have caught its defect, and the evidence
+  line that shows it worked on a device if it touches one.
+
+---
 
 ## What this roadmap does not carry
 
-The previous roadmap's shipped history and its long ER research sections are records, not plans. They
-are kept in `docs/PLAN-0.8-accelerator.md`, `docs/DESIGN-enhanced-realtime-voice.md` and
-`docs/DECISIONS.md`, and this document does not repeat them.
+The shipped history and the long ER research sections are records, not plans. They live in
+`docs/PLAN-0.8-accelerator.md`, `docs/DESIGN-enhanced-realtime-voice.md` and `docs/DECISIONS.md`, and
+this document does not repeat them.
