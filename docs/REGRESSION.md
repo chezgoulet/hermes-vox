@@ -51,6 +51,10 @@ Worked examples:
    so is a row it reports as UNKNOWN — an unmeasured row is not a passing one.
 5. Any red is fixed, or deferred in writing with a reason and a linked issue. **No tag with an
    unexplained red.**
+5a. **The tracker, read by a machine.** `python3 scripts/check-cut.py --issue <tracker>` prints
+   `CUT-CHECK PASS`. Exit 1 is a red like any other — a box unanswered, or waived without a
+   reason and an issue. Exit 3 is not a green either: the scope section or one of its questions
+   is missing, and a deleted question is the failure that reads as an answer.
 6. The human run (layer 4): someone installs the candidate and uses it, and the document records
    who and what they saw. Then tag, then announce.
 
