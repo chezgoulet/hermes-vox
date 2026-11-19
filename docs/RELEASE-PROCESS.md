@@ -166,6 +166,21 @@ gate is a person, not a duration.
 There is no soak duration and there is no calendar. A release ships when this gate and the others
 are green, and not before.
 
+## 5a. Read the tracker as a machine reads it
+
+```sh
+python3 scripts/check-cut.py --issue <tracker>          # the tag
+python3 scripts/check-cut.py --issue <tracker> --stage scope   # the start of a cut
+```
+
+The tracker is the only record of what a cut answered, and until now it was read by the same
+person who wanted the tag. At the 0.9.1.3 tag four boxes were unticked — two of them already
+done, one of them the only record of a device proof — and nothing noticed, because an unticked
+box and an unrecorded answer look identical to a reader. The script answers one question: is
+every box either ticked or waived in writing with a linked issue? Exit `0` pass, `1` refuse,
+`2` usage, `3` unknown — and `3` is not a green: a tracker that deleted the scope question
+looks exactly like one that answered it.
+
 ## 6. Merge `testing` into `main`
 
 ```sh

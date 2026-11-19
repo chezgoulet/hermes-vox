@@ -99,6 +99,11 @@ python3 scripts/test_invention_report.py 2>&1 | tail -3
 # The field-log counter quoted by release notes (G5): its definitions are pinned, because the
 # 0.9.1.3 note quoted a count this script's first version could not reproduce either.
 python3 scripts/test_field_log_turns.py 2>&1 | tail -3
+# G0 and G6: the cut tracker used to be read by the person who wanted the tag. `check-cut.py`
+# reads it instead — an unanswered box, a question deleted from §0, or a waiver with no issue
+# is a non-zero exit. Its own test feeds it every one of those shapes; the live read happens at
+# the cut (`scripts/check-cut.py --issue <tracker>`), which is why only the test is in here.
+python3 scripts/test_check_cut.py 2>&1 | tail -3
 # #209: the per-release baseline and the comparator behind "no less stable than the last
 # release". The comparator's own test feeds it a synthetic regression and REQUIRES a
 # failure — a diff that cannot go red is a table, not an instrument.

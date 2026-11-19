@@ -5,6 +5,12 @@ ones that are "no". The tag is cut when the last line is ticked, and not before.
 
 ## 0. Scope — when the cut begins (`<date>`)
 
+**Read by a machine.** `python3 scripts/check-cut.py --issue <tracker> --stage scope` prints
+`CUT-CHECK PASS` once this section is answered; without `--stage` the same script reads the whole
+tracker and is the last gate before the tag. A box is answered by being ticked, or by carrying
+`waived: <reason> #<issue>` on the same line. Nothing else counts as an answer, and a deleted
+question reads as `CUT-CHECK UNKNOWN` rather than as a pass.
+
 - [ ] Scope published: what is in, and what is explicitly **not** in.
 - [ ] **What does this touch that a phone can see?** For every change to audio,
       the service lifecycle, the network or the UI: the regression path that
@@ -95,6 +101,8 @@ Every cell is the log line that proves it, or `not run — <why>`. Filled rows l
 - [ ] Release built from the SHA that will be tagged; verdict
       `reproducible — identical payloads` read from `compare.txt`.
 - [ ] Artifact verified: hash, badging, signer `8be7feed…`.
+- [ ] `python3 scripts/check-cut.py --issue <tracker>` prints `CUT-CHECK PASS`: no
+      unanswered box, and no box waived without a reason and a linked issue.
 - [ ] Tag and release published; site dispatch sent; installed on a phone and one
       live call made.
 
