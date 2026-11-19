@@ -42,6 +42,17 @@ jobs:
           python3 scripts/test_presence_session_report.py
           python3 scripts/check-skill-claims.py
 
+      # The instruments that decide a release must be able to go red here, not only on the
+      # machine that happens to cut it. Each of these is stdlib-only and asserts that a
+      # checker REFUSES a bad input: the field-log counter, the baseline comparator, and the
+      # cut tracker (G0 scope, G6 record) are the three that a green gate used to leave as
+      # untested promises. gate.sh runs them too; this makes CI the second witness.
+      - name: Instrument self-tests (field log, baseline diff, cut tracker)
+        run: |
+          python3 scripts/test_field_log_turns.py
+          python3 scripts/test_baseline_diff.py
+          python3 scripts/test_check_cut.py
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
