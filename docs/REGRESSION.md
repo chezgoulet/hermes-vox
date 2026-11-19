@@ -161,3 +161,7 @@ was built from in `docs/MILESTONES.md`.
   caught by a card and by the ring buffer test, not by CI.
 - **A second handset** (#208) — everything so far is one Pixel.
 - **Long-call drift** — thermal and memory over an hour are measured per release, not per change.
+  F5 is the instrument: `scripts/soak.sh <label>` samples a live call every thirty seconds and
+  `scripts/soak-report.py` returns the verdict (0 pass, 1 fail, 2 usage, 3 unknown). A window
+  shorter than thirty minutes, a phone on the charger, or a window with no call in it are
+  UNKNOWN — not green.

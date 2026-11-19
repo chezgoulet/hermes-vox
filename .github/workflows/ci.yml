@@ -52,6 +52,7 @@ jobs:
           python3 scripts/test_field_log_turns.py
           python3 scripts/test_baseline_diff.py
           python3 scripts/test_check_cut.py
+          python3 scripts/test_soak_report.py
 
       - uses: actions/setup-java@v4
         with:

@@ -104,6 +104,10 @@ python3 scripts/test_field_log_turns.py 2>&1 | tail -3
 # is a non-zero exit. Its own test feeds it every one of those shapes; the live read happens at
 # the cut (`scripts/check-cut.py --issue <tracker>`), which is why only the test is in here.
 python3 scripts/test_check_cut.py 2>&1 | tail -3
+# F5: the thirty-minute soak had no instrument until now — a checklist line with nothing behind
+# it. `soak.sh` samples the phone and `soak-report.py` owns the verdict; its test asserts that a
+# short window, a charging phone and a window with no call in it are UNKNOWN and never PASS.
+python3 scripts/test_soak_report.py 2>&1 | tail -3
 # #209: the per-release baseline and the comparator behind "no less stable than the last
 # release". The comparator's own test feeds it a synthetic regression and REQUIRES a
 # failure — a diff that cannot go red is a table, not an instrument.
