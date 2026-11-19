@@ -47,10 +47,12 @@ profile switcher are on for every install.
 `Presence` remains the feature's public name in copy and release notes. "Alpha Features" is the gate,
 not the name. "Enhanced Realtime" is retired as vocabulary.
 
-The panel **shrinks as each set graduates**: six today, three after 0.9.3 (Phone tools and Digital
-assistant promoted, Wake word removed), two after 0.9.4, one after 0.9.5, none after 0.9.6. When it is
-empty the gate goes, because there is nothing left behind it. A promotion changes no behaviour of the
-set it promotes — otherwise the promotion is unproven by construction.
+The panel **shrinks as each set graduates**, and the schedule lives in one place — `ROADMAP.md` § *How
+a set leaves the gate*. Six today; four after R1 (Digital assistant promoted, Wake word removed); three
+after R3 (Turn-taking); two after R4 (Phone tools). The last two — Presence and Continuous listening —
+are decided by the P and C programmes in `ROADMAP.md`, not by a release number. When it is empty the gate
+goes, because there is nothing left behind it. A promotion changes no behaviour of the set it promotes —
+otherwise the promotion is unproven by construction.
 
 ### What each set is, and what it still needs
 

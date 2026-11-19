@@ -1434,3 +1434,89 @@ show cannot fit the track.)*
 **What it does not do.** It does not remove Supertonic, does not change the default voice, and does
 not claim the ten-sentence bench is decisive: the script is committed so a wider run can settle the
 size of the effect rather than its direction.
+
+## D49 — The governance collapses to six documents, and the live set lands on `main`
+
+Set 2026-11-19, after the three-lens review.
+
+**The decision.** The governance and planning surface becomes six documents: `RELEASE.md` (the single
+ordered procedure, with the cut tracker template inlined at §0 and every step naming the script and the
+exit code that proves it), `GOVERNANCE.md` (only what a checklist cannot express — authority, the veto,
+consensus on a major), `VERSIONS.md`, `ROADMAP.md`, `REGRESSION.md`, and a generated `STATUS.md`.
+`docs/INDEX.md` and `docs/MATRIX.md` are deleted; `TRACKER-STATE.md` is archived. `docs/RELEASE-PROCESS.md`
+is replaced by `RELEASE.md`, not kept beside it. `testing` is merged to `main` in the same change, because
+the default branch currently shows the superseded set and that is what a visitor reads.
+
+**Why.** The review measured the failure: one fact lives in four to seven places, no document is marked
+as the one that wins, and the procedure's own nine-step short version omits the human run and the tracker
+read. Seven documents stated the release gates; four stated when the alpha panel empties; the word *veto*
+appeared zero times in the procedure. The gates are proportionate — the duplication is not.
+
+**What it gives up.** One long procedure instead of a short one and a long one; readers of the short
+version lose their summary. **Against the alternative:** cutting documents alone was priced at 0.15 —
+it would have deleted the twelve paths, the evidence rule and the machine-read tracker, which are the
+parts that work.
+
+## D50 — The series is re-cut as one gate and five releases; a gate is not a release
+
+Set 2026-11-19.
+
+**The decision.** `ROADMAP.md` carries **G0**, the instrument gate with four script-level exits, then
+**R1–R5**, each one sentence a user could say and at most one sitting on the phone. The M0–M5 series is
+replaced. A gate has an exit a script prints; a release has a sentence a user could say; two milestones
+in the old document were gates wearing version numbers.
+
+**Why.** The roadmap review tested all 36 rows against the code: 9 existed, 11 were partial, 14 were
+absent, 2 unverifiable. Two promotions were scheduled to be judged by bars that arrive in later
+milestones, and "one theme per release" sat beside "any row ships immediately".
+
+## D51 — Presence is the differentiator, and gets its own programme
+
+Set 2026-11-19, by the owner.
+
+**The decision.** Presence is not a promotion to be squeezed between releases and not something to retire
+by default. It gets a programme — P.1 the model decision (`#562`), P.2 an authored line catalogue, P.3 a
+budget ceiling asserted per cut, P.4 judged against `#217`'s bar and then promoted or recorded as failed.
+It enters the series when its bar is met.
+
+**Why.** The owner's words: it is the feature that will differentiate the app, and it should get the love
+it deserves. **What this changes:** the old plan to promote the current implementation while calling it a
+rebuild is withdrawn. The measured cost is 2,646 MB idle and 27,505 ms to warm, against a 220 MB budget;
+a programme that does not answer that number cannot promote anything.
+
+## D52 — Promotions happen inside the series, and polish rides along
+
+Set 2026-11-19, by the owner.
+
+**The decision.** Every release names the set it promotes or the row it removes, and the alpha panel is
+expected to shrink as the series goes: six sets today, four after R1, three after R3, two after R4, the
+last two decided by the P and C programmes. Separately, polish is a continuous lane: a rough edge found
+in use ships in the next cut, listed under *Also in this release*, changing no claim and promoting
+nothing. A defect is never "polish".
+
+**Why.** The owner asked for both: promotion as part of the series rather than a later phase, and polish
+along the way instead of accumulating behind a milestone.
+
+## D53 — The three defects found in the review fold into R1
+
+Set 2026-11-19, by the owner.
+
+**The decision.** Two of the three acknowledgement clips are missing (`mm_warm`, `mhm_warm`), so two turns
+in three are silently mute; `SemanticEndpoint.DEFAULT_ON` is `true` against the decision that says
+otherwise; and the wake-word row opens by promising the phrase wakes the app. All three land in R1 with
+their catchers: an asset-existence test for the clips, a test pinning the endpoint default to `false`, and
+the row's removal.
+
+**Why.** They are XS, they are defects rather than features, and R1's theme is precisely "the panel tells
+the truth".
+
+## D54 — A success sample stays on the phone until the owner has seen one
+
+Set 2026-11-19, by the owner.
+
+**The decision.** The success sampler (`#596`) keeps ten calls locally, stamped with build and gate state,
+and **uploads nothing**. Export is by hand. Nothing leaves the device until the owner has seen a sample
+and ruled on where it may go.
+
+**Why.** A call sample carries family voices. The sampler is worth having because the project keeps only
+failures; the upload is a separate decision and is not taken here.
