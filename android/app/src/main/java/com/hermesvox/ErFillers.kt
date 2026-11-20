@@ -35,6 +35,11 @@ object ErFillers {
         "still working on it — one more moment",
         "this one's taking a little longer",
     )
+    private val LAG_FR = listOf(
+        "mon esprit est un peu lent en ce moment, donnez-moi une seconde",
+        "j'y travaille toujours — encore un instant",
+        "cela prend un peu plus de temps",
+    )
 
     const val FILLER_WINDOW_MS = 3000L     // the density-cap window
     const val MAX_FILLERS_PER_WINDOW = 2   // Miles: ≤1-2 per 3s
@@ -65,6 +70,7 @@ object ErFillers {
          *  At most ONCE — a repeated "mm" is the chatty failure the field rejected. */
         preambleSaid: Int = 0,
         silenceFirstMs: Long = SILENCE_FIRST_MS,
+        lang: String = "en",
     ): Out {
         val since = nowMs - mindStartedAt
         if (since < PREAMBLE_MS) return Out(null, State.SILENT)   // too early
@@ -72,8 +78,9 @@ object ErFillers {
         if (since >= LAG_AFTER_MS) {
             // Fail-soft: ONE in-character lag acknowledgment, then hold silent.
             // Keyed on the MONOTONIC count — never re-arms inside a window.
+            val list = if (lang == "fr") LAG_FR else LAG
             return if (lagSaidCount == 0 && recentCount < cap) {
-                Out(LAG[(userGoneMs % LAG.size).toInt().coerceAtLeast(0)], State.LAG_ACK)
+                Out(list[(userGoneMs % list.size).toInt().coerceAtLeast(0)], State.LAG_ACK)
             } else Out(null, State.SILENT)
         }
         // The middle rung: ONE nonverbal cue, no words.

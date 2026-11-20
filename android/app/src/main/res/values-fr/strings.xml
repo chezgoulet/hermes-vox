@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Hermes Vox</string>
+    <string name="hv_tag">Une voix pour Hermes Agent</string>
+    <string name="hv_sub">Saisissez les identifiants de votre instance Hermes Agent.</string>
+    <string name="hv_connect_verify">Connexion &amp; vérification</string>
+    <string name="hv_onboard_network">Réseau : Vox s\'attend à joindre votre passerelle Hermes via un réseau privé sécurisé que vous contrôlez (Tailscale ou Nebula sont recommandés). Sans réseau privé, votre clé d\'API et l\'audio transitent en HTTP clair.</string>
+    <string name="hv_set_network_note">Réseau privé (VPN/tunnel, ex. Tailscale ou Nebula) recommandé — la clé et l\'audio utilisent HTTP clair autrement.</string>
+    <string name="hv_skip">J\'ai déjà une session</string>
+    <string name="hv_url_hint">Point d\'accès de l\'entité  ·  http://…</string>
+    <string name="hv_key_hint">Clé d\'API  ·  chiffrée sur l\'appareil, transmise uniquement à votre passerelle</string>
+    <string name="hv_model_hint">Modèle  ·  hermes-agent</string>
+    <string name="hv_entity_hint">Entité  ·  nommée par votre serveur Hermes</string>
+    <string name="hv_scope_hint">Portée  ·  qui parle (facultatif)  ·  agent:vox:tablette:nom</string>
+    <string name="hv_input_hint">Parlez ou écrivez à l\'entité…</string>
+    <string name="hv_send">↗</string>
+    <string name="hv_label_flows">PIPELINE VOCAL</string>
+    <string name="hv_label_entity">ENTITÉ</string>
+    <string name="hv_label_appearance">APPARENCE</string>
+    <string name="hv_label_about">À PROPOS</string>
+    <string name="hv_connected">Connecté</string>
+    <!-- What a voice turn sent Hermes (the dim "heard" line); read by TalkBack. -->
+    <string name="hv_heard_cd">Vous avez dit : %1$s</string>
+    <string name="hv_not_connected">Non connecté</string>
+    <string name="hv_models_advanced_show">Afficher la source de téléchargement avancée</string>
+    <string name="hv_models_advanced_hide">Masquer la source de téléchargement avancée</string>
+
+    <!-- Sélecteur de certificat mTLS -->
+    <string name="mtls_cert_title">Certificat client (mTLS)</string>
+    <string name="mtls_cert_none">Aucun (défaut système)</string>
+    <string name="mtls_cert_choose">Choisir</string>
+    <string name="mtls_cert_clear">Effacer</string>
+
+    <!-- Gestion des modèles vocaux -->
+    <string name="models_title">Modèles vocaux</string>
+    <string name="models_setup_required">⚠ Configuration requise</string>
+    <string name="models_install_prompt">Installer les modèles vocaux nécessaires</string>
+    <string name="models_adv_source">Avancé — source de téléchargement</string>
+    <string name="models_adv_show">afficher ›</string>
+    <string name="models_adv_desc">Emplacement où sont téléchargés les fichiers de modèles. Par défaut, il s\'agit de la version upstream officielle ; ne le modifiez que si vous hébergez un miroir personnel.</string>
+    <string name="models_save_source">Enregistrer la source</string>
+    <string name="models_use_default">Valeur par défaut</string>
+    <string name="models_source_note">Les modèles installés ne sont pas affectés par cette adresse. Sa modification s\'applique uniquement aux téléchargements futurs.</string>
+    <string name="model_recommended">★ Recommandé</string>
+    <string name="model_not_installed">Non installé</string>
+    <string name="model_download">Télécharger</string>
+
+    <!-- Enrôlement mot de réveil -->
+    <string name="wake_title">Mot de réveil (aperçu)</string>
+    <string name="wake_agree_label">J\'accepte — conserver mes enregistrements sur ce téléphone</string>
+    <string name="wake_record">Enregistrer</string>
+    <string name="wake_delete_all">Supprimer tous mes enregistrements</string>
+
+    <!-- Onboarding -->
+    <string name="onboard_how_works">COMMENT ÇA FONCTIONNE</string>
+    <string name="onboard_how_works_desc">Hermes est votre agent IA — une entité qui réside sur votre propre passerelle. Vox lui donne un corps : une présence qui écoute, réfléchit et répond à voix haute. Vous lui parlez comme à une personne, pas comme à une page de chat.</string>
+    <string name="onboard_setup_title">CE QUE VOUS CONFIGUREZ</string>
+    <string name="onboard_presence_title">PRÉSENCE — ALPHA, DÉSACTIVÉE PAR DÉFAUT</string>
+    <string name="onboard_mic_note">Micro vs push-to-talk : Vox fonctionne les mains libres — vous parlez naturellement sans devoir maintenir de bouton.</string>
+    <string name="onboard_got_it">Compris — connecter</string>
+    <string name="onboard_skip">Passer pour l\'instant</string>
+
+    <!-- Rubriques des paramètres et actions -->
+    <string name="settings_title">Paramètres</string>
+    <string name="settings_entity_conn">Entité &amp; Connexion</string>
+    <string name="settings_hearing">Écoute</string>
+    <string name="settings_voice_assets">Modèles vocaux</string>
+    <string name="settings_voice_sounds">Voix &amp; sons</string>
+    <string name="settings_appearance">Apparence</string>
+    <string name="settings_alpha_features">Fonctionnalités Alpha</string>
+    <string name="settings_alpha_sub">Désactivé · les fonctionnalités en cours de développement restent masquées</string>
+    <string name="settings_presence">Présence</string>
+    <string name="settings_phone_tools">Outils Téléphone</string>
+    <string name="settings_wake_word">Mot de réveil (aperçu)</string>
+    <string name="settings_assistant_role">Définir Hermes Vox comme assistant numérique</string>
+    <string name="settings_about_diag">À propos &amp; Diagnostics</string>
+    <string name="settings_test_conn">Tester la connexion de l\'entité</string>
+    <string name="settings_test_run">tester</string>
+    <string name="settings_agent_model">Modèle de l\'agent</string>
+    <string name="settings_teach_agent">Apprendre cette application à votre agent</string>
+    <string name="settings_new_conv">Nouvelle conversation (vider le contexte)</string>
+    <string name="settings_clear">effacer</string>
+    <string name="settings_reset">réinitialiser</string>
+    <string name="settings_restore_defaults">Rétablir les paramètres par défaut</string>
+    <string name="settings_barge_in">Interruption vocale (barge-in)</string>
+    <string name="settings_spoken_language">Langue parlée</string>
+    <string name="settings_spoken_language_desc">Ce qu\'attend le système de reconnaissance ; modèles multilingues uniquement</string>
+</resources>

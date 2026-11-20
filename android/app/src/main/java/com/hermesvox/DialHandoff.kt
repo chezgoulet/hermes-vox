@@ -36,9 +36,16 @@ object DialHandoff {
 
     /** The one line the being says at the handoff. Lower case like the rest of the being's talk. */
     const val LINE = "dialling — ending our call"
+    const val LINE_FR = "numérotation en cours — fin de notre appel"
+
+    /** Returns the localized handoff line. */
+    fun line(lang: String = "en"): String = if (lang == "fr") LINE_FR else LINE
 
     /** What the handoff needs from the phone. */
     interface Host {
+        /** Language for spoken announcement. */
+        fun lang(): String = "en"
+
         /** Is a Vox call running right now? Read at the moment of the dial, never cached. */
         fun callLive(): Boolean = false
 
@@ -117,7 +124,7 @@ object DialHandoff {
     ): Outcome {
         if (!host.canDial()) return Outcome.NO_DIALER
         if (!host.callLive()) return if (host.dial(number)) Outcome.DIALED else Outcome.DIAL_FAILED
-        host.announce(LINE) {
+        host.announce(line(host.lang())) {
             host.endCall()
             onLiveDial(host.dial(number))
         }

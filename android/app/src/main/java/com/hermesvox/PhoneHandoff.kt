@@ -37,6 +37,9 @@ object PhoneHandoff {
 
         /** The PiP-first launch funnel ([CallWindow]), or null when this window cannot float. */
         fun window(): CallWindow.Host?
+
+        /** Language for spoken announcement. */
+        fun lang(): String = "en"
     }
 
     @Volatile
@@ -71,4 +74,6 @@ object PhoneHandoff {
     }
 
     fun window(): CallWindow.Host? = live?.window()
+
+    fun lang(): String = live?.lang() ?: "en"
 }

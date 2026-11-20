@@ -54,7 +54,9 @@ object TurnWait {
     const val SILENT_STREAM_MS = 60_000L
 
     const val LINE_FIRST = "Still waiting on it."
+    const val LINE_FIRST_FR = "J'attends toujours la réponse."
     const val LINE_SECOND = "This one's taking a while. I'm still waiting."
+    const val LINE_SECOND_FR = "C'est un peu long. J'attends toujours."
 
     /**
      * The check-in to speak now, or null.
@@ -65,6 +67,7 @@ object TurnWait {
      * @param presenceSpeaks Presence is running and voicing its own wait lines
      * @param approvalWaiting a card is up: the wait is the caller's, not the mind's
      * @param callerQuietMs time since the caller's voice was last heard
+     * @param lang         ISO-639-1 language code ("en", "fr")
      */
     fun checkIn(
         waitedMs: Long,
@@ -73,13 +76,14 @@ object TurnWait {
         presenceSpeaks: Boolean,
         approvalWaiting: Boolean,
         callerQuietMs: Long,
+        lang: String = "en",
     ): String? {
         if (replyStarted || presenceSpeaks || approvalWaiting) return null
         if (said >= MAX_CHECK_INS) return null
         if (callerQuietMs < CALLER_QUIET_MS) return null
         return when {
-            said == 0 && waitedMs >= CHECK_IN_FIRST_MS -> LINE_FIRST
-            said == 1 && waitedMs >= CHECK_IN_SECOND_MS -> LINE_SECOND
+            said == 0 && waitedMs >= CHECK_IN_FIRST_MS -> if (lang == "fr") LINE_FIRST_FR else LINE_FIRST
+            said == 1 && waitedMs >= CHECK_IN_SECOND_MS -> if (lang == "fr") LINE_SECOND_FR else LINE_SECOND
             else -> null
         }
     }

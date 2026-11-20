@@ -32,6 +32,8 @@ class ErPresence(
     private val fillerCap: () -> Int = { ErFillers.MAX_FILLERS_PER_WINDOW },
     /** The "Presence while working" register — the mid-run aside interval and cap. Read live. */
     private val density: () -> PresenceCadence.Density = { PresenceCadence.DEFAULT },
+    /** Spoken prompt language resolver. */
+    private val lang: () -> String = { "en" },
 ) {
 
     /** A mid-run aside slot: the line's number in the run, the gap since the previous line, the
@@ -114,7 +116,7 @@ class ErPresence(
         startWindow(nowMs)
         // Null by construction (see [autoLine]): a turn start is the mind's, and the soul's
         // contribution is the beat, not an acknowledgment.
-        autoLine(d.route, atTurnStart = true)?.let { speakGlue(it, "presence-turn-start") }
+        autoLine(d.route, atTurnStart = true, lang = lang())?.let { speakGlue(it, "presence-turn-start") }
         VoxLog.er("er:intent=${d.cls.name.lowercase()} route=turn-start lane=mind")
         return d.route
     }
@@ -135,7 +137,7 @@ class ErPresence(
                 // ack (P3, cuttable by a real barge) at most. This is the ONLY moment the phone
                 // acknowledges on its own — see [autoLine]: at turn start the same words are an
                 // answer, not a backchannel (F5).
-                autoLine(d.route, atTurnStart = false)?.let {
+                autoLine(d.route, atTurnStart = false, lang = lang())?.let {
                     speakGlue(it, "presence-hold")
                     spokeThisWindow = true
                 }
@@ -189,7 +191,7 @@ class ErPresence(
                 val now = android.os.SystemClock.uptimeMillis()
                 val recent = synchronized(fillerTimes) { ErFillers.countRecent(fillerTimes, now) }
                 if (mindStartedAt > 0 && windowOpenedAt != mindStartedAt) windowOpenedAt = mindStartedAt
-                val o = ErFillers.tick(now, mindStartedAt, recent, userGoneMs = now - (mindStartedAt - 10_000), cap = fillerCap(), lagSaidCount = synchronized(lagSaidCount) { lagSaidCount.value }, preambleSaid = synchronized(preambleSaidCount) { preambleSaidCount.value })
+                val o = ErFillers.tick(now, mindStartedAt, recent, userGoneMs = now - (mindStartedAt - 10_000), cap = fillerCap(), lagSaidCount = synchronized(lagSaidCount) { lagSaidCount.value }, preambleSaid = synchronized(preambleSaidCount) { preambleSaidCount.value }, lang = lang())
                 // 0.8/M2: the nonverbal preamble cue — the middle rung. Delivered as a
                 // CLIP only, never as text (Piper must not read an interjection), so
                 // 'spoken' mode stays silent here by design and a missing clip degrades
@@ -350,13 +352,17 @@ class ErPresence(
         if (stallVoicedFor == mindStartedAt) return
         stallVoicedFor = mindStartedAt
         val ctx = clipContext
+        val stallLine = if (lang() == "fr")
+            "toujours en cours — la connexion est un peu lente"
+        else
+            "still working on it — the connection's a little slow"
         when {
             voiceMode == "sounds" && ctx != null -> {
-                if (!ErClips.play(ctx, ErClips.clipFor("lag", 1))) speakGlue("still working on it — the connection's a little slow", "presence-stall-clip-fallback")
+                if (!ErClips.play(ctx, ErClips.clipFor("lag", 1))) speakGlue(stallLine, "presence-stall-clip-fallback")
                 VoxLog.er("er:stall-voiced idleMs=$idleMs mode=sounds")
             }
             else -> {
-                speakGlue("still working on it — the connection's a little slow", "presence-stall")
+                speakGlue(stallLine, "presence-stall")
                 VoxLog.er("er:stall-voiced idleMs=$idleMs mode=spoken")
             }
         }
@@ -366,6 +372,7 @@ class ErPresence(
     companion object {
         /** The line for the patient caller — the one thing the phone says on its own. */
         const val HOLD_LINE = "okay — take the time you need"
+        const val HOLD_LINE_FR = "d'accord — prenez le temps nécessaire"
 
         /**
          * A3 / F5 (2026-11-04 review): what Presence says by itself, given the classifier's route
@@ -379,9 +386,9 @@ class ErPresence(
          * DURING the mind's work: the hold line, for the patient caller only. That is what the
          * list was written for.
          */
-        fun autoLine(route: ErIntent.Route, atTurnStart: Boolean): String? = when {
+        fun autoLine(route: ErIntent.Route, atTurnStart: Boolean, lang: String = "en"): String? = when {
             atTurnStart -> null
-            route == ErIntent.Route.HOLD_ONLY -> HOLD_LINE
+            route == ErIntent.Route.HOLD_ONLY -> if (lang == "fr") HOLD_LINE_FR else HOLD_LINE
             else -> null
         }
     }
