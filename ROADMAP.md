@@ -243,12 +243,31 @@ been run. For whoever runs it: `stt=` is the microphone being open, not the reco
 
 ---
 
-## 0.10 — translation (after P and C are decided, and after G0 is closed)
+## 0.10 — the series after 0.9.6
 
-Gate, not a theme: packs beyond French, plural and gender rules, RTL, the contract's first translator
-feedback. **No behaviour change on the default path.** Its gate list: a pseudo-locale build runs the
-twelve paths; `count-literals.py` reports zero literals outside resources; RTL unclipped; one language's
-strings handed over.
+A milestone, not a single release: it carries one user-facing mode and the translation gate.
+
+### The immersive display (#608) — recorded 2026-11-20
+
+A reporter asked for a mode where the being fills the screen and nothing else is drawn except the
+presence icons. The owner's answer: *"I really like this idea. Seems like an obvious mode to include."*
+It is slated here and not earlier because it changes a surface, and the 0.9.x series is closing
+behaviour first.
+
+| # | Unit | Claim it earns | Exact evidence | Instrument | Effort | Depends on | Not included |
+|---|---|---|---|---|---|---|---|
+| 0.10.1 | Immersive mode: the being full-screen, no text or chrome, presence icons only | *"I can have the being and nothing else."* | A screenshot in a call with the mode on; the twelve paths walked with it on; the toggle's state surviving a process death **if** it is made persistent | device pass + screenshots in the release document | M | — | A second renderer; changes to the call's own controls |
+
+**Open question, held by the reporter** (`awaiting-reporter`): is it a toggle *inside* an active call, or
+a mode that persists across calls? The answer decides whether the state lives on the call or in settings,
+and the issue is the record until it is answered. Nothing is built before that answer.
+
+### The translation gate
+
+Not a theme: packs beyond French, plural and gender rules, RTL, the contract's first translator feedback.
+**No behaviour change on the default path.** Its gate list: a pseudo-locale build runs the twelve paths;
+`count-literals.py` reports zero literals outside resources; RTL unclipped; one language's strings handed
+over.
 
 ---
 
